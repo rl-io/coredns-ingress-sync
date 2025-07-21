@@ -102,27 +102,19 @@ func runController() {
 
 	// Watch for Ingress changes
 	if err := c.Watch(
-		source.Kind(mgr.GetCache(), &networkingv1.Ingress{}),
-		handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			// Always trigger a reconcile for any ingress change
-			return []reconcile.Request{{
-				NamespacedName: types.NamespacedName{
-					Name:      "global-ingress-reconcile",
-					Namespace: "default",
-				},
-			}}
-		}),
-		predicate.Funcs{
-			CreateFunc: func(e event.CreateEvent) bool {
-				return isTargetIngress(e.Object)
-			},
-			UpdateFunc: func(e event.UpdateEvent) bool {
-				return isTargetIngress(e.ObjectNew) || isTargetIngress(e.ObjectOld)
-			},
-			DeleteFunc: func(e event.DeleteEvent) bool {
-				return isTargetIngress(e.Object)
-			},
-		}); err != nil {
+		source.Kind(mgr.GetCache(), &networkingv1.Ingress{}, 
+			handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *networkingv1.Ingress) []reconcile.Request {
+				// Always trigger a reconcile for any ingress change
+				return []reconcile.Request{{
+					NamespacedName: types.NamespacedName{
+						Name:      "global-ingress-reconcile",
+						Namespace: "default",
+					},
+				}}
+			}),
+			predicate.NewTypedPredicateFuncs(func(obj *networkingv1.Ingress) bool {
+				return isTargetIngress(obj)
+			}))); err != nil {
 		log.Fatal(err)
 	}
 
@@ -862,66 +854,58 @@ func (r *IngressReconciler) isFakeClient() bool {
 
 func addConfigMapWatch(cache cache.Cache, c controller.Controller, namespace, name, reconcileName string) error {
 	return c.Watch(
-		source.Kind(cache, &corev1.ConfigMap{}),
-		handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			if obj.GetNamespace() == namespace && obj.GetName() == name {
-				return []reconcile.Request{{
-					NamespacedName: types.NamespacedName{
-						Name:      reconcileName,
-						Namespace: "default",
-					},
-				}}
-			}
-			return nil
-		}),
-		predicate.Funcs{
-			CreateFunc: func(e event.CreateEvent) bool {
-				return e.Object.GetNamespace() == namespace && e.Object.GetName() == name
-			},
-			UpdateFunc: func(e event.UpdateEvent) bool {
-				return e.ObjectNew.GetNamespace() == namespace && e.ObjectNew.GetName() == name
-			},
-			DeleteFunc: func(e event.DeleteEvent) bool {
-				return e.Object.GetNamespace() == namespace && e.Object.GetName() == name
-			},
-		},
+		source.Kind(cache, &corev1.ConfigMap{},
+			handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *corev1.ConfigMap) []reconcile.Request {
+				if obj.GetNamespace() == namespace && obj.GetName() == name {
+					return []reconcile.Request{{
+						NamespacedName: types.NamespacedName{
+							Name:      reconcileName,
+							Namespace: "default",
+						},
+					}}
+				}
+				return nil
+			}),
+			predicate.NewTypedPredicateFuncs(func(obj *corev1.ConfigMap) bool {
+				return obj.GetNamespace() == namespace && obj.GetName() == name
+			})),
 	)
 }
 
 func addDynamicConfigMapWatch(cache cache.Cache, c controller.Controller, namespace, name, reconcileName string) error {
 	return c.Watch(
-		source.Kind(cache, &corev1.ConfigMap{}),
-		handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			if obj.GetNamespace() == namespace && obj.GetName() == name {
-				return []reconcile.Request{{
-					NamespacedName: types.NamespacedName{
-						Name:      reconcileName,
-						Namespace: "default",
-					},
-				}}
-			}
-			return nil
-		}),
-		predicate.Funcs{
-			CreateFunc: func(e event.CreateEvent) bool {
-				return false // Don't trigger on create - we create it ourselves
-			},
-			UpdateFunc: func(e event.UpdateEvent) bool {
-				// Simple check: only trigger if the ConfigMap doesn't have our management label
-				// This handles the common case where external tools overwrite our ConfigMap
-				if e.ObjectNew.GetNamespace() == namespace && e.ObjectNew.GetName() == name {
-					labels := e.ObjectNew.GetLabels()
-					if labels == nil || labels["app.kubernetes.io/managed-by"] != "coredns-ingress-sync" {
-						// External update, trigger reconciliation
-						return true
-					}
+		source.Kind(cache, &corev1.ConfigMap{},
+			handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *corev1.ConfigMap) []reconcile.Request {
+				if obj.GetNamespace() == namespace && obj.GetName() == name {
+					return []reconcile.Request{{
+						NamespacedName: types.NamespacedName{
+							Name:      reconcileName,
+							Namespace: "default",
+						},
+					}}
 				}
-				return false
-			},
-			DeleteFunc: func(e event.DeleteEvent) bool {
-				// Always trigger on delete for disaster recovery
-				return e.Object.GetNamespace() == namespace && e.Object.GetName() == name
-			},
-		},
+				return nil
+			}),
+			predicate.TypedFuncs[*corev1.ConfigMap]{
+				CreateFunc: func(e event.TypedCreateEvent[*corev1.ConfigMap]) bool {
+					return false // Don't trigger on create - we create it ourselves
+				},
+				UpdateFunc: func(e event.TypedUpdateEvent[*corev1.ConfigMap]) bool {
+					// Simple check: only trigger if the ConfigMap doesn't have our management label
+					// This handles the common case where external tools overwrite our ConfigMap
+					if e.ObjectNew.GetNamespace() == namespace && e.ObjectNew.GetName() == name {
+						labels := e.ObjectNew.GetLabels()
+						if labels == nil || labels["app.kubernetes.io/managed-by"] != "coredns-ingress-sync" {
+							// External update, trigger reconciliation
+							return true
+						}
+					}
+					return false
+				},
+				DeleteFunc: func(e event.TypedDeleteEvent[*corev1.ConfigMap]) bool {
+					// Always trigger on delete for disaster recovery
+					return e.Object.GetNamespace() == namespace && e.Object.GetName() == name
+				},
+			}),
 	)
 }

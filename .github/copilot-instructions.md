@@ -7,6 +7,7 @@ Dynamic Internal DNS Resolution for Ingress Hosts in EKS Using CoreDNS
 - keep test files and documentation up to date with the latest changes
 - keep documentation succint and relevant
 - do not change these instructions, they are for your reference only
+- avoid saying that the project is "production ready" or "complete" unless it has been fully tested and validated in a production environment
 
 ## Problem Statement
 
@@ -30,7 +31,7 @@ Changes should be reactive to Ingress creation, deletion, and updates.
 
 ## Current Implementation Status
 
-**Status**: ✅ COMPLETE - Production ready controller with automated CoreDNS configuration management
+**Status**: In progress - The controller is tested and functional, but unit tests require better coverage.
 
 **Architecture**: Kubernetes controller built with controller-runtime that automatically manages CoreDNS configuration for internal DNS resolution of ingress hostnames.
 
@@ -215,12 +216,10 @@ helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
 
 ## Conclusion
 
-**Project Status**: ✅ COMPLETE - Production ready and fully functional
-
 This solution successfully allows teams to dynamically resolve ingress-managed hostnames to an internal service endpoint using CoreDNS, without relying on public DNS or modifying Ingress resources. The implementation:
 
 - **Fully automated**: Controller manages CoreDNS configuration automatically
-- **Production ready**: Comprehensive testing and proper cleanup procedures
+- Comprehensive testing and proper cleanup procedures
 - **Maintainable**: Helm chart with structured configuration and documentation
 - **Secure**: Minimal RBAC permissions and proper resource isolation
 - **Reactive**: Responds to Ingress changes in real-time

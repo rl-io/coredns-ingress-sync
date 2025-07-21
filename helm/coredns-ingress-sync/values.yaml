@@ -70,18 +70,7 @@ controller:
     key: "dynamic.server"
   
   # Environment variables (for advanced configuration)
-  env:
-    # These are typically managed by the chart values above
-    # but can be overridden if needed
-    INGRESS_CLASS: "{{ .Values.controller.ingressClass }}"
-    TARGET_CNAME: "{{ .Values.controller.targetCname }}"
-    LOG_LEVEL: "{{ .Values.controller.logLevel }}"
-    LEADER_ELECTION_ENABLED: "{{ .Values.leaderElection.enabled }}"
-    COREDNS_NAMESPACE: "{{ .Values.coreDNS.namespace }}"
-    DYNAMIC_CONFIGMAP_NAME: "{{ .Values.controller.dynamicConfigMap.name }}"
-    DYNAMIC_CONFIG_KEY: "{{ .Values.controller.dynamicConfigMap.key }}"
-    COREDNS_CONFIGMAP_NAME: "{{ .Values.coreDNS.configMapName }}"
-    COREDNS_AUTO_CONFIGURE: "{{ .Values.coreDNS.autoConfigure }}"
+  env: {}
 
 # RBAC configuration
 rbac:

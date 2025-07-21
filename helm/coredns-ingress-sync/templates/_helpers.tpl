@@ -61,12 +61,3 @@ Create the name of the service account to use
 {{- end }}
 {{- end }}
 
-{{/*
-Create environment variables for the controller
-*/}}
-{{- define "coredns-ingress-sync.env" -}}
-{{- range $key, $value := .Values.controller.env }}
-- name: {{ $key }}
-  value: {{ tpl $value $ | quote }}
-{{- end }}
-{{- end }}

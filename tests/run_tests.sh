@@ -42,6 +42,11 @@ show_usage() {
     echo "  $0 --all --coverage # Run all tests with coverage"
     echo "  $0 -i -e           # Run integration and e2e tests"
     echo ""
+    echo "For local multi-version Kubernetes testing:"
+    echo "  make kind-test-all-versions     # Test all supported K8s versions"
+    echo "  make kind-test-version K8S_VERSION=1.29.4  # Test specific version"
+    echo "  See tests/kind/README.md for details"
+    echo ""
 }
 
 # Parse command line arguments

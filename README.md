@@ -19,15 +19,17 @@ This has been tested to work with [ingress-nginx](https://github.com/kubernetes/
 - **�️ Defensive Configuration**: Protects against external configuration drift (Terraform-compatible)
 - **♻️ Clean Uninstall**: Automatic cleanup with proper Helm hooks
 - **🔐 Secure**: Minimal RBAC permissions with namespace isolation
-- **� Production Ready**: Leader election, health checks, comprehensive testing
+- **� Leader election, health checks, comprehensive testing
 
 ## Quick Start
 
 ### Prerequisites
 
-- Kubernetes cluster (1.19+) with CoreDNS
+- Kubernetes cluster (1.25+) with CoreDNS
 - Helm 3.x
 - Ingress controller (nginx recommended)
+
+> **Note**: Built and tested with Kubernetes client libraries v0.33.3. Compatible with Kubernetes 1.25+ due to client-go's backward compatibility.
 
 ### Installation
 

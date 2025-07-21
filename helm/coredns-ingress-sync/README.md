@@ -7,16 +7,18 @@ This Helm chart deploys the CoreDNS Dynamic Internal Ingress Controller, which a
 - ✅ **Automatic CoreDNS Configuration**: Patches CoreDNS ConfigMap with import statement
 - ✅ **Automatic Cleanup**: Removes import statement when uninstalled
 - ✅ **Secure Deployment**: Non-root user, read-only filesystem, minimal privileges
-- ✅ **Production Ready**: RBAC, resource limits, security contexts
+- ✅ **Security Best Practices**: RBAC, resource limits, security contexts
 - ✅ **Configurable**: Support for multiple zones and environments
 - ✅ **Lightweight**: Minimal resource usage and no persistent storage required
 
 ## Prerequisites
 
-- Kubernetes 1.19+
+- Kubernetes 1.25+
 - Helm 3.0+
 - CoreDNS deployed in your cluster (standard in most Kubernetes distributions)
 - RBAC enabled
+
+> **Note**: Built with Kubernetes client libraries v0.33.3. Compatible with Kubernetes 1.25+ due to client-go's backward compatibility.
 
 ## Installation
 
