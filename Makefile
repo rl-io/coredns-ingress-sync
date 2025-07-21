@@ -268,6 +268,36 @@ kind-setup: kind-create kind-load ## Set up complete Kind environment
 	kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
 	kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
 
+##@ Kind Multi-Version Testing (Local Only)
+.PHONY: kind-test-all-versions
+kind-test-all-versions: ## Test controller against all supported Kubernetes versions
+	./tests/kind/test-k8s-versions.sh
+
+.PHONY: kind-test-version
+kind-test-version: ## Test specific Kubernetes version (usage: make kind-test-version K8S_VERSION=1.29.4)
+	@if [ -z "$(K8S_VERSION)" ]; then \
+		echo "Usage: make kind-test-version K8S_VERSION=1.29.4"; \
+		./tests/kind/test-k8s-versions.sh --list; \
+		exit 1; \
+	fi
+	./tests/kind/test-k8s-versions.sh --version $(K8S_VERSION)
+
+.PHONY: kind-test-latest
+kind-test-latest: ## Test latest supported Kubernetes version
+	./tests/kind/test-k8s-versions.sh --version 1.30.0
+
+.PHONY: kind-test-oldest
+kind-test-oldest: ## Test oldest supported Kubernetes version
+	./tests/kind/test-k8s-versions.sh --version 1.25.16
+
+.PHONY: kind-test-cleanup
+kind-test-cleanup: ## Clean up all KIND test clusters
+	./tests/kind/test-k8s-versions.sh --cleanup
+
+.PHONY: kind-test-list
+kind-test-list: ## List supported Kubernetes versions for testing
+	./tests/kind/test-k8s-versions.sh --list
+
 ##@ Development Workflow
 .PHONY: dev-tools
 dev-tools: ## Install development tools (Go linters, security scanners)
