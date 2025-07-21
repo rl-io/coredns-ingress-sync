@@ -18,3 +18,23 @@ keywords:
   - internal
 annotations:
   category: Infrastructure
+  # Helm chart specific annotations
+  artifacthub.io/containsSecurityUpdates: "false"
+  artifacthub.io/prerelease: "false"
+  artifacthub.io/license: MIT
+  artifacthub.io/operator: "false"
+  artifacthub.io/signKey: |
+    fingerprint: 2C8867F3A47F49C5069CAC8806A35E6C6AE39C0E
+    url: https://keybase.io/rl-io/pgp_keys.asc
+  artifacthub.io/links: |
+    - name: GitHub Repository
+      url: https://github.com/rl-io/coredns-ingress-sync
+    - name: Installation Guide
+      url: https://github.com/rl-io/coredns-ingress-sync#installation
+    - name: Helm Chart Installation
+      url: https://github.com/rl-io/coredns-ingress-sync/blob/main/helm/coredns-ingress-sync/README.md#installation
+  # OCI/Registry hints  
+  org.opencontainers.image.title: "CoreDNS Ingress Sync Helm Chart"
+  org.opencontainers.image.description: "Kubernetes controller for dynamic CoreDNS configuration based on Ingress resources"
+  org.opencontainers.image.vendor: "rl-io"
+  org.opencontainers.image.licenses: "MIT"
