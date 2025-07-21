@@ -71,15 +71,15 @@ jobs:
         echo "Chart file: $CHART_FILE"
         
         # Push to GitHub Packages (OCI format)
-        # Using the repository owner/name structure like Docker images
-        echo "Pushing chart to oci://${REGISTRY}/rl-io..."
+        # Use charts subdirectory to avoid collision with Docker image
+        echo "Pushing chart to oci://${REGISTRY}/rl-io/charts..."
         
-        # Try the push with more verbose output
-        helm push "$CHART_FILE" oci://${REGISTRY}/rl-io --debug || {
+        # Try the push with charts subdirectory to separate from Docker images
+        helm push "$CHART_FILE" oci://${REGISTRY}/rl-io/charts --debug || {
           echo "Push failed. Trying alternative URL format..."
-          helm push "$CHART_FILE" oci://${REGISTRY}/rl-io/charts --debug || {
-            echo "Alternative format also failed. Trying with full repository name..."
-            helm push "$CHART_FILE" oci://${REGISTRY}/rl-io/${CHART_NAME} --debug
+          helm push "$CHART_FILE" oci://${REGISTRY}/rl-io/helm-charts --debug || {
+            echo "Alternative format also failed. Trying with original format..."
+            helm push "$CHART_FILE" oci://${REGISTRY}/rl-io --debug
           }
         }
         
@@ -89,9 +89,12 @@ jobs:
       run: |
         echo "Verifying chart was pushed successfully..."
         # Try to show the chart (this will fail gracefully if not available)
-        helm show chart oci://${REGISTRY}/rl-io/${CHART_NAME} || {
-          echo "Chart not found at oci://${REGISTRY}/rl-io/${CHART_NAME}, trying other locations..."
-          helm show chart oci://${REGISTRY}/rl-io/charts/${CHART_NAME} || {
-            echo "Chart verification failed, but push may have succeeded. Check the GitHub Packages page."
+        helm show chart oci://${REGISTRY}/rl-io/charts/${CHART_NAME} || {
+          echo "Chart not found at oci://${REGISTRY}/rl-io/charts/${CHART_NAME}, trying other locations..."
+          helm show chart oci://${REGISTRY}/rl-io/helm-charts/${CHART_NAME} || {
+            echo "Chart not found at helm-charts location, trying root..."
+            helm show chart oci://${REGISTRY}/rl-io/${CHART_NAME} || {
+              echo "Chart verification failed, but push may have succeeded. Check the GitHub Packages page."
+            }
           }
         }
