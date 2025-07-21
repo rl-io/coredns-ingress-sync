@@ -110,11 +110,21 @@ jobs:
       run: go tool cover -html=coverage.out -o coverage.html
       
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v5
       with:
-        file: ./coverage.out
         flags: unittests
         name: codecov-umbrella
+        slug: rl-io/coredns-ingress-sync
+        token: ${{ secrets.CODECOV_TOKEN }}
+        fail_ci_if_error: false
+        
+    - name: Coverage upload status
+      if: env.CODECOV_TOKEN == ''
+      run: |
+        echo "ℹ️  Codecov token not configured - coverage upload skipped"
+        echo "Coverage report still generated and available in artifacts"
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         
     - name: Upload coverage reports
       uses: actions/upload-artifact@v4
