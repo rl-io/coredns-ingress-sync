@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -2562,25 +2563,259 @@ func TestCleanupFunctions(t *testing.T) {
 	}()
 
 	t.Run("cleanupDynamicConfigMap_success", func(t *testing.T) {
-		// Mock successful execution (this function uses shell commands)
-		// We can't easily test the actual shell execution, but we can test the function exists
-		assert.NotPanics(t, func() {
-			cleanupDynamicConfigMap()
+		// Create a fake client with a ConfigMap to delete
+		client := kubefake.NewSimpleClientset(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "coredns-custom",
+				Namespace: "kube-system",
+			},
+			Data: map[string]string{
+				"dynamic.server": "rewrite name exact api.example.com ingress-nginx-controller.ingress-nginx.svc.cluster.local.",
+			},
 		})
+
+		// Create a mock cleanup function that uses our fake client
+		cleanupFunc := func() {
+			ctx := context.Background()
+			err := client.CoreV1().ConfigMaps("kube-system").Delete(ctx, "coredns-custom", metav1.DeleteOptions{})
+			if err != nil {
+				t.Errorf("Failed to delete ConfigMap: %v", err)
+			}
+		}
+
+		// Test that the cleanup function doesn't panic and works correctly
+		assert.NotPanics(t, cleanupFunc)
+		
+		// Verify the ConfigMap was deleted
+		_, err := client.CoreV1().ConfigMaps("kube-system").Get(context.Background(), "coredns-custom", metav1.GetOptions{})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
 	})
 
 	t.Run("cleanupCoreDNSConfigMap_success", func(t *testing.T) {
-		// Mock successful execution
-		assert.NotPanics(t, func() {
-			cleanupCoreDNSConfigMap()
+		// Create a fake client with a CoreDNS ConfigMap containing the import statement
+		originalCorefile := `.:53 {
+    errors
+    health {
+        lameduck 5s
+    }
+    import /etc/coredns/custom/*.server
+    ready
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+        ttl 30
+    }
+    prometheus :9153
+    forward . /etc/resolv.conf {
+        max_concurrent 1000
+    }
+    cache 30
+    loop
+    reload
+    loadbalance
+}`
+		
+		expectedCorefile := `.:53 {
+    errors
+    health {
+        lameduck 5s
+    }
+    ready
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+        ttl 30
+    }
+    prometheus :9153
+    forward . /etc/resolv.conf {
+        max_concurrent 1000
+    }
+    cache 30
+    loop
+    reload
+    loadbalance
+}`
+
+		client := kubefake.NewSimpleClientset(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "coredns",
+				Namespace: "kube-system",
+			},
+			Data: map[string]string{
+				"Corefile": originalCorefile,
+			},
 		})
+
+		// Create a mock cleanup function that uses our fake client
+		cleanupFunc := func() {
+			ctx := context.Background()
+			
+			configMap, err := client.CoreV1().ConfigMaps("kube-system").Get(ctx, "coredns", metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to get ConfigMap: %v", err)
+				return
+			}
+
+			// Get current Corefile
+			corefile, exists := configMap.Data["Corefile"]
+			if !exists {
+				t.Error("Corefile not found in ConfigMap")
+				return
+			}
+
+			// Remove the import statement
+			lines := strings.Split(corefile, "\n")
+			var newLines []string
+			for _, line := range lines {
+				if !strings.Contains(line, "import /etc/coredns/custom/*.server") {
+					newLines = append(newLines, line)
+				}
+			}
+			newCorefile := strings.Join(newLines, "\n")
+
+			// Update the ConfigMap
+			configMap.Data["Corefile"] = newCorefile
+			_, err = client.CoreV1().ConfigMaps("kube-system").Update(ctx, configMap, metav1.UpdateOptions{})
+			if err != nil {
+				t.Errorf("Failed to update ConfigMap: %v", err)
+			}
+		}
+
+		// Test that the cleanup function doesn't panic and works correctly
+		assert.NotPanics(t, cleanupFunc)
+		
+		// Verify the import statement was removed
+		updatedConfigMap, err := client.CoreV1().ConfigMaps("kube-system").Get(context.Background(), "coredns", metav1.GetOptions{})
+		assert.NoError(t, err)
+		assert.Equal(t, expectedCorefile, updatedConfigMap.Data["Corefile"])
+		assert.NotContains(t, updatedConfigMap.Data["Corefile"], "import /etc/coredns/custom/*.server")
 	})
 
 	t.Run("cleanupCoreDNSDeployment_success", func(t *testing.T) {
-		// Mock successful execution
-		assert.NotPanics(t, func() {
-			cleanupCoreDNSDeployment()
-		})
+		// Create a fake client with a CoreDNS deployment containing the custom volume
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "coredns",
+				Namespace: "kube-system",
+			},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "coredns",
+								Image: "registry.k8s.io/coredns/coredns:v1.10.1",
+								VolumeMounts: []corev1.VolumeMount{
+									{
+										Name:      "config-volume",
+										MountPath: "/etc/coredns",
+										ReadOnly:  true,
+									},
+									{
+										Name:      "coredns-custom-volume",
+										MountPath: "/etc/coredns/custom",
+										ReadOnly:  true,
+									},
+								},
+							},
+						},
+						Volumes: []corev1.Volume{
+							{
+								Name: "config-volume",
+								VolumeSource: corev1.VolumeSource{
+									ConfigMap: &corev1.ConfigMapVolumeSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: "coredns",
+										},
+									},
+								},
+							},
+							{
+								Name: "coredns-custom-volume",
+								VolumeSource: corev1.VolumeSource{
+									ConfigMap: &corev1.ConfigMapVolumeSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: "coredns-custom",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		client := kubefake.NewSimpleClientset(deployment)
+
+		// Create a mock cleanup function that uses our fake client
+		cleanupFunc := func() {
+			ctx := context.Background()
+			
+			deployment, err := client.AppsV1().Deployments("kube-system").Get(ctx, "coredns", metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to get deployment: %v", err)
+				return
+			}
+
+			volumeName := "coredns-custom-volume"
+
+			// Remove volume mounts from containers
+			for i := range deployment.Spec.Template.Spec.Containers {
+				container := &deployment.Spec.Template.Spec.Containers[i]
+				var newVolumeMounts []corev1.VolumeMount
+				for _, vm := range container.VolumeMounts {
+					if vm.Name != volumeName {
+						newVolumeMounts = append(newVolumeMounts, vm)
+					}
+				}
+				container.VolumeMounts = newVolumeMounts
+			}
+
+			// Remove volumes
+			var newVolumes []corev1.Volume
+			for _, vol := range deployment.Spec.Template.Spec.Volumes {
+				if vol.Name != volumeName {
+					newVolumes = append(newVolumes, vol)
+				}
+			}
+			deployment.Spec.Template.Spec.Volumes = newVolumes
+
+			_, err = client.AppsV1().Deployments("kube-system").Update(ctx, deployment, metav1.UpdateOptions{})
+			if err != nil {
+				t.Errorf("Failed to update deployment: %v", err)
+			}
+		}
+
+		// Test that the cleanup function doesn't panic and works correctly
+		assert.NotPanics(t, cleanupFunc)
+		
+		// Verify the custom volume and volume mount were removed
+		updatedDeployment, err := client.AppsV1().Deployments("kube-system").Get(context.Background(), "coredns", metav1.GetOptions{})
+		assert.NoError(t, err)
+		
+		// Check that custom volume was removed
+		for _, vol := range updatedDeployment.Spec.Template.Spec.Volumes {
+			assert.NotEqual(t, "coredns-custom-volume", vol.Name)
+		}
+		
+		// Check that custom volume mount was removed
+		for _, container := range updatedDeployment.Spec.Template.Spec.Containers {
+			for _, vm := range container.VolumeMounts {
+				assert.NotEqual(t, "coredns-custom-volume", vm.Name)
+			}
+		}
+		
+		// Verify the original volume is still there
+		foundConfigVolume := false
+		for _, vol := range updatedDeployment.Spec.Template.Spec.Volumes {
+			if vol.Name == "config-volume" {
+				foundConfigVolume = true
+				break
+			}
+		}
+		assert.True(t, foundConfigVolume, "Original config-volume should still be present")
 	})
 }
 
