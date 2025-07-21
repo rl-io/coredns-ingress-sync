@@ -1,0 +1,44 @@
+# Production values for coredns-ingress-sync
+replicaCount: 2
+
+image:
+  repository: ghcr.io/rl-io/coredns-ingress-sync
+  pullPolicy: Always
+  tag: "v1.0.0"
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 128Mi
+
+controller:
+  ingressClass: "nginx"
+  targetCname: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+  logLevel: "info"
+
+coreDNS:
+  autoConfigure: true
+
+nodeSelector:
+  kubernetes.io/arch: amd64
+
+tolerations:
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: "Exists"
+    effect: "NoSchedule"
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - coredns-ingress-sync
+        topologyKey: kubernetes.io/hostname

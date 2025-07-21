@@ -1,0 +1,74 @@
+# Commitlint configuration for conventional commits
+# https://commitlint.js.org/
+
+extends:
+  - '@commitlint/config-conventional'
+
+rules:
+  # Type must be one of the specified values
+  type-enum:
+    - 2
+    - always
+    - 
+      - build
+      - chore
+      - ci
+      - docs
+      - feat
+      - fix
+      - perf
+      - refactor
+      - revert
+      - style
+      - test
+
+  # Subject must not be empty
+  subject-empty:
+    - 2
+    - never
+
+  # Subject must not end with a period
+  subject-full-stop:
+    - 2
+    - never
+    - '.'
+
+  # Subject must be lowercase
+  subject-case:
+    - 2
+    - always
+    - lower-case
+
+  # Header must not be longer than 72 characters
+  header-max-length:
+    - 2
+    - always
+    - 72
+
+  # Body must have a leading blank line
+  body-leading-blank:
+    - 1
+    - always
+
+  # Footer must have a leading blank line
+  footer-leading-blank:
+    - 1
+    - always
+
+  # Scope must be lowercase
+  scope-case:
+    - 2
+    - always
+    - lower-case
+
+  # Allow these scopes
+  scope-enum:
+    - 1
+    - always
+    - 
+      - controller
+      - helm
+      - ci
+      - deps
+      - docs
+      - test

@@ -1,0 +1,19 @@
+apiVersion: v2
+name: coredns-ingress-sync
+description: A Helm chart for CoreDNS Dynamic Internal Ingress Controller
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+home: https://github.com/rl-io/coredns-ingress-sync
+sources:
+  - https://github.com/rl-io/coredns-ingress-sync
+maintainers:
+  - name: rl-io
+keywords:
+  - coredns
+  - dns
+  - ingress
+  - kubernetes
+  - internal
+annotations:
+  category: Infrastructure

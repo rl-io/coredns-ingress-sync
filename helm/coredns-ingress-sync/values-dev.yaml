@@ -1,0 +1,23 @@
+# Development values for coredns-ingress-sync
+replicaCount: 1
+
+image:
+  repository: coredns-ingress-sync
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+controller:
+  ingressClass: "nginx"
+  targetCname: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+  logLevel: "debug"
+
+coreDNS:
+  autoConfigure: true

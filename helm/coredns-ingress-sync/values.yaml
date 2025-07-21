@@ -1,0 +1,94 @@
+# Default values for coredns-ingress-sync
+replicaCount: 1
+
+image:
+  repository: ghcr.io/rl-io/coredns-ingress-sync
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 65534
+  runAsNonRoot: true
+  runAsUser: 65534
+  runAsGroup: 65534
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+    - ALL
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# CoreDNS configuration
+coreDNS:
+  # Automatically configure CoreDNS for dynamic DNS resolution
+  autoConfigure: true
+  # Namespace where CoreDNS is deployed
+  namespace: kube-system
+  # ConfigMap name
+  configMapName: coredns
+
+# Controller configuration
+controller:
+  # Ingress class to watch
+  ingressClass: "nginx"
+  # Target CNAME for DNS resolution
+  targetCname: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+  # Log level
+  logLevel: "info"
+  # Dynamic ConfigMap configuration
+  dynamicConfigMap:
+    name: "coredns-custom"
+    key: "dynamic.server"
+  
+  # Environment variables (for advanced configuration)
+  env:
+    # These are typically managed by the chart values above
+    # but can be overridden if needed
+    INGRESS_CLASS: "{{ .Values.controller.ingressClass }}"
+    TARGET_CNAME: "{{ .Values.controller.targetCname }}"
+    LOG_LEVEL: "{{ .Values.controller.logLevel }}"
+    LEADER_ELECTION_ENABLED: "{{ .Values.leaderElection.enabled }}"
+    COREDNS_NAMESPACE: "{{ .Values.coreDNS.namespace }}"
+    DYNAMIC_CONFIGMAP_NAME: "{{ .Values.controller.dynamicConfigMap.name }}"
+    DYNAMIC_CONFIG_KEY: "{{ .Values.controller.dynamicConfigMap.key }}"
+    COREDNS_CONFIGMAP_NAME: "{{ .Values.coreDNS.configMapName }}"
+    COREDNS_AUTO_CONFIGURE: "{{ .Values.coreDNS.autoConfigure }}"
+
+# RBAC configuration
+rbac:
+  # Specifies whether RBAC resources should be created
+  create: true
+
+# Leader election configuration
+leaderElection:
+  # Enable leader election for high availability
+  enabled: true

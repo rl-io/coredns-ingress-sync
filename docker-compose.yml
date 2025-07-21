@@ -1,0 +1,77 @@
+# Docker Compose for local development and testing
+version: '3.8'
+
+services:
+  # Local Kind cluster for testing
+  kind-registry:
+    image: registry:2
+    ports:
+      - "5001:5000"
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    volumes:
+      - registry-data:/var/lib/registry
+    restart: unless-stopped
+
+  # Development container for building and testing
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    volumes:
+      - .:/app
+      - go-cache:/go/pkg/mod
+    working_dir: /app
+    environment:
+      - CGO_ENABLED=0
+      - GOOS=linux
+      - GOARCH=amd64
+    command: tail -f /dev/null
+    
+  # Test runner container
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    volumes:
+      - .:/app
+      - go-cache:/go/pkg/mod
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /app
+    environment:
+      - CGO_ENABLED=0
+      - KUBECONFIG=/app/.kube/config
+    command: ["./tests/run_tests.sh", "--all"]
+    depends_on:
+      - kind-registry
+      
+  # Production image for testing
+  controller:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: coredns-ingress-sync:local
+    environment:
+      - INGRESS_CLASS=nginx
+      - TARGET_CNAME=ingress-nginx-controller.ingress-nginx.svc.cluster.local.
+      - COREDNS_NAMESPACE=kube-system
+      - DYNAMIC_CONFIGMAP_NAME=coredns-custom
+      - DYNAMIC_CONFIG_KEY=dynamic.server
+    restart: unless-stopped
+    
+  # Security scanner
+  security-scan:
+    image: aquasec/trivy:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - trivy-cache:/root/.cache/trivy
+    command: ["image", "--exit-code", "1", "--severity", "HIGH,CRITICAL", "coredns-ingress-sync:local"]
+    depends_on:
+      - controller
+
+volumes:
+  registry-data:
+  go-cache:
+  trivy-cache:

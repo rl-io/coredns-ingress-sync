@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+.github/
+
+# Documentation
+README.md
+*.md
+
+# Tests
+tests/
+test_results/
+*_test.go
+
+# Build artifacts
+controller
+*.out
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Docker
+Dockerfile.*
+docker-compose.yml
+
+# CI/CD
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Deployment configs (these should be separate)
+deploy/
+k8s/
+
+# Local development
+.env
+.env.local

@@ -1,0 +1,23 @@
+# Test values for local development and testing
+# Inherits from values.yaml but overrides image to use locally built version
+
+image:
+  repository: coredns-ingress-sync
+  pullPolicy: Never  # Force use of local image, don't pull from registry
+  tag: "latest"
+
+# Enable all features for comprehensive testing
+coreDNS:
+  autoConfigure: true
+  namespace: kube-system
+  configMapName: coredns
+
+controller:
+  ingressClass: nginx
+  targetCNAME: ingress-nginx-controller.ingress-nginx.svc.cluster.local.
+  dynamicConfigMap:
+    name: coredns-custom
+    key: dynamic.server
+
+# Use single replica for testing
+replicaCount: 1

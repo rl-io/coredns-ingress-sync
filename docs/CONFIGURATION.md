@@ -1,0 +1,254 @@
+# Configuration Guide
+
+This document provides detailed configuration options for the coredns-ingress-sync controller.
+
+## Helm Chart Configuration
+
+The controller is configured through Helm values. All configuration options are available in `helm/coredns-ingress-sync/values.yaml`.
+
+### Controller Configuration
+
+```yaml
+controller:
+  # Ingress class to watch for changes
+  ingressClass: "nginx"
+  
+  # Target service for DNS resolution (where ingress hostnames should resolve)
+  targetCNAME: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+  
+  # Dynamic ConfigMap configuration
+  dynamicConfigMap:
+    name: "coredns-custom"
+    key: "dynamic.server"
+  
+  # Leader election (for multiple replicas)
+  leaderElection:
+    enabled: true
+    
+  # Logging configuration
+  logLevel: "info"
+```
+
+### CoreDNS Integration
+
+```yaml
+coreDNS:
+  # Automatically configure CoreDNS (recommended)
+  autoConfigure: true
+  
+  # CoreDNS namespace
+  namespace: "kube-system"
+  
+  # CoreDNS ConfigMap name
+  configMapName: "coredns"
+```
+
+### Resource Configuration
+
+```yaml
+# Pod resource limits and requests
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+# Replica count (supports leader election)
+replicaCount: 1
+
+# Security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+
+podSecurityContext:
+  fsGroup: 65534
+  runAsGroup: 65534
+  runAsNonRoot: true
+  runAsUser: 65534
+```
+
+## Environment Variables
+
+The controller supports configuration through environment variables (set via Helm values):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `INGRESS_CLASS` | IngressClass to watch | `nginx` |
+| `TARGET_CNAME` | Target service for DNS resolution | `ingress-nginx-controller.ingress-nginx.svc.cluster.local.` |
+| `COREDNS_NAMESPACE` | CoreDNS namespace | `kube-system` |
+| `COREDNS_CONFIGMAP_NAME` | CoreDNS ConfigMap name | `coredns` |
+| `DYNAMIC_CONFIGMAP_NAME` | Dynamic ConfigMap name | `coredns-custom` |
+| `DYNAMIC_CONFIG_KEY` | Key in dynamic ConfigMap | `dynamic.server` |
+| `LEADER_ELECTION_ENABLED` | Enable leader election | `true` |
+| `LOG_LEVEL` | Logging level | `info` |
+| `COREDNS_AUTO_CONFIGURE` | Auto-configure CoreDNS | `true` |
+
+## Custom Configuration Examples
+
+### Multiple Ingress Classes
+
+To watch multiple ingress classes, deploy multiple instances:
+
+```bash
+# Install for nginx ingress class
+helm install coredns-ingress-sync-nginx ./helm/coredns-ingress-sync \
+  --set controller.ingressClass=nginx \
+  --set controller.dynamicConfigMap.name=coredns-nginx \
+  --namespace coredns-ingress-sync \
+  --create-namespace
+
+# Install for traefik ingress class
+helm install coredns-ingress-sync-traefik ./helm/coredns-ingress-sync \
+  --set controller.ingressClass=traefik \
+  --set controller.dynamicConfigMap.name=coredns-traefik \
+  --set controller.targetCNAME=traefik.traefik.svc.cluster.local. \
+  --namespace coredns-ingress-sync
+```
+
+### Custom Target Service
+
+```yaml
+# values-custom.yaml
+controller:
+  targetCNAME: "my-ingress-controller.my-namespace.svc.cluster.local."
+  ingressClass: "my-ingress-class"
+```
+
+### High Availability Setup
+
+```yaml
+# values-ha.yaml
+replicaCount: 3
+
+controller:
+  leaderElection:
+    enabled: true
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 20m
+    memory: 128Mi
+
+# Pod anti-affinity for spread across nodes
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: coredns-ingress-sync
+        topologyKey: kubernetes.io/hostname
+```
+
+### Resource Constraints
+
+For clusters with limited resources:
+
+```yaml
+# values-minimal.yaml
+resources:
+  limits:
+    cpu: 50m
+    memory: 64Mi
+  requests:
+    cpu: 5m
+    memory: 32Mi
+
+# Disable auto-configuration if CoreDNS management is handled externally
+coreDNS:
+  autoConfigure: false
+```
+
+### Development/Testing Configuration
+
+```yaml
+# values-dev.yaml
+controller:
+  logLevel: "debug"
+
+# Use local image
+image:
+  tag: "latest"
+  pullPolicy: "Never"
+
+# Single replica for testing
+replicaCount: 1
+```
+
+## Validation
+
+After configuration changes, validate the setup:
+
+```bash
+# Check controller status
+kubectl get pods -n coredns-ingress-sync
+kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync
+
+# Verify CoreDNS configuration
+kubectl get configmap coredns -n kube-system -o yaml | grep -A 5 "import"
+
+# Check dynamic ConfigMap
+kubectl get configmap coredns-custom -n kube-system -o yaml
+
+# Test DNS resolution
+kubectl run test-pod --rm -i --tty --image=busybox -- nslookup your-hostname.example.com
+```
+
+## Configuration Best Practices
+
+1. **Resource Limits**: Always set appropriate resource limits based on your cluster size
+2. **Leader Election**: Enable leader election for production deployments with multiple replicas
+3. **Security Context**: Use the provided security context for least privilege
+4. **Monitoring**: Configure log level appropriately (`info` for production, `debug` for troubleshooting)
+5. **Backup**: Keep copies of your custom values files in version control
+6. **Testing**: Test configuration changes in a non-production environment first
+
+## Troubleshooting Configuration
+
+Common configuration issues and solutions:
+
+### Controller Not Starting
+
+Check resource constraints and RBAC permissions:
+
+```bash
+kubectl describe pod -n coredns-ingress-sync -l app.kubernetes.io/name=coredns-ingress-sync
+kubectl get events -n coredns-ingress-sync
+```
+
+### CoreDNS Integration Issues
+
+Verify CoreDNS configuration:
+
+```bash
+# Check if import statement was added
+kubectl get configmap coredns -n kube-system -o yaml | grep "import /etc/coredns/custom"
+
+# Check volume mount
+kubectl get deployment coredns -n kube-system -o yaml | grep -A 10 "volumeMounts"
+```
+
+### DNS Resolution Not Working
+
+Verify the complete configuration chain:
+
+```bash
+# 1. Check ingress is being processed
+kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync | grep "Successfully updated"
+
+# 2. Check dynamic ConfigMap has content
+kubectl get configmap coredns-custom -n kube-system -o yaml
+
+# 3. Test DNS resolution from within cluster
+kubectl run test-pod --rm -i --tty --image=busybox -- nslookup your-hostname.example.com
+```
