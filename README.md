@@ -29,7 +29,7 @@ This has been tested to work with [ingress-nginx](https://github.com/kubernetes/
 - Helm 3.x
 - Ingress controller (nginx recommended)
 
-> **Note**: Built and tested with Kubernetes client libraries v0.33.3. Compatible with Kubernetes 1.25+ due to client-go's backward compatibility.
+> **Note**: Built and tested with Kubernetes client libraries v1.33.3. Compatible with Kubernetes 1.25+ due to client-go's backward compatibility.
 
 ### Installation
 
