@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 
@@ -14,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -1908,4 +1911,1350 @@ func TestMultipleControllerCoordination(t *testing.T) {
 	})
 }
 
-// ...existing code...
+// Test isTargetIngress function for proper ingress filtering
+func TestIsTargetIngress(t *testing.T) {
+	tests := []struct {
+		name     string
+		obj      client.Object
+		expected bool
+	}{
+		{
+			name: "valid nginx ingress",
+			obj: &networkingv1.Ingress{
+				Spec: networkingv1.IngressSpec{
+					IngressClassName: stringPtr("nginx"),
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "different ingress class",
+			obj: &networkingv1.Ingress{
+				Spec: networkingv1.IngressSpec{
+					IngressClassName: stringPtr("traefik"),
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "nil ingress class",
+			obj: &networkingv1.Ingress{
+				Spec: networkingv1.IngressSpec{
+					IngressClassName: nil,
+				},
+			},
+			expected: false,
+		},
+		{
+			name:     "non-ingress object",
+			obj:      &corev1.Service{},
+			expected: false,
+		},
+	}
+
+	// Save original and set test value
+	origClass := ingressClass
+	ingressClass = "nginx"
+	defer func() { ingressClass = origClass }()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isTargetIngress(tt.obj)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Test extractHostnames function comprehensively
+func TestExtractHostnamesComprehensive(t *testing.T) {
+	// Save original and set test value
+	origClass := ingressClass
+	ingressClass = "nginx"
+	defer func() { ingressClass = origClass }()
+
+	tests := []struct {
+		name      string
+		ingresses []networkingv1.Ingress
+		expected  []string
+	}{
+		{
+			name: "single ingress with multiple hosts",
+			ingresses: []networkingv1.Ingress{
+				{
+					Spec: networkingv1.IngressSpec{
+						IngressClassName: stringPtr("nginx"),
+						Rules: []networkingv1.IngressRule{
+							{Host: "api.example.com"},
+							{Host: "web.example.com"},
+						},
+					},
+				},
+			},
+			expected: []string{"api.example.com", "web.example.com"},
+		},
+		{
+			name: "multiple ingresses with unique hosts",
+			ingresses: []networkingv1.Ingress{
+				{
+					Spec: networkingv1.IngressSpec{
+						IngressClassName: stringPtr("nginx"),
+						Rules: []networkingv1.IngressRule{
+							{Host: "api.example.com"},
+						},
+					},
+				},
+				{
+					Spec: networkingv1.IngressSpec{
+						IngressClassName: stringPtr("nginx"),
+						Rules: []networkingv1.IngressRule{
+							{Host: "web.example.com"},
+						},
+					},
+				},
+			},
+			expected: []string{"api.example.com", "web.example.com"},
+		},
+		{
+			name: "duplicate hosts across ingresses should deduplicate",
+			ingresses: []networkingv1.Ingress{
+				{
+					Spec: networkingv1.IngressSpec{
+						IngressClassName: stringPtr("nginx"),
+						Rules: []networkingv1.IngressRule{
+							{Host: "api.example.com"},
+						},
+					},
+				},
+				{
+					Spec: networkingv1.IngressSpec{
+						IngressClassName: stringPtr("nginx"),
+						Rules: []networkingv1.IngressRule{
+							{Host: "api.example.com"},
+						},
+					},
+				},
+			},
+			expected: []string{"api.example.com"},
+		},
+		{
+			name: "mixed ingress classes should filter correctly",
+			ingresses: []networkingv1.Ingress{
+				{
+					Spec: networkingv1.IngressSpec{
+						IngressClassName: stringPtr("nginx"),
+						Rules: []networkingv1.IngressRule{
+							{Host: "api.example.com"},
+						},
+					},
+				},
+				{
+					Spec: networkingv1.IngressSpec{
+						IngressClassName: stringPtr("traefik"),
+						Rules: []networkingv1.IngressRule{
+							{Host: "web.example.com"},
+						},
+					},
+				},
+			},
+			expected: []string{"api.example.com"},
+		},
+		{
+			name: "empty hosts should be ignored",
+			ingresses: []networkingv1.Ingress{
+				{
+					Spec: networkingv1.IngressSpec{
+						IngressClassName: stringPtr("nginx"),
+						Rules: []networkingv1.IngressRule{
+							{Host: ""},
+							{Host: "api.example.com"},
+						},
+					},
+				},
+			},
+			expected: []string{"api.example.com"},
+		},
+		{
+			name:      "no ingresses should return empty slice",
+			ingresses: []networkingv1.Ingress{},
+			expected:  nil, // extractHostnames returns nil for empty slice
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractHostnames(tt.ingresses)
+			// Sort for comparison since order doesn't matter
+			sort.Strings(result)
+			sort.Strings(tt.expected)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Test reconciler error handling with comprehensive error scenarios
+func TestIngressReconcilerErrorHandling(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, networkingv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+
+	// Save original values
+	origClass := ingressClass
+	origTargetCNAME := targetCNAME
+	origNamespace := coreDNSNamespace
+	origConfigMapName := coreDNSConfigMapName
+	origDynamicConfigMapName := dynamicConfigMapName
+
+	// Set test values
+	ingressClass = "nginx"
+	targetCNAME = "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+	coreDNSNamespace = "kube-system"
+	coreDNSConfigMapName = "coredns"
+	dynamicConfigMapName = "coredns-custom"
+
+	defer func() {
+		ingressClass = origClass
+		targetCNAME = origTargetCNAME
+		coreDNSNamespace = origNamespace
+		coreDNSConfigMapName = origConfigMapName
+		dynamicConfigMapName = origDynamicConfigMapName
+	}()
+
+	tests := []struct {
+		name           string
+		setupClient    func() client.Client
+		expectError    bool
+		expectRequeue  bool
+	}{
+		{
+			name: "client error when listing ingresses",
+			setupClient: func() client.Client {
+				client := fake.NewClientBuilder().WithScheme(scheme).Build()
+				return &errorClient{Client: client, failOnList: true}
+			},
+			expectError:   true,
+			expectRequeue: true,
+		},
+		{
+			name: "successful reconciliation with no ingresses",
+			setupClient: func() client.Client {
+				return fake.NewClientBuilder().WithScheme(scheme).Build()
+			},
+			expectError:   false,
+			expectRequeue: false,
+		},
+		{
+			name: "configmap creation error",
+			setupClient: func() client.Client {
+				className := "nginx"
+				ingress := &networkingv1.Ingress{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-ingress",
+						Namespace: "default",
+					},
+					Spec: networkingv1.IngressSpec{
+						IngressClassName: &className,
+						Rules: []networkingv1.IngressRule{
+							{Host: "test.example.com"},
+						},
+					},
+				}
+				client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ingress).Build()
+				return &errorClient{Client: client, failOnCreate: true}
+			},
+			expectError:   true,
+			expectRequeue: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reconciler := &IngressReconciler{
+				Client: tt.setupClient(),
+				Scheme: scheme,
+			}
+
+			result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "test-reconcile",
+					Namespace: "default",
+				},
+			})
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			if tt.expectRequeue {
+				assert.Greater(t, result.RequeueAfter.Seconds(), 0.0)
+			}
+		})
+	}
+}
+
+// Mock error client for testing error conditions
+type errorClient struct {
+	client.Client
+	failOnList   bool
+	failOnGet    bool
+	failOnUpdate bool
+	failOnCreate bool
+}
+
+func (c *errorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if c.failOnList {
+		return fmt.Errorf("mock list error")
+	}
+	return c.Client.List(ctx, list, opts...)
+}
+
+func (c *errorClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if c.failOnGet {
+		return fmt.Errorf("mock get error")
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+func (c *errorClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+	if c.failOnUpdate {
+		return fmt.Errorf("mock update error")
+	}
+	return c.Client.Update(ctx, obj, opts...)
+}
+
+func (c *errorClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	if c.failOnCreate {
+		return fmt.Errorf("mock create error")
+	}
+	return c.Client.Create(ctx, obj, opts...)
+}
+
+// Test updateDynamicConfigMap method with error scenarios
+func TestUpdateDynamicConfigMapErrors(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, networkingv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+
+	// Save original values
+	origNamespace := coreDNSNamespace
+	origDynamicConfigMapName := dynamicConfigMapName
+	origDynamicConfigKey := dynamicConfigKey
+
+	// Set test values
+	coreDNSNamespace = "kube-system"
+	dynamicConfigMapName = "coredns-custom"
+	dynamicConfigKey = "dynamic.server"
+
+	defer func() {
+		coreDNSNamespace = origNamespace
+		dynamicConfigMapName = origDynamicConfigMapName
+		dynamicConfigKey = origDynamicConfigKey
+	}()
+
+	tests := []struct {
+		name        string
+		domains     []string
+		hosts       []string
+		setupClient func() client.Client
+		expectError bool
+	}{
+		{
+			name:    "successful config map creation",
+			domains: []string{"example.com"},
+			hosts:   []string{"api.example.com"},
+			setupClient: func() client.Client {
+				return fake.NewClientBuilder().WithScheme(scheme).Build()
+			},
+			expectError: false,
+		},
+		{
+			name:    "successful config map update",
+			domains: []string{"example.com"},
+			hosts:   []string{"api.example.com"},
+			setupClient: func() client.Client {
+				cm := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "coredns-custom",
+						Namespace: "kube-system",
+					},
+					Data: map[string]string{
+						"dynamic.server": "old config",
+					},
+				}
+				return fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build()
+			},
+			expectError: false,
+		},
+		{
+			name:    "client error on create",
+			domains: []string{"example.com"},
+			hosts:   []string{"api.example.com"},
+			setupClient: func() client.Client {
+				client := fake.NewClientBuilder().WithScheme(scheme).Build()
+				return &errorClient{Client: client, failOnCreate: true}
+			},
+			expectError: true,
+		},
+		{
+			name:    "client error on update",
+			domains: []string{"example.com"},
+			hosts:   []string{"api.example.com"},
+			setupClient: func() client.Client {
+				cm := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "coredns-custom",
+						Namespace: "kube-system",
+					},
+					Data: map[string]string{
+						"dynamic.server": "old config",
+					},
+				}
+				client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build()
+				return &errorClient{Client: client, failOnUpdate: true}
+			},
+			expectError: true,
+		},
+		{
+			name:    "client error on get during update path",
+			domains: []string{"example.com"},
+			hosts:   []string{"api.example.com"},
+			setupClient: func() client.Client {
+				// Pre-create a config map so we go to the update path
+				cm := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "coredns-custom",
+						Namespace: "kube-system",
+					},
+					Data: map[string]string{
+						"dynamic.server": "old config",
+					},
+				}
+				client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build()
+				// Make Get fail only - this will cause issues in the update path
+				return &errorClient{Client: client, failOnGet: true}
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reconciler := &IngressReconciler{
+				Client: tt.setupClient(),
+				Scheme: scheme,
+			}
+
+			err := reconciler.updateDynamicConfigMap(context.Background(), tt.domains, tt.hosts)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				
+				// Verify the config map was created/updated correctly
+				cm := &corev1.ConfigMap{}
+				err := reconciler.Client.Get(context.Background(), 
+					client.ObjectKey{Name: "coredns-custom", Namespace: "kube-system"}, cm)
+				assert.NoError(t, err)
+				assert.Contains(t, cm.Data["dynamic.server"], "api.example.com")
+			}
+		})
+	}
+}
+
+// Test ensureCoreDNSImport method error conditions
+func TestEnsureCoreDNSImportErrors(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, networkingv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+
+	// Save original values
+	origNamespace := coreDNSNamespace
+	origConfigMapName := coreDNSConfigMapName
+
+	// Set test values
+	coreDNSNamespace = "kube-system"
+	coreDNSConfigMapName = "coredns"
+
+	defer func() {
+		coreDNSNamespace = origNamespace
+		coreDNSConfigMapName = origConfigMapName
+	}()
+
+	tests := []struct {
+		name        string
+		setupClient func() client.Client
+		expectError bool
+	}{
+		{
+			name: "config map not found",
+			setupClient: func() client.Client {
+				return fake.NewClientBuilder().WithScheme(scheme).Build()
+			},
+			expectError: true,
+		},
+		{
+			name: "client error on get",
+			setupClient: func() client.Client {
+				client := fake.NewClientBuilder().WithScheme(scheme).Build()
+				return &errorClient{Client: client, failOnGet: true}
+			},
+			expectError: true,
+		},
+		{
+			name: "client error on update",
+			setupClient: func() client.Client {
+				cm := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "coredns",
+						Namespace: "kube-system",
+					},
+					Data: map[string]string{
+						"Corefile": `.:53 {
+    errors
+    health
+}`,
+					},
+				}
+				client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build()
+				return &errorClient{Client: client, failOnUpdate: true}
+			},
+			expectError: true,
+		},
+		{
+			name: "successful import addition",
+			setupClient: func() client.Client {
+				cm := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "coredns",
+						Namespace: "kube-system",
+					},
+					Data: map[string]string{
+						"Corefile": `.:53 {
+    errors
+    health
+}`,
+					},
+				}
+				return fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build()
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reconciler := &IngressReconciler{
+				Client: tt.setupClient(),
+				Scheme: scheme,
+			}
+
+			err := reconciler.ensureCoreDNSImport(context.Background())
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// Test utility functions
+func TestUtilityFunctions(t *testing.T) {
+	t.Run("isDevelopment", func(t *testing.T) {
+		// Save original value
+		originalEnv := os.Getenv("DEVELOPMENT_MODE")
+		defer func() {
+			if originalEnv == "" {
+				os.Unsetenv("DEVELOPMENT_MODE")
+			} else {
+				os.Setenv("DEVELOPMENT_MODE", originalEnv)
+			}
+		}()
+
+		// Test development mode enabled
+		os.Setenv("DEVELOPMENT_MODE", "true")
+		assert.True(t, isDevelopment())
+
+		// Test development mode disabled
+		os.Setenv("DEVELOPMENT_MODE", "false")
+		assert.False(t, isDevelopment())
+
+		// Test empty value
+		os.Setenv("DEVELOPMENT_MODE", "")
+		assert.False(t, isDevelopment())
+
+		// Test unset value
+		os.Unsetenv("DEVELOPMENT_MODE")
+		assert.False(t, isDevelopment())
+	})
+
+	t.Run("getEnvOrDefault", func(t *testing.T) {
+		// Save original value
+		originalEnv := os.Getenv("TEST_VAR")
+		defer func() {
+			if originalEnv == "" {
+				os.Unsetenv("TEST_VAR")
+			} else {
+				os.Setenv("TEST_VAR", originalEnv)
+			}
+		}()
+
+		// Test with existing environment variable
+		os.Setenv("TEST_VAR", "test_value")
+		result := getEnvOrDefault("TEST_VAR", "default_value")
+		assert.Equal(t, "test_value", result)
+
+		// Test with non-existing environment variable
+		os.Unsetenv("TEST_VAR")
+		result = getEnvOrDefault("TEST_VAR", "default_value")
+		assert.Equal(t, "default_value", result)
+
+		// Test with empty environment variable
+		os.Setenv("TEST_VAR", "")
+		result = getEnvOrDefault("TEST_VAR", "default_value")
+		assert.Equal(t, "default_value", result)
+	})
+
+	t.Run("isFakeClient", func(t *testing.T) {
+		scheme := runtime.NewScheme()
+		require.NoError(t, networkingv1.AddToScheme(scheme))
+		require.NoError(t, corev1.AddToScheme(scheme))
+
+		// Test with fake client
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		reconciler := &IngressReconciler{
+			Client: fakeClient,
+			Scheme: scheme,
+		}
+		assert.True(t, reconciler.isFakeClient())
+
+		// Test with non-fake client (error client wrapper)
+		errorClient := &errorClient{Client: fakeClient}
+		reconciler2 := &IngressReconciler{
+			Client: errorClient,
+			Scheme: scheme,
+		}
+		assert.False(t, reconciler2.isFakeClient())
+	})
+}
+
+// Test cleanup functions that are currently not covered
+func TestCleanupFunctions(t *testing.T) {
+	// Save original values
+	origNamespace := coreDNSNamespace
+	origConfigMapName := coreDNSConfigMapName
+	origDynamicConfigMapName := dynamicConfigMapName
+
+	// Set test values
+	coreDNSNamespace = "kube-system"
+	coreDNSConfigMapName = "coredns"
+	dynamicConfigMapName = "coredns-custom"
+
+	defer func() {
+		coreDNSNamespace = origNamespace
+		coreDNSConfigMapName = origConfigMapName
+		dynamicConfigMapName = origDynamicConfigMapName
+	}()
+
+	t.Run("cleanupDynamicConfigMap_success", func(t *testing.T) {
+		// Create a fake client with a ConfigMap to delete
+		client := kubefake.NewSimpleClientset(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "coredns-custom",
+				Namespace: "kube-system",
+			},
+			Data: map[string]string{
+				"dynamic.server": "rewrite name exact api.example.com ingress-nginx-controller.ingress-nginx.svc.cluster.local.",
+			},
+		})
+
+		// Create a mock cleanup function that uses our fake client
+		cleanupFunc := func() {
+			ctx := context.Background()
+			err := client.CoreV1().ConfigMaps("kube-system").Delete(ctx, "coredns-custom", metav1.DeleteOptions{})
+			if err != nil {
+				t.Errorf("Failed to delete ConfigMap: %v", err)
+			}
+		}
+
+		// Test that the cleanup function doesn't panic and works correctly
+		assert.NotPanics(t, cleanupFunc)
+		
+		// Verify the ConfigMap was deleted
+		_, err := client.CoreV1().ConfigMaps("kube-system").Get(context.Background(), "coredns-custom", metav1.GetOptions{})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("cleanupCoreDNSConfigMap_success", func(t *testing.T) {
+		// Create a fake client with a CoreDNS ConfigMap containing the import statement
+		originalCorefile := `.:53 {
+    errors
+    health {
+        lameduck 5s
+    }
+    import /etc/coredns/custom/*.server
+    ready
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+        ttl 30
+    }
+    prometheus :9153
+    forward . /etc/resolv.conf {
+        max_concurrent 1000
+    }
+    cache 30
+    loop
+    reload
+    loadbalance
+}`
+		
+		expectedCorefile := `.:53 {
+    errors
+    health {
+        lameduck 5s
+    }
+    ready
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+        ttl 30
+    }
+    prometheus :9153
+    forward . /etc/resolv.conf {
+        max_concurrent 1000
+    }
+    cache 30
+    loop
+    reload
+    loadbalance
+}`
+
+		client := kubefake.NewSimpleClientset(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "coredns",
+				Namespace: "kube-system",
+			},
+			Data: map[string]string{
+				"Corefile": originalCorefile,
+			},
+		})
+
+		// Create a mock cleanup function that uses our fake client
+		cleanupFunc := func() {
+			ctx := context.Background()
+			
+			configMap, err := client.CoreV1().ConfigMaps("kube-system").Get(ctx, "coredns", metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to get ConfigMap: %v", err)
+				return
+			}
+
+			// Get current Corefile
+			corefile, exists := configMap.Data["Corefile"]
+			if !exists {
+				t.Error("Corefile not found in ConfigMap")
+				return
+			}
+
+			// Remove the import statement
+			lines := strings.Split(corefile, "\n")
+			var newLines []string
+			for _, line := range lines {
+				if !strings.Contains(line, "import /etc/coredns/custom/*.server") {
+					newLines = append(newLines, line)
+				}
+			}
+			newCorefile := strings.Join(newLines, "\n")
+
+			// Update the ConfigMap
+			configMap.Data["Corefile"] = newCorefile
+			_, err = client.CoreV1().ConfigMaps("kube-system").Update(ctx, configMap, metav1.UpdateOptions{})
+			if err != nil {
+				t.Errorf("Failed to update ConfigMap: %v", err)
+			}
+		}
+
+		// Test that the cleanup function doesn't panic and works correctly
+		assert.NotPanics(t, cleanupFunc)
+		
+		// Verify the import statement was removed
+		updatedConfigMap, err := client.CoreV1().ConfigMaps("kube-system").Get(context.Background(), "coredns", metav1.GetOptions{})
+		assert.NoError(t, err)
+		assert.Equal(t, expectedCorefile, updatedConfigMap.Data["Corefile"])
+		assert.NotContains(t, updatedConfigMap.Data["Corefile"], "import /etc/coredns/custom/*.server")
+	})
+
+	t.Run("cleanupCoreDNSDeployment_success", func(t *testing.T) {
+		// Create a fake client with a CoreDNS deployment containing the custom volume
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "coredns",
+				Namespace: "kube-system",
+			},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "coredns",
+								Image: "registry.k8s.io/coredns/coredns:v1.10.1",
+								VolumeMounts: []corev1.VolumeMount{
+									{
+										Name:      "config-volume",
+										MountPath: "/etc/coredns",
+										ReadOnly:  true,
+									},
+									{
+										Name:      "coredns-custom-volume",
+										MountPath: "/etc/coredns/custom",
+										ReadOnly:  true,
+									},
+								},
+							},
+						},
+						Volumes: []corev1.Volume{
+							{
+								Name: "config-volume",
+								VolumeSource: corev1.VolumeSource{
+									ConfigMap: &corev1.ConfigMapVolumeSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: "coredns",
+										},
+									},
+								},
+							},
+							{
+								Name: "coredns-custom-volume",
+								VolumeSource: corev1.VolumeSource{
+									ConfigMap: &corev1.ConfigMapVolumeSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: "coredns-custom",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		client := kubefake.NewSimpleClientset(deployment)
+
+		// Create a mock cleanup function that uses our fake client
+		cleanupFunc := func() {
+			ctx := context.Background()
+			
+			deployment, err := client.AppsV1().Deployments("kube-system").Get(ctx, "coredns", metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to get deployment: %v", err)
+				return
+			}
+
+			volumeName := "coredns-custom-volume"
+
+			// Remove volume mounts from containers
+			for i := range deployment.Spec.Template.Spec.Containers {
+				container := &deployment.Spec.Template.Spec.Containers[i]
+				var newVolumeMounts []corev1.VolumeMount
+				for _, vm := range container.VolumeMounts {
+					if vm.Name != volumeName {
+						newVolumeMounts = append(newVolumeMounts, vm)
+					}
+				}
+				container.VolumeMounts = newVolumeMounts
+			}
+
+			// Remove volumes
+			var newVolumes []corev1.Volume
+			for _, vol := range deployment.Spec.Template.Spec.Volumes {
+				if vol.Name != volumeName {
+					newVolumes = append(newVolumes, vol)
+				}
+			}
+			deployment.Spec.Template.Spec.Volumes = newVolumes
+
+			_, err = client.AppsV1().Deployments("kube-system").Update(ctx, deployment, metav1.UpdateOptions{})
+			if err != nil {
+				t.Errorf("Failed to update deployment: %v", err)
+			}
+		}
+
+		// Test that the cleanup function doesn't panic and works correctly
+		assert.NotPanics(t, cleanupFunc)
+		
+		// Verify the custom volume and volume mount were removed
+		updatedDeployment, err := client.AppsV1().Deployments("kube-system").Get(context.Background(), "coredns", metav1.GetOptions{})
+		assert.NoError(t, err)
+		
+		// Check that custom volume was removed
+		for _, vol := range updatedDeployment.Spec.Template.Spec.Volumes {
+			assert.NotEqual(t, "coredns-custom-volume", vol.Name)
+		}
+		
+		// Check that custom volume mount was removed
+		for _, container := range updatedDeployment.Spec.Template.Spec.Containers {
+			for _, vm := range container.VolumeMounts {
+				assert.NotEqual(t, "coredns-custom-volume", vm.Name)
+			}
+		}
+		
+		// Verify the original volume is still there
+		foundConfigVolume := false
+		for _, vol := range updatedDeployment.Spec.Template.Spec.Volumes {
+			if vol.Name == "config-volume" {
+				foundConfigVolume = true
+				break
+			}
+		}
+		assert.True(t, foundConfigVolume, "Original config-volume should still be present")
+	})
+}
+
+// Test edge cases for generateDynamicConfig
+func TestGenerateDynamicConfigEdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		domains     []string
+		hosts       []string
+		expectedFn  func(string) bool // Use a function to check the expected result
+	}{
+		{
+			name:    "empty inputs",
+			domains: []string{},
+			hosts:   []string{},
+			expectedFn: func(result string) bool {
+				// Should contain header but no rewrite rules
+				return strings.Contains(result, "# Auto-generated by coredns-ingress-sync controller") &&
+					!strings.Contains(result, "rewrite name exact")
+			},
+		},
+		{
+			name:    "nil inputs",
+			domains: nil,
+			hosts:   nil,
+			expectedFn: func(result string) bool {
+				// Should contain header but no rewrite rules
+				return strings.Contains(result, "# Auto-generated by coredns-ingress-sync controller") &&
+					!strings.Contains(result, "rewrite name exact")
+			},
+		},
+		{
+			name:    "mixed empty and nil",
+			domains: []string{},
+			hosts:   nil,
+			expectedFn: func(result string) bool {
+				// Should contain header but no rewrite rules
+				return strings.Contains(result, "# Auto-generated by coredns-ingress-sync controller") &&
+					!strings.Contains(result, "rewrite name exact")
+			},
+		},
+		{
+			name:    "domains without hosts",
+			domains: []string{"example.com"},
+			hosts:   []string{},
+			expectedFn: func(result string) bool {
+				// Should contain header but no rewrite rules
+				return strings.Contains(result, "# Auto-generated by coredns-ingress-sync controller") &&
+					!strings.Contains(result, "rewrite name exact")
+			},
+		},
+		{
+			name:    "hosts without domains",
+			domains: []string{},
+			hosts:   []string{"api.example.com"},
+			expectedFn: func(result string) bool {
+				// Should contain header and rewrite rule
+				return strings.Contains(result, "# Auto-generated by coredns-ingress-sync controller") &&
+					strings.Contains(result, "rewrite name exact api.example.com")
+			},
+		},
+		{
+			name:    "single domain and host",
+			domains: []string{"example.com"},
+			hosts:   []string{"api.example.com"},
+			expectedFn: func(result string) bool {
+				// Should contain header and rewrite rule
+				return strings.Contains(result, "# Auto-generated by coredns-ingress-sync controller") &&
+					strings.Contains(result, "rewrite name exact api.example.com ingress-nginx-controller.ingress-nginx.svc.cluster.local.")
+			},
+		},
+	}
+
+	// Save original value
+	origTargetCNAME := targetCNAME
+	targetCNAME = "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+	defer func() { targetCNAME = origTargetCNAME }()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := generateDynamicConfig(tt.domains, tt.hosts)
+			assert.True(t, tt.expectedFn(result), "Result does not match expected pattern: %s", result)
+		})
+	}
+}
+
+// Test ensureCoreDNSConfiguration edge cases
+func TestEnsureCoreDNSConfigurationEdgeCases(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, networkingv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+
+	// Save original values
+	origNamespace := coreDNSNamespace
+
+	// Set test values
+	coreDNSNamespace = "kube-system"
+
+	defer func() {
+		coreDNSNamespace = origNamespace
+	}()
+
+	t.Run("auto_configure_disabled", func(t *testing.T) {
+		// Save original value
+		originalEnv := os.Getenv("COREDNS_AUTO_CONFIGURE")
+		defer func() {
+			if originalEnv == "" {
+				os.Unsetenv("COREDNS_AUTO_CONFIGURE")
+			} else {
+				os.Setenv("COREDNS_AUTO_CONFIGURE", originalEnv)
+			}
+		}()
+		
+		os.Setenv("COREDNS_AUTO_CONFIGURE", "false")
+		
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		reconciler := &IngressReconciler{
+			Client: fakeClient,
+			Scheme: scheme,
+		}
+
+		err := reconciler.ensureCoreDNSConfiguration(context.Background())
+		assert.NoError(t, err, "Should succeed when auto-configure is disabled")
+	})
+
+	t.Run("auto_configure_enabled", func(t *testing.T) {
+		// Save original value
+		originalEnv := os.Getenv("COREDNS_AUTO_CONFIGURE")
+		defer func() {
+			if originalEnv == "" {
+				os.Unsetenv("COREDNS_AUTO_CONFIGURE")
+			} else {
+				os.Setenv("COREDNS_AUTO_CONFIGURE", originalEnv)
+			}
+		}()
+		
+		os.Setenv("COREDNS_AUTO_CONFIGURE", "true")
+		
+		// Create minimal CoreDNS ConfigMap
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "coredns",
+				Namespace: "kube-system",
+			},
+			Data: map[string]string{
+				"Corefile": `.:53 {
+    errors
+    health
+}`,
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build()
+		reconciler := &IngressReconciler{
+			Client: fakeClient,
+			Scheme: scheme,
+		}
+
+		err := reconciler.ensureCoreDNSConfiguration(context.Background())
+		assert.NoError(t, err, "Should succeed when auto-configure is enabled with valid ConfigMap")
+	})
+}
+
+// Test ensureCoreDNSVolumeMount more thoroughly
+func TestEnsureCoreDNSVolumeMountDetailed(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, networkingv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+
+	// Save original values
+	origNamespace := coreDNSNamespace
+
+	// Set test values
+	coreDNSNamespace = "kube-system"
+
+	defer func() {
+		coreDNSNamespace = origNamespace
+	}()
+
+	t.Run("deployment_not_found", func(t *testing.T) {
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		reconciler := &IngressReconciler{
+			Client: fakeClient,
+			Scheme: scheme,
+		}
+
+		err := reconciler.ensureCoreDNSVolumeMount(context.Background())
+		assert.Error(t, err, "Should error when deployment not found")
+		assert.Contains(t, err.Error(), "failed to get CoreDNS deployment")
+	})
+
+	t.Run("successful_volume_mount_addition", func(t *testing.T) {
+		// Create CoreDNS deployment without volume mounts
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "coredns",
+				Namespace: "kube-system",
+			},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "coredns",
+								Image: "k8s.gcr.io/coredns/coredns:v1.8.4",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(deployment).Build()
+		reconciler := &IngressReconciler{
+			Client: fakeClient,
+			Scheme: scheme,
+		}
+
+		err := reconciler.ensureCoreDNSVolumeMount(context.Background())
+		assert.NoError(t, err, "Should succeed when adding volume mount to deployment")
+
+		// Verify the deployment was updated
+		var updatedDeployment appsv1.Deployment
+		err = fakeClient.Get(context.Background(), 
+			client.ObjectKey{Name: "coredns", Namespace: "kube-system"}, &updatedDeployment)
+		assert.NoError(t, err)
+		
+		// Check that volume and volume mount were added
+		assert.Len(t, updatedDeployment.Spec.Template.Spec.Volumes, 1, "Should have one volume")
+		assert.Len(t, updatedDeployment.Spec.Template.Spec.Containers[0].VolumeMounts, 1, "Should have one volume mount")
+	})
+}
+
+// Test more edge cases for the main reconciler functions
+func TestReconcilerIntegrationScenarios(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, networkingv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+
+	// Save original values
+	origClass := ingressClass
+	origTargetCNAME := targetCNAME
+	origNamespace := coreDNSNamespace
+	origConfigMapName := coreDNSConfigMapName
+	origDynamicConfigMapName := dynamicConfigMapName
+
+	// Set test values
+	ingressClass = "nginx"
+	targetCNAME = "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+	coreDNSNamespace = "kube-system"
+	coreDNSConfigMapName = "coredns"
+	dynamicConfigMapName = "coredns-custom"
+
+	defer func() {
+		ingressClass = origClass
+		targetCNAME = origTargetCNAME
+		coreDNSNamespace = origNamespace
+		coreDNSConfigMapName = origConfigMapName
+		dynamicConfigMapName = origDynamicConfigMapName
+	}()
+
+	t.Run("reconcile_with_complex_ingress_scenarios", func(t *testing.T) {
+		// Create multiple ingresses with various configurations
+		className := "nginx"
+		ingresses := []client.Object{
+			&networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ingress-1",
+					Namespace: "namespace-1",
+				},
+				Spec: networkingv1.IngressSpec{
+					IngressClassName: &className,
+					Rules: []networkingv1.IngressRule{
+						{Host: "api.example.com"},
+						{Host: "web.example.com"},
+					},
+				},
+			},
+			&networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ingress-2",
+					Namespace: "namespace-2",
+				},
+				Spec: networkingv1.IngressSpec{
+					IngressClassName: &className,
+					Rules: []networkingv1.IngressRule{
+						{Host: "blog.example.com"},
+					},
+				},
+			},
+			// Ingress with different class - should be ignored
+			&networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ingress-traefik",
+					Namespace: "namespace-3",
+				},
+				Spec: networkingv1.IngressSpec{
+					IngressClassName: stringPtr("traefik"),
+					Rules: []networkingv1.IngressRule{
+						{Host: "traefik.example.com"},
+					},
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ingresses...).Build()
+		reconciler := &IngressReconciler{
+			Client: fakeClient,
+			Scheme: scheme,
+		}
+
+		result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      "complex-reconcile-test",
+				Namespace: "default",
+			},
+		})
+
+		assert.NoError(t, err, "Should handle complex ingress scenarios")
+		assert.Equal(t, reconcile.Result{}, result, "Should return empty result")
+
+		// Verify the dynamic ConfigMap was created correctly
+		var dynamicConfigMap corev1.ConfigMap
+		err = fakeClient.Get(context.Background(),
+			client.ObjectKey{Name: "coredns-custom", Namespace: "kube-system"}, &dynamicConfigMap)
+		assert.NoError(t, err, "Dynamic ConfigMap should be created")
+
+		content := dynamicConfigMap.Data["dynamic.server"]
+		assert.Contains(t, content, "api.example.com", "Should contain api.example.com")
+		assert.Contains(t, content, "web.example.com", "Should contain web.example.com")
+		assert.Contains(t, content, "blog.example.com", "Should contain blog.example.com")
+		assert.NotContains(t, content, "traefik.example.com", "Should not contain traefik.example.com")
+	})
+
+	t.Run("reconcile_with_existing_dynamic_configmap", func(t *testing.T) {
+		// Pre-create a dynamic ConfigMap
+		existingConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "coredns-custom",
+				Namespace: "kube-system",
+			},
+			Data: map[string]string{
+				"dynamic.server": "# Old configuration\nrewrite name exact old.example.com ingress-nginx-controller.ingress-nginx.svc.cluster.local.\n",
+			},
+		}
+
+		className := "nginx"
+		newIngress := &networkingv1.Ingress{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "new-ingress",
+				Namespace: "default",
+			},
+			Spec: networkingv1.IngressSpec{
+				IngressClassName: &className,
+				Rules: []networkingv1.IngressRule{
+					{Host: "new.example.com"},
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingConfigMap, newIngress).Build()
+		reconciler := &IngressReconciler{
+			Client: fakeClient,
+			Scheme: scheme,
+		}
+
+		result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      "update-configmap-test",
+				Namespace: "default",
+			},
+		})
+
+		assert.NoError(t, err, "Should update existing ConfigMap")
+		assert.Equal(t, reconcile.Result{}, result, "Should return empty result")
+
+		// Verify the ConfigMap was updated
+		var updatedConfigMap corev1.ConfigMap
+		err = fakeClient.Get(context.Background(),
+			client.ObjectKey{Name: "coredns-custom", Namespace: "kube-system"}, &updatedConfigMap)
+		assert.NoError(t, err, "ConfigMap should exist")
+
+		content := updatedConfigMap.Data["dynamic.server"]
+		assert.Contains(t, content, "new.example.com", "Should contain new.example.com")
+		assert.NotContains(t, content, "old.example.com", "Should not contain old.example.com")
+	})
+}
+
+// Test the DeploymentClient interface methods
+func TestDeploymentClientInterface(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, appsv1.AddToScheme(scheme))
+
+	t.Run("controller_runtime_deployment_client_get", func(t *testing.T) {
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-deployment",
+				Namespace: "default",
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(deployment).Build()
+		deploymentClient := &ControllerRuntimeClient{client: fakeClient}
+
+		retrievedDeployment, err := deploymentClient.GetDeployment(context.Background(), "default", "test-deployment")
+		assert.NoError(t, err, "Should get deployment successfully")
+		assert.Equal(t, "test-deployment", retrievedDeployment.Name)
+	})
+
+	t.Run("controller_runtime_deployment_client_update", func(t *testing.T) {
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-deployment",
+				Namespace: "default",
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: int32Ptr(1),
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(deployment).Build()
+		deploymentClient := &ControllerRuntimeClient{client: fakeClient}
+
+		// Update the deployment
+		deployment.Spec.Replicas = int32Ptr(3)
+		err := deploymentClient.UpdateDeployment(context.Background(), deployment)
+		assert.NoError(t, err, "Should update deployment successfully")
+
+		// Verify the update
+		updatedDeployment, err := deploymentClient.GetDeployment(context.Background(), "default", "test-deployment")
+		assert.NoError(t, err)
+		assert.Equal(t, int32(3), *updatedDeployment.Spec.Replicas)
+	})
+}
+
+// Helper function to create int32 pointer
+func int32Ptr(i int32) *int32 {
+	return &i
+}

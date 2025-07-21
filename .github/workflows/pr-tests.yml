@@ -168,11 +168,13 @@ jobs:
       run: go test -v -race -coverprofile=coverage.out ./...
       
     - name: Upload coverage
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v5
       with:
-        file: ./coverage.out
         flags: unittests
         name: go-${{ matrix.go-version }}
+        slug: rl-io/coredns-ingress-sync
+        token: ${{ secrets.CODECOV_TOKEN }}
+        fail_ci_if_error: false
 
   docker-build:
     name: Docker Build Test
