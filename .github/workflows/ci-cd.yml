@@ -187,14 +187,14 @@ jobs:
         
     - name: Deploy controller for testing
       run: |
-        # Deploy the controller using Helm
+        # Deploy the controller using Helm with development values (local image)
         helm upgrade --install coredns-ingress-sync \
           ./helm/coredns-ingress-sync \
           --namespace coredns-ingress-sync \
           --create-namespace \
           --wait \
           --timeout 30s \
-          --set image.tag=latest \
+          --values ./helm/coredns-ingress-sync/values-dev.yaml \
           --set image.pullPolicy=Never
         
         # Wait for deployment with timeout and detailed logging
