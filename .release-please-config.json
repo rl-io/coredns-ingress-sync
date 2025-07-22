@@ -12,11 +12,11 @@
           "path": "README.md",
           "replacements": [
             {
-              "search": "--version 0\\.1\\.0",
+              "search": "--version 0.1.0",
               "replace": "--version ${version}"
             },
             {
-              "search": "--set image\\.tag=latest",
+              "search": "--set image.tag=latest",
               "replace": "--set image.tag=${version}"
             }
           ]
@@ -26,12 +26,8 @@
           "path": "helm/coredns-ingress-sync/README.md",
           "replacements": [
             {
-              "search": "--version 0\\.1\\.0",
+              "search": "--version 0.1.0",
               "replace": "--version ${version}"
-            },
-            {
-              "search": "\\| `image\\.tag` \\| Controller image tag \\| `latest` \\|",
-              "replace": "| `image.tag` | Controller image tag | `${version}` |"
             }
           ]
         }
