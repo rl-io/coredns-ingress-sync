@@ -5,6 +5,7 @@
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "include-v-in-tag": true,
+      "bootstrap-sha": "eeaddc115f5f2a43e7c80a02b55add179cf5ddbe",
       "extra-files": [
         {
           "type": "yaml",
