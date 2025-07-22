@@ -18,35 +18,29 @@
           "jsonpath": "$.appVersion"
         },
         {
-          "type": "generic",
+          "type": "yaml",
           "path": "helm/coredns-ingress-sync/values.yaml",
-          "replacements": [
-            {
-              "search": "tag: \"[^\"]+\"",
-              "replace": "tag: \"${version}\""
-            }
-          ]
+          "jsonpath": "$.image.tag"
         },
         {
-          "type": "generic",
-          "path": "helm/coredns-ingress-sync/values-production.yaml", 
-          "replacements": [
-            {
-              "search": "tag: \"[^\"]+\"",
-              "replace": "tag: \"${version}\""
-            }
-          ]
+          "type": "yaml",
+          "path": "helm/coredns-ingress-sync/values-production.yaml",
+          "jsonpath": "$.image.tag"
         },
         {
           "type": "generic",
           "path": "README.md",
           "replacements": [
             {
-              "search": "--version [0-9]+\\.[0-9]+\\.[0-9]+",
+              "search": "--version 0\\.1\\.0",
               "replace": "--version ${version}"
             },
             {
-              "search": "--set image\\.tag=[a-zA-Z0-9\\.\\-]+",
+              "search": "--set image\\.tag=0\\.1\\.0",
+              "replace": "--set image.tag=${version}"
+            },
+            {
+              "search": "--set image\\.tag=latest",
               "replace": "--set image.tag=${version}"
             }
           ]
@@ -56,7 +50,7 @@
           "path": "helm/coredns-ingress-sync/README.md",
           "replacements": [
             {
-              "search": "--version [0-9]+\\.[0-9]+\\.[0-9]+",
+              "search": "--version 0\\.1\\.0",
               "replace": "--version ${version}"
             }
           ]
