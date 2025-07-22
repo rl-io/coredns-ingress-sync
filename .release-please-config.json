@@ -18,30 +18,36 @@
           "jsonpath": "$.appVersion"
         },
         {
-          "type": "yaml",
+          "type": "generic",
           "path": "helm/coredns-ingress-sync/values.yaml",
-          "jsonpath": "$.image.tag"
+          "replacements": [
+            {
+              "search": "tag: \"[^\"]+\"",
+              "replace": "tag: \"${version}\""
+            }
+          ]
         },
         {
-          "type": "yaml",
+          "type": "generic",
           "path": "helm/coredns-ingress-sync/values-production.yaml",
-          "jsonpath": "$.image.tag"
+          "replacements": [
+            {
+              "search": "tag: \"[^\"]+\"",
+              "replace": "tag: \"${version}\""
+            }
+          ]
         },
         {
           "type": "generic",
           "path": "README.md",
           "replacements": [
             {
-              "search": "--version 0\\.1\\.0",
-              "replace": "--version ${version}"
+              "search": "  --version 0\\.1\\.0 \\\\",
+              "replace": "  --version ${version} \\\\"
             },
             {
-              "search": "--set image\\.tag=0\\.1\\.0",
-              "replace": "--set image.tag=${version}"
-            },
-            {
-              "search": "--set image\\.tag=latest",
-              "replace": "--set image.tag=${version}"
+              "search": "  --set image\\.tag=latest \\\\",
+              "replace": "  --set image.tag=${version} \\\\"
             }
           ]
         },
@@ -50,8 +56,12 @@
           "path": "helm/coredns-ingress-sync/README.md",
           "replacements": [
             {
-              "search": "--version 0\\.1\\.0",
-              "replace": "--version ${version}"
+              "search": "  --version 0\\.1\\.0 \\\\",
+              "replace": "  --version ${version} \\\\"
+            },
+            {
+              "search": "| `image.tag` | Controller image tag | `latest` |",
+              "replace": "| `image.tag` | Controller image tag | `${version}` |"
             }
           ]
         }
