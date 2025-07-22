@@ -9,7 +9,7 @@
       "extra-files": [
         {
           "type": "generic",
-          "path": "README.md",
+          "path": "../../README.md",
           "replacements": [
             {
               "search": "--version 0.1.0",
@@ -23,7 +23,7 @@
         },
         {
           "type": "generic",
-          "path": "helm/coredns-ingress-sync/README.md",
+          "path": "README.md",
           "replacements": [
             {
               "search": "--version 0.1.0",
