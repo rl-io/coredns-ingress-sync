@@ -431,6 +431,10 @@ conventional-commit: ## Interactive conventional commit helper
 test-release-config: ## Test Release Please configuration
 	./scripts/test-release-please.sh
 
+.PHONY: test-release-cli
+test-release-cli: ## Test Release Please CLI with dry-run (requires GITHUB_TOKEN)
+	./scripts/test-release-please.sh --cli-only
+
 .PHONY: version-check
 version-check: test-release-config ## Check version consistency across files (alias for test-release-config)
 

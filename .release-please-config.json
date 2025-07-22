@@ -1,29 +1,33 @@
 {
   "packages": {
-    "helm/coredns-ingress-sync": {
-      "release-type": "helm",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true,
-      "include-v-in-tag": true,
-      "bootstrap-sha": "eeaddc115f5f2a43e7c80a02b55add179cf5ddbe"
-    },
     ".": {
       "release-type": "simple",
+      "component": "coredns-ingress-sync",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "include-v-in-tag": true,
       "bootstrap-sha": "eeaddc115f5f2a43e7c80a02b55add179cf5ddbe",
       "extra-files": [
         {
+          "type": "yaml",
+          "path": "helm/coredns-ingress-sync/Chart.yaml",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "yaml", 
+          "path": "helm/coredns-ingress-sync/Chart.yaml",
+          "jsonpath": "$.appVersion"
+        },
+        {
           "type": "generic",
           "path": "README.md",
           "replacements": [
             {
-              "search": "--version 0.1.0",
+              "search": "/--version [0-9]+\\.[0-9]+\\.[0-9]+/",
               "replace": "--version ${version}"
             },
             {
-              "search": "--set image.tag=latest",
+              "search": "/--set image\\.tag=[a-zA-Z0-9\\.\\-]+/",
               "replace": "--set image.tag=${version}"
             }
           ]
@@ -33,7 +37,7 @@
           "path": "helm/coredns-ingress-sync/README.md",
           "replacements": [
             {
-              "search": "--version 0.1.0",
+              "search": "/--version [0-9]+\\.[0-9]+\\.[0-9]+/",
               "replace": "--version ${version}"
             }
           ]
