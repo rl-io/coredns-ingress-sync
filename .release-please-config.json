@@ -18,22 +18,32 @@
           "jsonpath": "$.appVersion"
         },
         {
-          "type": "yaml",
+          "type": "generic",
           "path": "helm/coredns-ingress-sync/values.yaml",
-          "jsonpath": "$.image.tag"
+          "replacements": [
+            {
+              "search": "tag: \"[^\"]+\"",
+              "replace": "tag: \"${version}\""
+            }
+          ]
         },
         {
-          "type": "yaml",
+          "type": "generic",
           "path": "helm/coredns-ingress-sync/values-production.yaml", 
-          "jsonpath": "$.image.tag"
+          "replacements": [
+            {
+              "search": "tag: \"[^\"]+\"",
+              "replace": "tag: \"${version}\""
+            }
+          ]
         },
         {
           "type": "generic",
           "path": "README.md",
           "replacements": [
             {
-              "search": "oci://ghcr.io/rl-io/charts/coredns-ingress-sync \\\\\\s*\\n\\s*--version [0-9]+\\.[0-9]+\\.[0-9]+",
-              "replace": "oci://ghcr.io/rl-io/charts/coredns-ingress-sync \\\\\n  --version ${version}"
+              "search": "--version [0-9]+\\.[0-9]+\\.[0-9]+",
+              "replace": "--version ${version}"
             },
             {
               "search": "--set image\\.tag=[a-zA-Z0-9\\.\\-]+",
@@ -46,8 +56,8 @@
           "path": "helm/coredns-ingress-sync/README.md",
           "replacements": [
             {
-              "search": "oci://ghcr.io/rl-io/charts/coredns-ingress-sync \\\\\\s*\\n\\s*--version [0-9]+\\.[0-9]+\\.[0-9]+",
-              "replace": "oci://ghcr.io/rl-io/charts/coredns-ingress-sync \\\\\n  --version ${version}"
+              "search": "--version [0-9]+\\.[0-9]+\\.[0-9]+",
+              "replace": "--version ${version}"
             }
           ]
         }
