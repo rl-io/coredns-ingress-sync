@@ -2,7 +2,7 @@ apiVersion: v2
 name: coredns-ingress-sync
 description: A Helm chart for CoreDNS Dynamic Internal Ingress Controller
 type: application
-version: 0.1.0
+version: 0.1.1
 appVersion: "0.1.0"
 kubeVersion: ">=1.25.0-0"
 home: https://github.com/rl-io/coredns-ingress-sync
@@ -35,6 +35,7 @@ annotations:
       url: https://github.com/rl-io/coredns-ingress-sync/blob/main/helm/coredns-ingress-sync/README.md#installation
   # OCI/Registry hints  
   org.opencontainers.image.title: "CoreDNS Ingress Sync Helm Chart"
-  org.opencontainers.image.description: "Kubernetes controller for dynamic CoreDNS configuration based on Ingress resources"
+  org.opencontainers.image.description: "Kubernetes controller for dynamic CoreDNS
+    configuration based on Ingress resources"
   org.opencontainers.image.vendor: "rl-io"
   org.opencontainers.image.licenses: "MIT"
