@@ -1,42 +1,12 @@
 {
   "packages": {
     ".": {
-      "release-type": "simple",
+      "release-type": "helm",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "include-v-in-tag": true,
       "bootstrap-sha": "eeaddc115f5f2a43e7c80a02b55add179cf5ddbe",
       "extra-files": [
-        {
-          "type": "yaml",
-          "path": "helm/coredns-ingress-sync/Chart.yaml",
-          "jsonpath": "$.version"
-        },
-        {
-          "type": "yaml", 
-          "path": "helm/coredns-ingress-sync/Chart.yaml",
-          "jsonpath": "$.appVersion"
-        },
-        {
-          "type": "generic",
-          "path": "helm/coredns-ingress-sync/values.yaml",
-          "replacements": [
-            {
-              "search": "tag: \"0\\.1\\.0\"",
-              "replace": "tag: \"${version}\""
-            }
-          ]
-        },
-        {
-          "type": "generic",
-          "path": "helm/coredns-ingress-sync/values-production.yaml",
-          "replacements": [
-            {
-              "search": "tag: \"0\\.1\\.0\"",
-              "replace": "tag: \"${version}\""
-            }
-          ]
-        },
         {
           "type": "generic",
           "path": "README.md",
