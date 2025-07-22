@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-    branches:
-      - 'fix/helm_chart_release'  # Temporary: for testing only
   workflow_dispatch:
 
 env:
