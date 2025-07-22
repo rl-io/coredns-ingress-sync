@@ -85,6 +85,20 @@ The Helm chart includes pre-delete hooks that:
 
 ## Development
 
+### Release Management
+
+This project uses [Release Please](https://github.com/googleapis/release-please) for automated version management. See [Release Management Guide](docs/RELEASE_MANAGEMENT.md) for details on:
+
+- 📝 **Conventional Commits** format and examples
+- 🔄 **Automated versioning** across Chart.yaml, values files, and documentation
+- 🚀 **Release process** with automatic Docker and Helm chart publishing
+
+Quick commit helper:
+
+```bash
+./scripts/conventional-commit.sh
+```
+
 ### Building from Source
 
 ```bash

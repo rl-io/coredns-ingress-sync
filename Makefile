@@ -421,3 +421,21 @@ validate-import: ## Validate CoreDNS import directive placement
 
 .PHONY: safe-deploy
 safe-deploy: validate-import deploy-safe ## Safe deployment with import validation
+
+##@ Release Management
+.PHONY: conventional-commit
+conventional-commit: ## Interactive conventional commit helper
+	./scripts/conventional-commit.sh
+
+.PHONY: test-release-config
+test-release-config: ## Test Release Please configuration
+	./scripts/test-release-please.sh
+
+.PHONY: version-check
+version-check: test-release-config ## Check version consistency across files (alias for test-release-config)
+
+.PHONY: release-docs
+release-docs: ## Open release management documentation
+	@echo "📖 Release Management Documentation:"
+	@echo "   Local: docs/RELEASE_MANAGEMENT.md"
+	@echo "   Online: https://github.com/rl-io/coredns-ingress-sync/blob/main/docs/RELEASE_MANAGEMENT.md"

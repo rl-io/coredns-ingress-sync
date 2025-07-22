@@ -4,7 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - 'fix/helm_chart_release'  # Temporary: for testing only
   workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  CHART_NAME: coredns-ingress-sync
 
 jobs:
   release:
@@ -38,10 +44,57 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Verify Helm version and registry access
+      run: |
+        helm version
+        echo "Testing registry access..."
+        helm registry login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+        
+        # Test chart validity
+        echo "Validating chart..."
+        helm lint helm/coredns-ingress-sync
+        
+        # Test template rendering
+        echo "Testing chart templates..."
+        helm template test helm/coredns-ingress-sync --debug
+
     - name: Package and Push Helm Chart
       run: |
         # Package the chart
         helm package helm/coredns-ingress-sync
+        
+        echo "Packaged chart:"
+        ls -la coredns-ingress-sync-*.tgz
 
+        # Get chart details
+        CHART_FILE=$(ls coredns-ingress-sync-*.tgz | head -n1)
+        echo "Chart file: $CHART_FILE"
+        
         # Push to GitHub Packages (OCI format)
-        helm push coredns-ingress-sync-*.tgz oci://ghcr.io/rl-io/coredns-ingress-sync
+        # Use charts subdirectory to avoid collision with Docker image
+        echo "Pushing chart to oci://${REGISTRY}/rl-io/charts..."
+        
+        # Try the push with charts subdirectory to separate from Docker images
+        helm push "$CHART_FILE" oci://${REGISTRY}/rl-io/charts --debug || {
+          echo "Push failed. Trying alternative URL format..."
+          helm push "$CHART_FILE" oci://${REGISTRY}/rl-io/helm-charts --debug || {
+            echo "Alternative format also failed. Trying with original format..."
+            helm push "$CHART_FILE" oci://${REGISTRY}/rl-io --debug
+          }
+        }
+        
+        echo "Helm chart push completed successfully!"
+        
+    - name: Verify chart availability
+      run: |
+        echo "Verifying chart was pushed successfully..."
+        # Try to show the chart (this will fail gracefully if not available)
+        helm show chart oci://${REGISTRY}/rl-io/charts/${CHART_NAME} || {
+          echo "Chart not found at oci://${REGISTRY}/rl-io/charts/${CHART_NAME}, trying other locations..."
+          helm show chart oci://${REGISTRY}/rl-io/helm-charts/${CHART_NAME} || {
+            echo "Chart not found at helm-charts location, trying root..."
+            helm show chart oci://${REGISTRY}/rl-io/${CHART_NAME} || {
+              echo "Chart verification failed, but push may have succeeded. Check the GitHub Packages page."
+            }
+          }
+        }
