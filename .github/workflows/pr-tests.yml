@@ -44,7 +44,7 @@ jobs:
         ref: ${{ github.event.workflow_run.head_sha }}
       
     - name: Detect changes
-      uses: dorny/paths-filter@v2
+      uses: dorny/paths-filter@v3
       id: changes
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
