@@ -1,12 +1,24 @@
 {
   "packages": {
-    "helm/coredns-ingress-sync": {
+    ".": {
       "release-type": "helm",
       "component": "coredns-ingress-sync",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "include-v-in-tag": true,
-      "bootstrap-sha": "eeaddc115f5f2a43e7c80a02b55add179cf5ddbe"
+      "bootstrap-sha": "eeaddc115f5f2a43e7c80a02b55add179cf5ddbe",
+      "extra-files": [
+        {
+          "type": "yaml",
+          "path": "helm/coredns-ingress-sync/Chart.yaml",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "yaml",
+          "path": "helm/coredns-ingress-sync/Chart.yaml", 
+          "jsonpath": "$.appVersion"
+        }
+      ]
     }
   }
 }
