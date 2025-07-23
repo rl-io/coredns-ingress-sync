@@ -23,11 +23,11 @@
           "path": "README.md",
           "replacements": [
             {
-              "search": "--version [0-9]+\\.[0-9]+\\.[0-9]+",
+              "search": "--version \\d+\\.\\d+\\.\\d+",
               "replace": "--version ${version}"
             },
             {
-              "search": "--set image\\.tag=[a-zA-Z0-9\\.\\-]+",
+              "search": "--set image\\.tag=\\d+\\.\\d+\\.\\d+",
               "replace": "--set image.tag=${version}"
             }
           ]
@@ -37,7 +37,7 @@
           "path": "helm/coredns-ingress-sync/README.md",
           "replacements": [
             {
-              "search": "--version [0-9]+\\.[0-9]+\\.[0-9]+",
+              "search": "--version \\d+\\.\\d+\\.\\d+",
               "replace": "--version ${version}"
             }
           ]

@@ -1,0 +1,85 @@
+name: Update Documentation
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${VERSION#v}  # Remove 'v' prefix if present
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version extracted: $VERSION"
+
+      - name: Update version references in documentation
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Updating documentation with version: $VERSION"
+          
+          # Update main README.md (Linux sed syntax)
+          sed -i 's/--version [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/--version '"$VERSION"'/g' README.md
+          sed -i 's/--set image\.tag=[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/--set image.tag='"$VERSION"'/g' README.md
+          
+          # Update Helm chart README.md
+          if [ -f "helm/coredns-ingress-sync/README.md" ]; then
+            sed -i 's/--version [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/--version '"$VERSION"'/g' helm/coredns-ingress-sync/README.md
+          fi
+          
+          # Show what changed
+          echo "Changes made:"
+          git diff --name-only
+          git diff
+
+      - name: Check if there are changes
+        id: changes
+        run: |
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Documentation updates needed"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No documentation updates needed"
+          fi
+
+      - name: Create Pull Request
+        if: steps.changes.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "docs: update version references to ${{ steps.version.outputs.version }}"
+          title: "docs: update version references to ${{ steps.version.outputs.version }}"
+          body: |
+            ## 📚 Documentation Update
+            
+            This PR automatically updates version references in documentation files following the release of version `${{ steps.version.outputs.version }}`.
+            
+            ### Changes Made
+            - Updated `--version` references in README.md
+            - Updated `--set image.tag` references in README.md  
+            - Updated Helm chart documentation (if applicable)
+            
+            ### Files Modified
+            - `README.md`
+            - `helm/coredns-ingress-sync/README.md` (if exists)
+            
+            ---
+            *This PR was automatically created by the `update-docs` workflow.*
+          branch: docs/update-version-${{ steps.version.outputs.version }}
+          delete-branch: true
+          labels: |
+            documentation
+            automated
