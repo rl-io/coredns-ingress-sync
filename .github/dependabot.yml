@@ -36,41 +36,6 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
-  # Node.js dependencies (for commitlint and development tools)
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:30"
-      timezone: "Etc/UTC"
-    open-pull-requests-limit: 5
-    reviewers:
-      - "rl-io"
-    assignees:
-      - "rl-io"
-    commit-message:
-      prefix: "chore(deps)"
-      include: "scope"
-    labels:
-      - "dependencies"
-      - "nodejs"
-      - "security"
-    groups:
-      npm-dev-dependencies:
-        patterns:
-          - "@commitlint/*"
-          - "husky"
-          - "commitizen"
-          - "@commitlint/cz-commitlint"
-        update-types:
-          - "minor"
-          - "patch"
-    # Allow security updates for all dependency types
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-
   # Docker base image updates
   - package-ecosystem: "docker"
     directory: "/"
