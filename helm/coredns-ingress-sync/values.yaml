@@ -50,7 +50,9 @@ affinity: {}
 # CoreDNS configuration
 coreDNS:
   # Automatically configure CoreDNS for dynamic DNS resolution
-  autoConfigure: true
+  # IMPORTANT: Set to true to enable automatic CoreDNS configuration
+  # When false, manual CoreDNS configuration is required
+  autoConfigure: false
   # Namespace where CoreDNS is deployed
   namespace: kube-system
   # ConfigMap name

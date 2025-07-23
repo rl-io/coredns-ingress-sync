@@ -385,7 +385,8 @@ kubectl rollout restart deployment/coredns -n kube-system
 # 5. Reinstall controller
 helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
   --namespace coredns-ingress-sync \
-  --create-namespace
+  --create-namespace \
+  --set coreDNS.autoConfigure=true
 ```
 
 ### Backup and Restore

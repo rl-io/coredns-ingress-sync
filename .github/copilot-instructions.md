@@ -107,7 +107,8 @@ rewrite name exact web.app-staging.example.com ingress-nginx-controller.ingress-
 **Helm Values Configuration**:
 ```yaml
 coreDNS:
-  autoConfigure: true  # Enable automatic CoreDNS management
+  # IMPORTANT: Default is false for safety - must be explicitly enabled
+  autoConfigure: false  # Set to true to enable automatic CoreDNS management
   namespace: kube-system
   configMapName: coredns
 

@@ -33,8 +33,9 @@ controller:
 
 ```yaml
 coreDNS:
-  # Automatically configure CoreDNS (recommended)
-  autoConfigure: true
+  # Automatically configure CoreDNS
+  # IMPORTANT: Default is false for safety - set to true to enable
+  autoConfigure: false
   
   # CoreDNS namespace
   namespace: "kube-system"
@@ -42,6 +43,8 @@ coreDNS:
   # CoreDNS ConfigMap name
   configMapName: "coredns"
 ```
+
+**⚠️ Safety First**: By default, `autoConfigure` is `false` to prevent unexpected changes to your CoreDNS configuration. You must explicitly enable it.
 
 ### Resource Configuration
 
@@ -98,6 +101,7 @@ To watch multiple ingress classes, deploy multiple instances:
 ```bash
 # Install for nginx ingress class
 helm install coredns-ingress-sync-nginx ./helm/coredns-ingress-sync \
+  --set coreDNS.autoConfigure=true \
   --set controller.ingressClass=nginx \
   --set controller.dynamicConfigMap.name=coredns-nginx \
   --namespace coredns-ingress-sync \
@@ -105,6 +109,7 @@ helm install coredns-ingress-sync-nginx ./helm/coredns-ingress-sync \
 
 # Install for traefik ingress class
 helm install coredns-ingress-sync-traefik ./helm/coredns-ingress-sync \
+  --set coreDNS.autoConfigure=true \
   --set controller.ingressClass=traefik \
   --set controller.dynamicConfigMap.name=coredns-traefik \
   --set controller.targetCNAME=traefik.traefik.svc.cluster.local. \
