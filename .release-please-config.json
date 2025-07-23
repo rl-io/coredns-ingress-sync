@@ -1,48 +1,12 @@
 {
   "packages": {
-    ".": {
-      "release-type": "simple",
+    "helm/coredns-ingress-sync": {
+      "release-type": "helm",
       "component": "coredns-ingress-sync",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "include-v-in-tag": true,
-      "bootstrap-sha": "eeaddc115f5f2a43e7c80a02b55add179cf5ddbe",
-      "extra-files": [
-        {
-          "type": "yaml",
-          "path": "helm/coredns-ingress-sync/Chart.yaml",
-          "jsonpath": "$.version"
-        },
-        {
-          "type": "yaml", 
-          "path": "helm/coredns-ingress-sync/Chart.yaml",
-          "jsonpath": "$.appVersion"
-        },
-        {
-          "type": "generic",
-          "path": "README.md",
-          "replacements": [
-            {
-              "search": "--version \\d+\\.\\d+\\.\\d+",
-              "replace": "--version ${version}"
-            },
-            {
-              "search": "--set image\\.tag=\\d+\\.\\d+\\.\\d+",
-              "replace": "--set image.tag=${version}"
-            }
-          ]
-        },
-        {
-          "type": "generic",
-          "path": "helm/coredns-ingress-sync/README.md",
-          "replacements": [
-            {
-              "search": "--version \\d+\\.\\d+\\.\\d+",
-              "replace": "--version ${version}"
-            }
-          ]
-        }
-      ]
+      "bootstrap-sha": "eeaddc115f5f2a43e7c80a02b55add179cf5ddbe"
     }
   }
 }
