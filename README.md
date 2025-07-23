@@ -34,17 +34,20 @@ This has been tested to work with [ingress-nginx](https://github.com/kubernetes/
 ### Installation
 
 ```bash
-# Install from local chart
+# Basic installation (CoreDNS auto-configuration DISABLED by default)
 helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
   --namespace coredns-ingress-sync \
   --create-namespace
 
-# Or install from GitHub Packages
+# Or install from GitHub Packages  
 helm install coredns-ingress-sync \
   oci://ghcr.io/rl-io/charts/coredns-ingress-sync \
   --version 0.1.0 \
   --namespace coredns-ingress-sync \
   --create-namespace
+
+# To enable automatic CoreDNS configuration, add:
+#   --set coreDNS.autoConfigure=true
 ```
 
 ### Verification
@@ -198,9 +201,29 @@ controller:
   targetCNAME: ingress-nginx-controller.ingress-nginx.svc.cluster.local.
 
 coreDNS:
+  # IMPORTANT: Set to true to enable automatic CoreDNS configuration
+  # Default is false for safety - no unexpected changes will be made
   autoConfigure: true
   namespace: kube-system
 ```
+
+**⚠️ Important**: By default, `coreDNS.autoConfigure` is set to `false` to prevent unexpected changes to your CoreDNS configuration. You must explicitly set it to `true` to enable automatic CoreDNS management:
+
+```bash
+# Enable automatic CoreDNS configuration
+helm install coredns-ingress-sync \
+  oci://ghcr.io/rl-io/charts/coredns-ingress-sync \
+  --set coreDNS.autoConfigure=true
+```
+
+When `autoConfigure=false`, the controller will:
+
+- ✅ Still watch for ingress changes and generate DNS rules
+- ✅ Create the dynamic ConfigMap with DNS configuration  
+- ❌ NOT modify CoreDNS Corefile or deployment
+- ❌ NOT automatically enable DNS resolution
+
+This allows you to inspect the generated configuration before applying it to CoreDNS.
 
 For detailed configuration options and examples, see [📋 Configuration Guide](docs/CONFIGURATION.md).
 
@@ -223,8 +246,8 @@ We welcome contributions! Please see the [Development Guide](docs/DEVELOPMENT.md
 
 ## Support
 
-- **🐛 Issues**: [GitHub Issues](https://github.com/your-org/coredns-ingress-sync/issues)
-- **💬 Discussions**: [GitHub Discussions](https://github.com/your-org/coredns-ingress-sync/discussions)
+- **🐛 Issues**: [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues)
+- **💬 Discussions**: [GitHub Discussions](https://github.com/rl-io/coredns-ingress-sync/discussions)
 - **📖 Documentation**: See the `docs/` directory for comprehensive guides
 
 ## License

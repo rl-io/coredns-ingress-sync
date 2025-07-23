@@ -20,4 +20,5 @@ controller:
   logLevel: "debug"
 
 coreDNS:
+  # Enable automatic CoreDNS configuration for development
   autoConfigure: true

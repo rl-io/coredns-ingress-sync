@@ -249,6 +249,7 @@ kind load docker-image coredns-ingress-sync:latest --name coredns-test
 helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
   --namespace coredns-ingress-sync \
   --create-namespace \
+  --set coreDNS.autoConfigure=true \
   --set image.tag=latest \
   --set image.pullPolicy=Never \
   --set controller.logLevel=debug

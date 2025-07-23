@@ -47,12 +47,14 @@ controller:
 
 ### Q: Can I disable the automatic CoreDNS configuration?
 
-A: Yes, set `coreDNS.autoConfigure: false` in your Helm values. You'll then need to manually add the import statement to your CoreDNS configuration:
+A: Yes, automatic CoreDNS configuration is disabled by default (`coreDNS.autoConfigure: false`). To enable automatic configuration, set:
 
 ```yaml
 coreDNS:
-  autoConfigure: false
+  autoConfigure: true
 ```
+
+When disabled, you'll need to manually add the import statement to your CoreDNS configuration.
 
 ### Q: How do I configure multiple replicas?
 

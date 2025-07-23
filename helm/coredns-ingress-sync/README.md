@@ -29,6 +29,7 @@ This Helm chart deploys the CoreDNS Dynamic Internal Ingress Controller, which a
 helm install my-dns-controller \
   oci://ghcr.io/rl-io/charts/coredns-ingress-sync \
   --version 0.1.0 \
+  --set coreDNS.autoConfigure=true \
   --set controller.targetCname="ingress-nginx-controller.ingress-nginx.svc.cluster.local."
 ```
 
@@ -41,6 +42,7 @@ cd coredns-ingress-sync
 
 # Install from local chart
 helm install my-dns-controller ./helm/coredns-ingress-sync \
+  --set coreDNS.autoConfigure=true \
   --set controller.targetCname="ingress-nginx-controller.ingress-nginx.svc.cluster.local."
 ```
 
@@ -57,6 +59,7 @@ helm repo update
 
 # Install the chart
 helm install my-dns-controller rl-io/coredns-ingress-sync \
+  --set coreDNS.autoConfigure=true \
   --set controller.targetCname="ingress-nginx-controller.ingress-nginx.svc.cluster.local."
 ```
 
@@ -91,9 +94,11 @@ helm install my-dns-controller rl-io/coredns-ingress-sync \
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `coreDNS.autoConfigure` | Automatically configure CoreDNS | `true` |
+| `coreDNS.autoConfigure` | Automatically configure CoreDNS | `false` |
 | `coreDNS.namespace` | CoreDNS namespace | `kube-system` |
 | `coreDNS.configMapName` | CoreDNS ConfigMap name | `coredns` |
+
+**Important**: By default, `coreDNS.autoConfigure` is `false` to prevent automatic changes to coreDNS. Set to `true` to enable automatic CoreDNS management.
 
 ### Resources Configuration
 
