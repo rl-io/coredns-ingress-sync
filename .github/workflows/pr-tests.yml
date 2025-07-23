@@ -297,7 +297,7 @@ jobs:
         ref: ${{ github.event.workflow_run.head_sha }}
       
     - name: Lint Markdown
-      uses: DavidAnson/markdownlint-cli2-action@v13
+      uses: DavidAnson/markdownlint-cli2-action@v20
       with:
         globs: '**/*.md'
         
