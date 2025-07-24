@@ -63,9 +63,11 @@ controller:
   # Ingress class to watch
   ingressClass: "nginx"
   # Target CNAME for DNS resolution
-  targetCname: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
-  # Log level
-  logLevel: "info"
+  targetCNAME: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+  # Namespace filtering - empty means watch all namespaces
+  # Set to comma-separated list to watch specific namespaces: "default,production,staging"
+  watchNamespaces: ""
+  
   # Dynamic ConfigMap configuration
   dynamicConfigMap:
     name: "coredns-custom"

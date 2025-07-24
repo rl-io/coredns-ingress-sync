@@ -37,6 +37,7 @@ var (
 	coreDNSNamespace      = getEnvOrDefault("COREDNS_NAMESPACE", "kube-system")
 	coreDNSConfigMapName  = getEnvOrDefault("COREDNS_CONFIGMAP_NAME", "coredns")
 	leaderElectionEnabled = getEnvOrDefault("LEADER_ELECTION_ENABLED", "true") == "true"
+	watchNamespaces       = getEnvOrDefault("WATCH_NAMESPACES", "") // Comma-separated list, empty = all namespaces
 	importStatement       = "import /etc/coredns/custom/*.server"
 )
 
@@ -68,12 +69,40 @@ func main() {
 }
 
 func runController() {
+	// Parse watch namespaces
+	var namespaces []string
+	var cacheOptions cache.Options
+
+	if watchNamespaces != "" {
+		namespaces = strings.Split(strings.ReplaceAll(watchNamespaces, " ", ""), ",")
+		// Filter out empty strings
+		var validNamespaces []string
+		for _, ns := range namespaces {
+			if ns != "" {
+				validNamespaces = append(validNamespaces, ns)
+			}
+		}
+		namespaces = validNamespaces
+
+		// Configure cache to watch specific namespaces
+		if len(namespaces) > 0 {
+			cacheOptions.DefaultNamespaces = make(map[string]cache.Config)
+			for _, ns := range namespaces {
+				cacheOptions.DefaultNamespaces[ns] = cache.Config{}
+			}
+			log.Printf("Configured to watch specific namespaces: %v", namespaces)
+		}
+	} else {
+		log.Printf("Configured to watch all namespaces")
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                  runtime.NewScheme(),
 		LeaderElection:          leaderElectionEnabled,
 		LeaderElectionID:        "coredns-ingress-sync-leader",
 		LeaderElectionNamespace: "", // Uses the same namespace as the pod
 		HealthProbeBindAddress:  ":8081",
+		Cache:                   cacheOptions,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -102,7 +131,7 @@ func runController() {
 
 	// Watch for Ingress changes
 	if err := c.Watch(
-		source.Kind(mgr.GetCache(), &networkingv1.Ingress{}, 
+		source.Kind(mgr.GetCache(), &networkingv1.Ingress{},
 			handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *networkingv1.Ingress) []reconcile.Request {
 				// Always trigger a reconcile for any ingress change
 				return []reconcile.Request{{
@@ -113,7 +142,20 @@ func runController() {
 				}}
 			}),
 			predicate.NewTypedPredicateFuncs(func(obj *networkingv1.Ingress) bool {
-				return isTargetIngress(obj)
+				// Check if ingress matches our class and namespace filtering
+				if !isTargetIngress(obj) {
+					return false
+				}
+				// If specific namespaces are configured, check if this ingress is in one of them
+				if len(namespaces) > 0 {
+					for _, ns := range namespaces {
+						if obj.GetNamespace() == ns {
+							return true
+						}
+					}
+					return false
+				}
+				return true
 			}))); err != nil {
 		log.Fatal(err)
 	}
@@ -131,6 +173,11 @@ func runController() {
 	log.Printf("Starting coredns-ingress-sync controller")
 	log.Printf("Leader election enabled: %t", leaderElectionEnabled)
 	log.Printf("Watching ingresses with class: %s", ingressClass)
+	if len(namespaces) > 0 {
+		log.Printf("Watching namespaces: %v", namespaces)
+	} else {
+		log.Printf("Watching all namespaces")
+	}
 	log.Printf("Target CNAME: %s", targetCNAME)
 	log.Printf("Dynamic ConfigMap: %s", dynamicConfigMapName)
 	log.Printf("CoreDNS ConfigMap: %s/%s", coreDNSNamespace, coreDNSConfigMapName)
@@ -438,11 +485,38 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 	}
 	log.Printf("[%s] Reconciling changes for request: %s", podName, req.NamespacedName)
 
-	// List all ingresses
+	// Parse watch namespaces for filtering
+	var targetNamespaces []string
+	if watchNamespaces != "" {
+		targetNamespaces = strings.Split(strings.ReplaceAll(watchNamespaces, " ", ""), ",")
+		// Filter out empty strings
+		var validNamespaces []string
+		for _, ns := range targetNamespaces {
+			if ns != "" {
+				validNamespaces = append(validNamespaces, ns)
+			}
+		}
+		targetNamespaces = validNamespaces
+	}
+
+	// List ingresses with namespace filtering
 	var ingressList networkingv1.IngressList
-	if err := r.List(ctx, &ingressList); err != nil {
-		log.Printf("Failed to list ingresses: %v", err)
-		return reconcile.Result{RequeueAfter: time.Minute}, err
+	if len(targetNamespaces) > 0 {
+		// List ingresses from specific namespaces
+		for _, ns := range targetNamespaces {
+			var nsIngressList networkingv1.IngressList
+			if err := r.List(ctx, &nsIngressList, client.InNamespace(ns)); err != nil {
+				log.Printf("Failed to list ingresses in namespace %s: %v", ns, err)
+				continue
+			}
+			ingressList.Items = append(ingressList.Items, nsIngressList.Items...)
+		}
+	} else {
+		// List all ingresses
+		if err := r.List(ctx, &ingressList); err != nil {
+			log.Printf("Failed to list ingresses: %v", err)
+			return reconcile.Result{RequeueAfter: time.Minute}, err
+		}
 	}
 
 	// Extract hostnames from target ingresses
