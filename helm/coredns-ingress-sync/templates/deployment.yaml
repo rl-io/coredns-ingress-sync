@@ -11,10 +11,12 @@ spec:
       {{- include "coredns-ingress-sync.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        # Force pod replacement on helm upgrade (useful for :latest images)
+        rollme: {{ randAlphaNum 5 | quote }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
         {{- include "coredns-ingress-sync.selectorLabels" . | nindent 8 }}
     spec:

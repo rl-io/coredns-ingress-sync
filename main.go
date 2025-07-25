@@ -86,18 +86,43 @@ func runController() {
 
 		// Configure cache to watch specific namespaces
 		if len(namespaces) > 0 {
-			cacheOptions.DefaultNamespaces = make(map[string]cache.Config)
+			// Create namespace map for ingresses (only the specified namespaces)
+			ingressNamespaceMap := make(map[string]cache.Config)
 			for _, ns := range namespaces {
-				cacheOptions.DefaultNamespaces[ns] = cache.Config{}
+				ingressNamespaceMap[ns] = cache.Config{}
 			}
-			log.Printf("Configured to watch specific namespaces: %v", namespaces)
+			
+			// Configure cache with ByObject for namespace-scoped resources
+			cacheOptions.ByObject = map[client.Object]cache.ByObject{
+				&networkingv1.Ingress{}: {
+					Namespaces: ingressNamespaceMap,
+				},
+				&corev1.ConfigMap{}: {
+					Namespaces: map[string]cache.Config{
+						coreDNSNamespace: {},
+					},
+				},
+			}
+			log.Printf("Configured to watch specific namespaces: %v (plus %s for CoreDNS)", namespaces, coreDNSNamespace)
 		}
 	} else {
 		log.Printf("Configured to watch all namespaces")
 	}
 
+	// Create scheme and register all types before creating the manager
+	scheme := runtime.NewScheme()
+	if err := networkingv1.AddToScheme(scheme); err != nil {
+		log.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		log.Fatal(err)
+	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		log.Fatal(err)
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                  runtime.NewScheme(),
+		Scheme:                  scheme,
 		LeaderElection:          leaderElectionEnabled,
 		LeaderElectionID:        "coredns-ingress-sync-leader",
 		LeaderElectionNamespace: "", // Uses the same namespace as the pod
@@ -105,14 +130,6 @@ func runController() {
 		Cache:                   cacheOptions,
 	})
 	if err != nil {
-		log.Fatal(err)
-	}
-
-	if err := networkingv1.AddToScheme(mgr.GetScheme()); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := corev1.AddToScheme(mgr.GetScheme()); err != nil {
 		log.Fatal(err)
 	}
 
