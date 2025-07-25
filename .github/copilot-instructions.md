@@ -36,7 +36,7 @@ Changes should be reactive to Ingress creation, deletion, and updates.
 **Architecture**: Kubernetes controller built with controller-runtime that automatically manages CoreDNS configuration for internal DNS resolution of ingress hostnames.
 
 **Key Components**:
-- Go-based controller (`main.go`) using controller-runtime framework
+- Go-based controller using controller-runtime framework (modular architecture with cmd/ and internal/ packages)
 - Helm chart for deployment with configurable values
 - Automated CoreDNS ConfigMap and deployment management
 - Cleanup scripts for proper uninstall procedures

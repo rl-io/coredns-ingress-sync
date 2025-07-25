@@ -38,11 +38,11 @@ build: ## Build the binary
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-ldflags "$(LDFLAGS)" \
 		-o bin/$(PROJECT_NAME) \
-		main.go
+		./cmd/coredns-ingress-sync
 
 .PHONY: run
 run: ## Run the controller locally
-	go run main.go
+	go run ./cmd/coredns-ingress-sync
 
 .PHONY: manifests
 manifests: ## Generate Kubernetes manifests
