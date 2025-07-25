@@ -1,27 +1,22 @@
 {{- if .Values.rbac.create -}}
-# ClusterRole for cluster-wide resources (Ingresses need cluster-wide access)
+{{- if not .Values.controller.watchNamespaces }}
+# Cluster-wide permissions when watching all namespaces
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: {{ include "coredns-ingress-sync.fullname" . }}-cluster
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
-  {{- if .Values.coreDNS.autoConfigure }}
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "-9"
-    "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 rules:
 - apiGroups: ["networking.k8s.io"]
   resources: ["ingresses"]
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
-  resources: ["events"]
-  verbs: ["create", "patch"]
-- apiGroups: [""]
   resources: ["configmaps"]
-  verbs: ["get", "list", "watch"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -29,12 +24,6 @@ metadata:
   name: {{ include "coredns-ingress-sync.fullname" . }}-cluster
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
-  {{- if .Values.coreDNS.autoConfigure }}
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "-8"
-    "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -43,105 +32,113 @@ subjects:
 - kind: ServiceAccount
   name: {{ include "coredns-ingress-sync.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
+{{- else }}
+# Namespace-scoped permissions when watching specific namespaces
+{{- $namespaces := list }}
+{{- if kindIs "string" .Values.controller.watchNamespaces }}
+  {{- $namespaces = splitList "," .Values.controller.watchNamespaces }}
+{{- else if kindIs "slice" .Values.controller.watchNamespaces }}
+  {{- $namespaces = .Values.controller.watchNamespaces }}
+{{- end }}
+{{- range $namespace := $namespaces }}
+{{- $namespace = trim (toString $namespace) }}
+{{- if $namespace }}
 ---
-# Role for local namespace (controller's own ConfigMaps)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "coredns-ingress-sync.fullname" . }}-local
-  namespace: {{ .Release.Namespace }}
+  name: {{ include "coredns-ingress-sync.fullname" $ }}-{{ $namespace }}
+  namespace: {{ $namespace }}
   labels:
-    {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
-  {{- if .Values.coreDNS.autoConfigure }}
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "-9"
-    "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
+    {{- include "coredns-ingress-sync.labels" $ | nindent 4 }}
 rules:
-- apiGroups: [""]
-  resources: ["configmaps"]
-  verbs: ["get", "list", "watch", "create", "update", "patch"]
-# Leader election permissions (in same namespace as controller)
-- apiGroups: ["coordination.k8s.io"]
-  resources: ["leases"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-# Pod listing permissions for cleanup job (to wait for controller termination)
-- apiGroups: [""]
-  resources: ["pods"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
   verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "coredns-ingress-sync.fullname" . }}-local
-  namespace: {{ .Release.Namespace }}
+  name: {{ include "coredns-ingress-sync.fullname" $ }}-{{ $namespace }}
+  namespace: {{ $namespace }}
   labels:
-    {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
-  {{- if .Values.coreDNS.autoConfigure }}
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "-8"
-    "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
+    {{- include "coredns-ingress-sync.labels" $ | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "coredns-ingress-sync.fullname" . }}-local
+  name: {{ include "coredns-ingress-sync.fullname" $ }}-{{ $namespace }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "coredns-ingress-sync.serviceAccountName" $ }}
+  namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+# CoreDNS permissions are always cluster-scoped
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "coredns-ingress-sync.fullname" . }}-coredns
+  labels:
+    {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+  resourceNames: ["{{ .Values.coreDNS.configMapName }}", "{{ .Values.controller.dynamicConfigMap.name }}"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["create", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+  resourceNames: ["coredns"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "coredns-ingress-sync.fullname" . }}-coredns
+  labels:
+    {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "coredns-ingress-sync.fullname" . }}-coredns
 subjects:
 - kind: ServiceAccount
   name: {{ include "coredns-ingress-sync.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
+
+# Leader election permissions (always in controller namespace)
 ---
-# Role for CoreDNS namespace (modify CoreDNS configuration)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "coredns-ingress-sync.fullname" . }}-coredns
-  namespace: {{ .Values.coreDNS.namespace }}
+  name: {{ include "coredns-ingress-sync.fullname" . }}-leader-election
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
-  {{- if .Values.coreDNS.autoConfigure }}
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "-9"
-    "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 rules:
-- apiGroups: [""]
-  resources: ["configmaps"]
-  verbs: ["get", "list", "watch", "patch", "update"]
-  resourceNames: ["{{ .Values.coreDNS.configMapName }}"]
-- apiGroups: [""]
-  resources: ["configmaps"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # Allow create/delete without resourceNames restriction for dynamic ConfigMap creation/cleanup
 - apiGroups: [""]
-  resources: ["configmaps"]
-  verbs: ["list", "watch"]
-  # Allow watching ConfigMaps in CoreDNS namespace for controller-runtime
-- apiGroups: ["apps"]
-  resources: ["deployments"]
-  verbs: ["get", "list", "watch", "patch", "update"]
-  resourceNames: ["coredns"]
+  resources: ["events"]
+  verbs: ["create", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "coredns-ingress-sync.fullname" . }}-coredns
-  namespace: {{ .Values.coreDNS.namespace }}
+  name: {{ include "coredns-ingress-sync.fullname" . }}-leader-election
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
-  {{- if .Values.coreDNS.autoConfigure }}
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "-8"
-    "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "coredns-ingress-sync.fullname" . }}-coredns
+  name: {{ include "coredns-ingress-sync.fullname" . }}-leader-election
 subjects:
 - kind: ServiceAccount
   name: {{ include "coredns-ingress-sync.serviceAccountName" . }}

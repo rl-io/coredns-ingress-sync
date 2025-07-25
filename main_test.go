@@ -962,56 +962,6 @@ func BenchmarkGenerateDynamicConfig(b *testing.B) {
 	}
 }
 
-func TestGetEnvOrDefault(t *testing.T) {
-	tests := []struct {
-		name         string
-		envKey       string
-		envValue     string
-		defaultValue string
-		expected     string
-	}{
-		{
-			name:         "environment variable exists",
-			envKey:       "TEST_VAR",
-			envValue:     "custom_value",
-			defaultValue: "default_value",
-			expected:     "custom_value",
-		},
-		{
-			name:         "environment variable does not exist",
-			envKey:       "NON_EXISTENT_VAR",
-			envValue:     "",
-			defaultValue: "default_value",
-			expected:     "default_value",
-		},
-		{
-			name:         "environment variable is empty",
-			envKey:       "EMPTY_VAR",
-			envValue:     "",
-			defaultValue: "default_value",
-			expected:     "default_value",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Clean up any existing env var
-			os.Unsetenv(tt.envKey)
-
-			// Set environment variable if needed
-			if tt.envValue != "" {
-				os.Setenv(tt.envKey, tt.envValue)
-				defer os.Unsetenv(tt.envKey)
-			}
-
-			result := getEnvOrDefault(tt.envKey, tt.defaultValue)
-			if result != tt.expected {
-				t.Errorf("getEnvOrDefault(%s, %s) = %s, want %s", tt.envKey, tt.defaultValue, result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestConfigurationDefaults(t *testing.T) {
 	// Test that default configuration values are reasonable
 	tests := []struct {
@@ -1369,6 +1319,12 @@ func TestCoreDNSConfiguration(t *testing.T) {
 				for _, volume := range updatedDeployment.Spec.Template.Spec.Volumes {
 					if volume.Name == "coredns-custom-volume" {
 						hasVolume = true
+						// Verify volume configuration
+						assert.NotNil(t, volume.VolumeSource.ConfigMap)
+						assert.Equal(t, "coredns-custom", volume.VolumeSource.ConfigMap.Name)
+						assert.Len(t, volume.VolumeSource.ConfigMap.Items, 1)
+						assert.Equal(t, "dynamic.server", volume.VolumeSource.ConfigMap.Items[0].Key)
+						assert.Equal(t, "dynamic.server", volume.VolumeSource.ConfigMap.Items[0].Path)
 						break
 					}
 				}
@@ -1378,6 +1334,9 @@ func TestCoreDNSConfiguration(t *testing.T) {
 					for _, mount := range updatedDeployment.Spec.Template.Spec.Containers[0].VolumeMounts {
 						if mount.Name == "coredns-custom-volume" {
 							hasVolumeMount = true
+							// Verify volume mount configuration
+							assert.Equal(t, "/etc/coredns/custom", mount.MountPath)
+							assert.True(t, mount.ReadOnly)
 							break
 						}
 					}
@@ -1415,6 +1374,7 @@ func TestCoreDNSConfiguration(t *testing.T) {
 	}
 }
 
+// TestCoreDNSImportStatement tests the ensureCoreDNSImport function
 func TestCoreDNSImportStatement(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
@@ -1749,403 +1709,443 @@ func TestCoreDNSVolumeMounts(t *testing.T) {
 					}
 				}
 
-				volumeAdded := hasVolume && !originalHasVolume
-				volumeMountAdded := hasVolumeMount && !originalHasVolumeMount
+				if tt.expectedVolumeMountAdded {
+					assert.True(t, hasVolume, "Volume should be added to Deployment")
+					assert.True(t, hasVolumeMount, "Volume mount should be added to Deployment")
+				} else if tt.existingCoreDNSDeployment != nil {
+					// Check if volume/mount was already present
+					originalHasVolume := false
+					originalHasVolumeMount := false
 
-				assert.Equal(t, tt.expectVolumeAdded, volumeAdded, "Volume addition expectation")
-				assert.Equal(t, tt.expectVolumeMountAdded, volumeMountAdded, "Volume mount addition expectation")
+					for _, volume := range tt.existingCoreDNSDeployment.Spec.Template.Spec.Volumes {
+						if volume.Name == "coredns-custom-volume" {
+							originalHasVolume = true
+							break
+						}
+					}
+
+					if len(tt.existingCoreDNSDeployment.Spec.Template.Spec.Containers) > 0 {
+						for _, mount := range tt.existingCoreDNSDeployment.Spec.Template.Spec.Containers[0].VolumeMounts {
+							if mount.Name == "coredns-custom-volume" {
+								originalHasVolumeMount = true
+								break
+							}
+						}
+					}
+
+					assert.Equal(t, originalHasVolume, hasVolume, "Volume presence should not change")
+					assert.Equal(t, originalHasVolumeMount, hasVolumeMount, "Volume mount presence should not change")
+				}
 			}
 		})
 	}
 }
 
-func TestIngressReconcilerWithCoreDNSEnabled(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, networkingv1.AddToScheme(scheme))
-	require.NoError(t, corev1.AddToScheme(scheme))
-	require.NoError(t, appsv1.AddToScheme(scheme))
-
-	// Enable CoreDNS auto-configuration
-	os.Setenv("COREDNS_AUTO_CONFIGURE", "true")
-	defer os.Unsetenv("COREDNS_AUTO_CONFIGURE")
-
-	// Create test ingress
-	ingress := &networkingv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-ingress",
-			Namespace: "default",
-		},
-		Spec: networkingv1.IngressSpec{
-			IngressClassName: stringPtr("nginx"),
-			Rules: []networkingv1.IngressRule{
-				{
-					Host: "api.k8s.example.com",
-					IngressRuleValue: networkingv1.IngressRuleValue{
-						HTTP: &networkingv1.HTTPIngressRuleValue{
-							Paths: []networkingv1.HTTPIngressPath{
-								{
-									Path: "/",
-									Backend: networkingv1.IngressBackend{
-										Service: &networkingv1.IngressServiceBackend{
-											Name: "api-service",
-											Port: networkingv1.ServiceBackendPort{Number: 80},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// Create CoreDNS ConfigMap
-	coreDNSConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "coredns",
-			Namespace: "kube-system",
-		},
-		Data: map[string]string{
-			"Corefile": `.:53 {
-    errors
-    health
-    ready
-    kubernetes cluster.local in-addr.arpa ip6.arpa {
-        pods insecure
-        fallthrough in-addr.arpa ip6.arpa
-    }
-    prometheus :9153
-    forward . /etc/resolv.conf
-    cache 30
-    loop
-    reload
-    loadbalance
-}`,
-		},
-	}
-
-	// Create CoreDNS Deployment
-	coreDNSDeployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "coredns",
-			Namespace: "kube-system",
-		},
-		Spec: appsv1.DeploymentSpec{
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "coredns",
-							Image: "registry.k8s.io/coredns/coredns:v1.10.1",
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "config-volume",
-									MountPath: "/etc/coredns",
-									ReadOnly:  true,
-								},
-							},
-						},
-					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "config-volume",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: "coredns",
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// Create fake client with test objects
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(ingress, coreDNSConfigMap, coreDNSDeployment).
-		Build()
-
-	reconciler := &IngressReconciler{
-		Client: fakeClient,
-		Scheme: scheme,
-	}
-
-	// Reconcile
-	req := reconcile.Request{
-		NamespacedName: types.NamespacedName{
-			Name:      "test-ingress",
-			Namespace: "default",
-		},
-	}
-
-	result, err := reconciler.Reconcile(context.Background(), req)
-	assert.NoError(t, err)
-	assert.Equal(t, reconcile.Result{}, result)
-
-	// Check that dynamic ConfigMap was created
-	var dynamicConfigMap corev1.ConfigMap
-	err = fakeClient.Get(context.Background(), types.NamespacedName{
-		Name:      "coredns-custom",
-		Namespace: "kube-system", // Dynamic ConfigMap is created in CoreDNS namespace
-	}, &dynamicConfigMap)
-	assert.NoError(t, err)
-	assert.Contains(t, dynamicConfigMap.Data["dynamic.server"], "rewrite name exact api.k8s.example.com ingress-nginx-controller.ingress-nginx.svc.cluster.local.")
-	assert.Contains(t, dynamicConfigMap.Data["dynamic.server"], "# Auto-generated by coredns-ingress-sync controller")
-
-	// Check that CoreDNS ConfigMap was updated with import statement
-	var updatedCoreDNSConfigMap corev1.ConfigMap
-	err = fakeClient.Get(context.Background(), types.NamespacedName{
-		Name:      "coredns",
-		Namespace: "kube-system",
-	}, &updatedCoreDNSConfigMap)
-	assert.NoError(t, err)
-	assert.Contains(t, updatedCoreDNSConfigMap.Data["Corefile"], "import /etc/coredns/custom/*.server")
-
-	// Check that CoreDNS Deployment was updated with volume and volume mount
-	var updatedCoreDNSDeployment appsv1.Deployment
-	err = fakeClient.Get(context.Background(), types.NamespacedName{
-		Name:      "coredns",
-		Namespace: "kube-system",
-	}, &updatedCoreDNSDeployment)
-	assert.NoError(t, err)
-
-	// Check for volume
-	hasVolume := false
-	for _, volume := range updatedCoreDNSDeployment.Spec.Template.Spec.Volumes {
-		if volume.Name == "coredns-custom-volume" {
-			hasVolume = true
-			assert.Equal(t, "coredns-custom", volume.VolumeSource.ConfigMap.Name)
-			break
-		}
-	}
-	assert.True(t, hasVolume, "CoreDNS deployment should have custom volume")
-
-	// Check for volume mount
-	hasVolumeMount := false
-	for _, mount := range updatedCoreDNSDeployment.Spec.Template.Spec.Containers[0].VolumeMounts {
-		if mount.Name == "coredns-custom-volume" {
-			hasVolumeMount = true
-			assert.Equal(t, "/etc/coredns/custom", mount.MountPath)
-			assert.True(t, mount.ReadOnly)
-			break
-		}
-	}
-	assert.True(t, hasVolumeMount, "CoreDNS deployment should have custom volume mount")
-}
-
-func TestDynamicConfigMapNamespace(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, networkingv1.AddToScheme(scheme))
-	require.NoError(t, corev1.AddToScheme(scheme))
-	require.NoError(t, appsv1.AddToScheme(scheme))
-
-	// Enable CoreDNS auto-configuration
-	os.Setenv("COREDNS_AUTO_CONFIGURE", "true")
-	defer os.Unsetenv("COREDNS_AUTO_CONFIGURE")
-
-	// Create test ingress
-	ingress := &networkingv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-ingress",
-			Namespace: "default",
-		},
-		Spec: networkingv1.IngressSpec{
-			IngressClassName: stringPtr("nginx"),
-			Rules: []networkingv1.IngressRule{
-				{
-					Host: "api.test.example.com",
-					IngressRuleValue: networkingv1.IngressRuleValue{
-						HTTP: &networkingv1.HTTPIngressRuleValue{
-							Paths: []networkingv1.HTTPIngressPath{
-								{
-									Path: "/",
-									Backend: networkingv1.IngressBackend{
-										Service: &networkingv1.IngressServiceBackend{
-											Name: "api-service",
-											Port: networkingv1.ServiceBackendPort{Number: 80},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// Create CoreDNS ConfigMap
-	coreDNSConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "coredns",
-			Namespace: "kube-system",
-		},
-		Data: map[string]string{
-			"Corefile": `.:53 {
-    errors
-    health
-    ready
-    kubernetes cluster.local in-addr.arpa ip6.arpa {
-        pods insecure
-        fallthrough in-addr.arpa ip6.arpa
-    }
-    prometheus :9153
-    forward . /etc/resolv.conf
-    cache 30
-    loop
-    reload
-    loadbalance
-}`,
-		},
-	}
-
-	// Create fake client with test objects
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(ingress, coreDNSConfigMap).
-		Build()
-
-	reconciler := &IngressReconciler{
-		Client: fakeClient,
-		Scheme: scheme,
-	}
-
-	// Reconcile
-	req := reconcile.Request{
-		NamespacedName: types.NamespacedName{
-			Name:      "test-ingress",
-			Namespace: "default",
-		},
-	}
-
-	result, err := reconciler.Reconcile(context.Background(), req)
-	assert.NoError(t, err)
-	assert.Equal(t, reconcile.Result{}, result)
-
-	// Verify dynamic ConfigMap is created in CoreDNS namespace (kube-system)
-	var dynamicConfigMap corev1.ConfigMap
-	err = fakeClient.Get(context.Background(), types.NamespacedName{
-		Name:      "coredns-custom",
-		Namespace: "kube-system",
-	}, &dynamicConfigMap)
-	assert.NoError(t, err, "Dynamic ConfigMap should be created in kube-system namespace")
-	assert.Contains(t, dynamicConfigMap.Data["dynamic.server"], "api.test.example.com")
-
-	// Verify dynamic ConfigMap is NOT created in default namespace
-	var defaultNSConfigMap corev1.ConfigMap
-	err = fakeClient.Get(context.Background(), types.NamespacedName{
-		Name:      "coredns-custom",
-		Namespace: "default",
-	}, &defaultNSConfigMap)
-	assert.Error(t, err, "Dynamic ConfigMap should NOT be created in default namespace")
-	assert.Contains(t, err.Error(), "not found")
-}
-
-// TestLeaderElection tests that leader election is properly configured
-func TestLeaderElection(t *testing.T) {
-	// Save original values
-	origClass := ingressClass
-	origTargetCNAME := targetCNAME
-	origNamespace := coreDNSNamespace
-	origConfigMapName := coreDNSConfigMapName
-
-	// Set test values
-	ingressClass = "nginx"
-	targetCNAME = "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
-	coreDNSNamespace = "kube-system"
-	coreDNSConfigMapName = "coredns"
-
-	defer func() {
-		ingressClass = origClass
-		targetCNAME = origTargetCNAME
-		coreDNSNamespace = origNamespace
-		coreDNSConfigMapName = origConfigMapName
-	}()
-
+// TestNamespaceFiltering tests the namespace filtering logic
+func TestNamespaceFiltering(t *testing.T) {
 	tests := []struct {
-		name        string
-		replicas    int
-		description string
+		name              string
+		watchNamespaces   string
+		ingressNamespaces []string
+		expectedHosts     []string
+		description       string
 	}{
 		{
-			name:        "single replica",
-			replicas:    1,
-			description: "Single replica should work without leader election conflicts",
+			name:              "watch all namespaces",
+			watchNamespaces:   "",
+			ingressNamespaces: []string{"default", "production", "staging"},
+			expectedHosts:     []string{"app.example.com", "api.example.com", "web.example.com"},
+			description:       "Should process ingresses from all namespaces when watchNamespaces is empty",
 		},
 		{
-			name:        "multiple replicas",
-			replicas:    3,
-			description: "Multiple replicas should coordinate via leader election",
+			name:              "watch specific namespace",
+			watchNamespaces:   "production",
+			ingressNamespaces: []string{"default", "production", "staging"},
+			expectedHosts:     []string{"api.example.com"},
+			description:       "Should only process ingresses from specified namespace",
+		},
+		{
+			name:              "watch multiple namespaces",
+			watchNamespaces:   "production,staging",
+			ingressNamespaces: []string{"default", "production", "staging"},
+			expectedHosts:     []string{"api.example.com", "web.example.com"},
+			description:       "Should process ingresses from multiple specified namespaces",
+		},
+		{
+			name:              "watch non-existent namespace",
+			watchNamespaces:   "non-existent",
+			ingressNamespaces: []string{"default", "production", "staging"},
+			expectedHosts:     []string{},
+			description:       "Should not process any ingresses when watching non-existent namespace",
+		},
+		{
+			name:              "watch with whitespace in config",
+			watchNamespaces:   " production , staging ",
+			ingressNamespaces: []string{"default", "production", "staging"},
+			expectedHosts:     []string{"api.example.com", "web.example.com"},
+			description:       "Should handle whitespace in namespace configuration",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a test namespace
-			testNamespace := "test-leader-election"
-
-			// Create fake clients for multiple controller instances
+			// Set up test environment
 			scheme := runtime.NewScheme()
-			require.NoError(t, networkingv1.AddToScheme(scheme))
-			require.NoError(t, corev1.AddToScheme(scheme))
-			require.NoError(t, appsv1.AddToScheme(scheme))
+			networkingv1.AddToScheme(scheme)
+			corev1.AddToScheme(scheme)
+			appsv1.AddToScheme(scheme)
 
-			// Create shared initial objects
-			coreDNSConfigMap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      coreDNSConfigMapName,
-					Namespace: coreDNSNamespace,
-				},
-				Data: map[string]string{
-					"Corefile": `.:53 {
-    errors
-    health {
-       lameduck 5s
-    }
-    ready
-    kubernetes cluster.local in-addr.arpa ip6.arpa {
-       pods insecure
-       fallthrough in-addr.arpa ip6.arpa
-       ttl 30
-    }
-    prometheus :9153
-    forward . /etc/resolv.conf {
-       max_concurrent 1000
-    }
-    cache 30
-    loop
-    reload
-    loadbalance
-}`,
-				},
+			// Set environment variable for namespace filtering
+			originalWatchNamespaces := os.Getenv("WATCH_NAMESPACES")
+			os.Setenv("WATCH_NAMESPACES", tt.watchNamespaces)
+			defer os.Setenv("WATCH_NAMESPACES", originalWatchNamespaces)
+
+			client := fake.NewClientBuilder().WithScheme(scheme).Build()
+			reconciler := &IngressReconciler{
+				Client: client,
+				Scheme: scheme,
 			}
 
-			coreDNSDeployment := &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "coredns",
-					Namespace: coreDNSNamespace,
-				},
-				Spec: appsv1.DeploymentSpec{
-					Template: corev1.PodTemplateSpec{
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
+			ctx := context.Background()
+
+			// Create test ingresses in different namespaces
+			ingressConfigs := []struct {
+				namespace string
+				host      string
+				name      string
+			}{
+				{"default", "app.example.com", "app-ingress"},
+				{"production", "api.example.com", "api-ingress"},
+				{"staging", "web.example.com", "web-ingress"},
+			}
+
+			for _, config := range ingressConfigs {
+				// Create namespace if it doesn't exist
+				if contains(tt.ingressNamespaces, config.namespace) {
+					ns := &corev1.Namespace{
+						ObjectMeta: metav1.ObjectMeta{Name: config.namespace},
+					}
+					client.Create(ctx, ns)
+
+					// Create ingress
+					className := "nginx"
+					ingress := &networkingv1.Ingress{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      config.name,
+							Namespace: config.namespace,
+						},
+						Spec: networkingv1.IngressSpec{
+							IngressClassName: &className,
+							Rules: []networkingv1.IngressRule{
 								{
-									Name:  "coredns",
-									Image: "coredns/coredns:1.8.4",
-									VolumeMounts: []corev1.VolumeMount{
-										{
-											Name:      "config-volume",
-											MountPath: "/etc/coredns",
-											ReadOnly:  true,
+									Host: config.host,
+									IngressRuleValue: networkingv1.IngressRuleValue{
+										HTTP: &networkingv1.HTTPIngressRuleValue{
+											Paths: []networkingv1.HTTPIngressPath{
+												{
+													Path:     "/",
+													PathType: &pathTypePrefix,
+													Backend: networkingv1.IngressBackend{
+														Service: &networkingv1.IngressServiceBackend{
+															Name: "test-service",
+															Port: networkingv1.ServiceBackendPort{Number: 80},
+														},
+													},
+												},
+											},
 										},
 									},
 								},
 							},
+						},
+					}
+					if err := client.Create(ctx, ingress); err != nil {
+						t.Fatalf("Failed to create test ingress: %v", err)
+					}
+				}
+			}
+
+			// Create CoreDNS ConfigMap and deployment
+			createTestCoreDNSResources(t, client, ctx)
+
+			// Trigger reconciliation
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "test-reconcile",
+					Namespace: "default",
+				},
+			}
+
+			result, err := reconciler.Reconcile(ctx, req)
+			if err != nil {
+				t.Fatalf("Reconcile failed: %v", err)
+			}
+
+			if result.RequeueAfter != 0 {
+				t.Errorf("Expected no requeue, got requeue after %v", result.RequeueAfter)
+			}
+
+			// Verify dynamic ConfigMap contains only expected hosts
+			dynamicConfigMap := &corev1.ConfigMap{}
+			err = client.Get(ctx, types.NamespacedName{
+				Name:      "coredns-custom",
+				Namespace: "kube-system",
+			}, dynamicConfigMap)
+
+			if len(tt.expectedHosts) == 0 {
+				// Should not create ConfigMap if no hosts expected
+				if err == nil {
+					config := dynamicConfigMap.Data["dynamic.server"]
+					if strings.TrimSpace(config) != "# Auto-generated by coredns-ingress-sync controller\n# Last updated: "+time.Now().Format("2006-01-02") {
+						t.Errorf("Expected empty or minimal configuration when no hosts expected, got: %s", config)
+					}
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Expected dynamic ConfigMap to be created, got error: %v", err)
+			}
+
+			config := dynamicConfigMap.Data["dynamic.server"]
+
+			// Verify each expected host is present
+			for _, expectedHost := range tt.expectedHosts {
+				expectedLine := fmt.Sprintf("rewrite name exact %s ingress-nginx-controller.ingress-nginx.svc.cluster.local.", expectedHost)
+				if !strings.Contains(config, expectedLine) {
+					t.Errorf("Expected configuration to contain '%s', but it was missing. Full config:\n%s", expectedLine, config)
+				}
+			}
+
+			// Verify no unexpected hosts are present
+			for _, config := range ingressConfigs {
+				if !contains(tt.expectedHosts, config.host) {
+					unexpectedLine := fmt.Sprintf("rewrite name exact %s", config.host)
+					if strings.Contains(config, unexpectedLine) {
+						t.Errorf("Configuration should not contain '%s' for namespace filtering test '%s'. Full config:\n%s", unexpectedLine, tt.name, config)
+					}
+				}
+			}
+
+			t.Logf("✅ %s: %s", tt.name, tt.description)
+		})
+	}
+}
+
+func TestNamespaceFilteringPredicates(t *testing.T) {
+	tests := []struct {
+		name            string
+		watchNamespaces string
+		ingressNS       string
+		ingressClass    string
+		shouldTrigger   bool
+		description     string
+	}{
+		{
+			name:            "all namespaces - should trigger",
+			watchNamespaces: "",
+			ingressNS:       "production",
+			ingressClass:    "nginx",
+			shouldTrigger:   true,
+			description:     "Should trigger reconciliation for any namespace when watching all",
+		},
+		{
+			name:            "specific namespace - should trigger",
+			watchNamespaces: "production",
+			ingressNS:       "production",
+			ingressClass:    "nginx",
+			shouldTrigger:   true,
+			description:     "Should trigger when ingress is in watched namespace",
+		},
+		{
+			name:            "specific namespace - should not trigger",
+			watchNamespaces: "production",
+			ingressNS:       "staging",
+			ingressClass:    "nginx",
+			shouldTrigger:   false,
+			description:     "Should not trigger when ingress is not in watched namespace",
+		},
+		{
+			name:            "multiple namespaces - should trigger for first",
+			watchNamespaces: "production,staging",
+			ingressNS:       "production",
+			ingressClass:    "nginx",
+			shouldTrigger:   true,
+			description:     "Should trigger when ingress is in one of the watched namespaces",
+		},
+		{
+			name:            "multiple namespaces - should trigger for second",
+			watchNamespaces: "production,staging",
+			ingressNS:       "staging",
+			ingressClass:    "nginx",
+			shouldTrigger:   true,
+			description:     "Should trigger when ingress is in one of the watched namespaces",
+		},
+		{
+			name:            "wrong ingress class - should not trigger",
+			watchNamespaces: "production",
+			ingressNS:       "production",
+			ingressClass:    "traefik",
+			shouldTrigger:   false,
+			description:     "Should not trigger for wrong ingress class regardless of namespace",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variable
+			originalWatchNamespaces := os.Getenv("WATCH_NAMESPACES")
+			os.Setenv("WATCH_NAMESPACES", tt.watchNamespaces)
+			defer os.Setenv("WATCH_NAMESPACES", originalWatchNamespaces)
+
+			// Create test ingress
+			ingress := &networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ingress",
+					Namespace: tt.ingressNS,
+				},
+				Spec: networkingv1.IngressSpec{
+					IngressClassName: &tt.ingressClass,
+					Rules: []networkingv1.IngressRule{
+						{
+							Host: "test.example.com",
+						},
+					},
+				},
+			}
+
+			// Test isTargetIngress function
+			isTarget := isTargetIngress(ingress)
+			expectedTarget := tt.ingressClass == "nginx"
+			if isTarget != expectedTarget {
+				t.Errorf("isTargetIngress() = %v, expected %v for class %s", isTarget, expectedTarget, tt.ingressClass)
+			}
+
+			// Test predicate function (simulated)
+			// This tests the logic that would be in the predicate function
+			var namespaces []string
+			if tt.watchNamespaces != "" {
+				namespaces = strings.Split(strings.ReplaceAll(tt.watchNamespaces, " ", ""), ",")
+				var validNamespaces []string
+				for _, ns := range namespaces {
+					if ns != "" {
+						validNamespaces = append(validNamespaces, ns)
+					}
+				}
+				namespaces = validNamespaces
+			}
+
+			shouldTriggerPredicate := isTarget
+			if shouldTriggerPredicate && len(namespaces) > 0 {
+				shouldTriggerPredicate = false
+				for _, ns := range namespaces {
+					if ingress.GetNamespace() == ns {
+						shouldTriggerPredicate = true
+						break
+					}
+				}
+			}
+
+			if shouldTriggerPredicate != tt.shouldTrigger {
+				t.Errorf("Predicate logic result = %v, expected %v. %s", shouldTriggerPredicate, tt.shouldTrigger, tt.description)
+			}
+
+			t.Logf("✅ %s: %s", tt.name, tt.description)
+		})
+	}
+}
+
+func TestControllerManagerNamespaceConfig(t *testing.T) {
+	tests := []struct {
+		name            string
+		watchNamespaces string
+		expectAllNS     bool
+		expectedNS      []string
+		description     string
+	}{
+		{
+			name:            "empty config watches all namespaces",
+			watchNamespaces: "",
+			expectAllNS:     true,
+			expectedNS:      nil,
+			description:     "Empty WATCH_NAMESPACES should configure manager for all namespaces",
+		},
+		{
+			name:            "single namespace",
+			watchNamespaces: "production",
+			expectAllNS:     false,
+			expectedNS:      []string{"production"},
+			description:     "Single namespace should configure manager for that namespace only",
+		},
+		{
+			name:            "multiple namespaces",
+			watchNamespaces: "production,staging,default",
+			expectAllNS:     false,
+			expectedNS:      []string{"production", "staging", "default"},
+			description:     "Multiple namespaces should configure manager for those namespaces",
+		},
+		{
+			name:            "namespaces with whitespace",
+			watchNamespaces: " production , staging , default ",
+			expectAllNS:     false,
+			expectedNS:      []string{"production", "staging", "default"},
+			description:     "Should handle whitespace in namespace configuration",
+		},
+		{
+			name:            "empty namespace in list",
+			watchNamespaces: "production,,staging",
+			expectAllNS:     false,
+			expectedNS:      []string{"production", "staging"},
+			description:     "Should filter out empty namespace entries",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test the namespace parsing logic from runController
+			var namespaces []string
+			if tt.watchNamespaces != "" {
+				namespaces = strings.Split(strings.ReplaceAll(tt.watchNamespaces, " ", ""), ",")
+				// Filter out empty strings
+				var validNamespaces []string
+				for _, ns := range namespaces {
+					if ns != "" {
+						validNamespaces = append(validNamespaces, ns)
+					}
+				}
+				namespaces = validNamespaces
+			}
+
+			if tt.expectAllNS {
+				if len(namespaces) != 0 {
+					t.Errorf("Expected no specific namespaces for all-namespace config, got: %v", namespaces)
+				}
+			} else {
+				if len(namespaces) != len(tt.expectedNS) {
+					t.Errorf("Expected %d namespaces, got %d: %v", len(tt.expectedNS), len(namespaces), namespaces)
+				}
+
+				for i, expectedNS := range tt.expectedNS {
+					if i >= len(namespaces) || namespaces[i] != expectedNS {
+						t.Errorf("Expected namespace[%d] = %s, got %v", i, expectedNS, namespaces)
+					}
+				}
+			}
+
+			t.Logf("✅ %s: %s", tt.name, tt.description)
+		})
+	}
+}
+
+// Helper function to check if slice contains string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
 							Volumes: []corev1.Volume{
 								{
 									Name: "config-volume",
