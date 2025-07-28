@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -34,12 +35,12 @@ type Manager struct {
 
 // DeploymentClient interface for Kubernetes deployment operations
 type DeploymentClient interface {
+	GetDeployment(ctx context.Context, namespace, name string) (*appsv1.Deployment, error)
 	UpdateDeployment(ctx context.Context, deployment *appsv1.Deployment) error
-	GetDeployment(ctx context.Context, name, namespace string) (*appsv1.Deployment, error)
 }
 
-// KubernetesClient wraps the Kubernetes clientset
-type KubernetesClient struct {
+// DirectKubernetesClient wraps the Kubernetes clientset
+type DirectKubernetesClient struct {
 	clientset kubernetes.Interface
 }
 
@@ -230,109 +231,165 @@ func (m *Manager) ensureImport(ctx context.Context) error {
 
 // ensureVolumeMount ensures the CoreDNS deployment has the proper volume mount
 func (m *Manager) ensureVolumeMount(ctx context.Context) error {
-	// Try to use controller-runtime client first (for testing)
+	// Try to create a direct Kubernetes client for deployment operations
+	// If the client is a fake client (in tests), we'll use it directly
 	if m.isFakeClient() {
 		controllerClient := &ControllerRuntimeClient{client: m.client}
 		return m.ensureVolumeMountWithClient(ctx, controllerClient)
 	}
 
-	// For production, we need to use the Kubernetes client
-	// This would require the REST config, which we don't have access to here
-	// We'll delegate this to the caller or implement it differently
-	log.Printf("Volume mount management requires Kubernetes clientset - skipping for now")
-	return nil
+	config, err := ctrl.GetConfig()
+	if err != nil {
+		// In test environment, we'll simulate the deployment update using the controller-runtime client
+		controllerClient := &ControllerRuntimeClient{client: m.client}
+		return m.ensureVolumeMountWithClient(ctx, controllerClient)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		// In test environment, we'll simulate the deployment update using the controller-runtime client
+		controllerClient := &ControllerRuntimeClient{client: m.client}
+		return m.ensureVolumeMountWithClient(ctx, controllerClient)
+	}
+
+	// Create a wrapper that implements the same interface as controller-runtime client
+	directClient := &DirectKubernetesClient{clientset: clientset}
+	return m.ensureVolumeMountWithClient(ctx, directClient)
 }
 
 // ensureVolumeMountWithClient ensures volume mount using a deployment client
 func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentClient DeploymentClient) error {
-	deployment, err := deploymentClient.GetDeployment(ctx, "coredns", m.config.Namespace)
-	if err != nil {
-		return fmt.Errorf("failed to get CoreDNS deployment: %w", err)
-	}
-
-	modified := false
-
-	// Check if volume already exists
-	volumeExists := false
-	for _, volume := range deployment.Spec.Template.Spec.Volumes {
-		if volume.Name == "custom-config-volume" {
-			volumeExists = true
-			break
+	fmt.Printf("DEBUG: Starting ensureVolumeMountWithClient\n")
+	
+	// Retry logic to handle resource version conflicts
+	for attempt := 0; attempt < 3; attempt++ {
+		fmt.Printf("DEBUG: Attempt %d - Getting CoreDNS deployment from namespace: %s\n", attempt+1, m.config.Namespace)
+		deployment, err := deploymentClient.GetDeployment(ctx, m.config.Namespace, "coredns")
+		if err != nil {
+			fmt.Printf("DEBUG: Failed to get CoreDNS deployment: %v\n", err)
+			return fmt.Errorf("failed to get CoreDNS deployment: %w", err)
 		}
-	}
 
-	// Add volume if it doesn't exist
-	if !volumeExists {
-		newVolume := corev1.Volume{
-			Name: "custom-config-volume",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: m.config.DynamicConfigMapName,
-					},
-				},
-			},
+		fmt.Printf("DEBUG: Retrieved deployment, checking volumes and volume mounts\n")
+		modified := false
+
+		// Check if volume and volume mount already exist
+		hasVolume := false
+		hasVolumeMount := false
+		volumeName := "coredns-custom-volume"
+
+		// Check for existing volume
+		fmt.Printf("DEBUG: Checking for existing volumes (total: %d)\n", len(deployment.Spec.Template.Spec.Volumes))
+		for i, volume := range deployment.Spec.Template.Spec.Volumes {
+			fmt.Printf("DEBUG:   Volume[%d]: name=%s\n", i, volume.Name)
+			if volume.Name == volumeName {
+				hasVolume = true
+				fmt.Printf("DEBUG: Found existing %s volume\n", volumeName)
+				break
+			}
 		}
-		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, newVolume)
-		modified = true
-	}
 
-	// Check if volume mount exists in CoreDNS container
-	for i, container := range deployment.Spec.Template.Spec.Containers {
-		if container.Name == "coredns" {
-			volumeMountExists := false
-			for _, volumeMount := range container.VolumeMounts {
-				if volumeMount.Name == "custom-config-volume" {
-					volumeMountExists = true
+		// Check for existing volume mount
+		if len(deployment.Spec.Template.Spec.Containers) > 0 {
+			fmt.Printf("DEBUG: Current volume mounts in CoreDNS container: %d mounts\n", len(deployment.Spec.Template.Spec.Containers[0].VolumeMounts))
+			for j, mount := range deployment.Spec.Template.Spec.Containers[0].VolumeMounts {
+				fmt.Printf("DEBUG:   [%d] name=%s, path=%s\n", j, mount.Name, mount.MountPath)
+				if mount.Name == volumeName {
+					hasVolumeMount = true
+					fmt.Printf("DEBUG: Found existing %s mount\n", volumeName)
 					break
 				}
 			}
+		}
 
-			if !volumeMountExists {
-				newVolumeMount := corev1.VolumeMount{
-					Name:      "custom-config-volume",
-					MountPath: "/etc/coredns/custom",
-				}
-				deployment.Spec.Template.Spec.Containers[i].VolumeMounts = append(
-					deployment.Spec.Template.Spec.Containers[i].VolumeMounts, 
-					newVolumeMount,
-				)
-				modified = true
+		// If both exist, nothing to do
+		if hasVolume && hasVolumeMount {
+			fmt.Printf("DEBUG: CoreDNS deployment already has custom config volume mount\n")
+			log.Printf("CoreDNS deployment already has custom config volume mount")
+			return nil
+		}
+
+		// Add volume if missing
+		if !hasVolume {
+			newVolume := corev1.Volume{
+				Name: volumeName,
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: m.config.DynamicConfigMapName,
+						},
+						Items: []corev1.KeyToPath{
+							{
+								Key:  m.config.DynamicConfigKey,
+								Path: "dynamic.server",
+							},
+						},
+					},
+				},
 			}
-			break
+			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, newVolume)
+			modified = true
+			log.Printf("Added %s to CoreDNS deployment", volumeName)
 		}
-	}
 
-	if modified {
+		// Add volume mount if missing
+		if !hasVolumeMount && len(deployment.Spec.Template.Spec.Containers) > 0 {
+			newVolumeMount := corev1.VolumeMount{
+				Name:      volumeName,
+				MountPath: "/etc/coredns/custom",
+				ReadOnly:  true,
+			}
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(
+				deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+				newVolumeMount,
+			)
+			modified = true
+			log.Printf("Added %s mount to CoreDNS container", volumeName)
+		}
+
+		if !modified {
+			fmt.Printf("DEBUG: No modifications needed\n")
+			return nil
+		}
+
+		// Try to update the deployment
 		if err := deploymentClient.UpdateDeployment(ctx, deployment); err != nil {
-			return fmt.Errorf("failed to update CoreDNS deployment: %w", err)
+			if attempt == 2 {
+				return fmt.Errorf("failed to update CoreDNS deployment after retries: %w", err)
+			}
+			log.Printf("Failed to update CoreDNS deployment (attempt %d): %v, retrying...", attempt+1, err)
+			time.Sleep(time.Millisecond * 100) // Brief delay before retry
+			continue
 		}
+
 		log.Printf("Updated CoreDNS deployment with custom config volume mount")
-	} else {
-		log.Printf("CoreDNS deployment already has custom config volume mount")
+		return nil
 	}
 
-	return nil
-}
-
-// isFakeClient checks if we're using a fake client (for testing)
-func (m *Manager) isFakeClient() bool {
-	// This is a simplified check - in real implementation you might use reflection
-	// or other mechanisms to detect fake clients
-	return strings.Contains(fmt.Sprintf("%T", m.client), "fake")
+	return fmt.Errorf("exhausted retries updating CoreDNS deployment")
 }
 
 // Implementation of DeploymentClient interface
 
-// UpdateDeployment updates a deployment using Kubernetes clientset
-func (k *KubernetesClient) UpdateDeployment(ctx context.Context, deployment *appsv1.Deployment) error {
-	_, err := k.clientset.AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+// GetDeployment gets a deployment using direct Kubernetes clientset
+func (d *DirectKubernetesClient) GetDeployment(ctx context.Context, namespace, name string) (*appsv1.Deployment, error) {
+	return d.clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
+// UpdateDeployment updates a deployment using direct Kubernetes clientset
+func (d *DirectKubernetesClient) UpdateDeployment(ctx context.Context, deployment *appsv1.Deployment) error {
+	_, err := d.clientset.AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
 	return err
 }
 
-// GetDeployment gets a deployment using Kubernetes clientset
-func (k *KubernetesClient) GetDeployment(ctx context.Context, name, namespace string) (*appsv1.Deployment, error) {
-	return k.clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+// GetDeployment gets a deployment using controller-runtime client
+func (c *ControllerRuntimeClient) GetDeployment(ctx context.Context, namespace, name string) (*appsv1.Deployment, error) {
+	var deployment appsv1.Deployment
+	err := c.client.Get(ctx, types.NamespacedName{
+		Name:      name,
+		Namespace: namespace,
+	}, &deployment)
+	return &deployment, err
 }
 
 // UpdateDeployment updates a deployment using controller-runtime client
@@ -340,10 +397,10 @@ func (c *ControllerRuntimeClient) UpdateDeployment(ctx context.Context, deployme
 	return c.client.Update(ctx, deployment)
 }
 
-// GetDeployment gets a deployment using controller-runtime client
-func (c *ControllerRuntimeClient) GetDeployment(ctx context.Context, name, namespace string) (*appsv1.Deployment, error) {
-	deployment := &appsv1.Deployment{}
-	key := types.NamespacedName{Name: name, Namespace: namespace}
-	err := c.client.Get(ctx, key, deployment)
-	return deployment, err
+// isFakeClient detects if we're using a fake client (in tests)
+func (m *Manager) isFakeClient() bool {
+	// Check if the client is a fake client by testing with a type assertion
+	// This is a common pattern in controller-runtime tests
+	clientTypeName := fmt.Sprintf("%T", m.client)
+	return strings.Contains(clientTypeName, "fake")
 }

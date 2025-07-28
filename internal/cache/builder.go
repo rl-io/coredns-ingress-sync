@@ -29,26 +29,49 @@ func (cb *ConfigBuilder) BuildCacheOptions() cache.Options {
 	var cacheOptions cache.Options
 
 	if len(cb.watchNamespaces) > 0 {
-		// Create namespace map for ingresses (only the specified namespaces)
+		// Namespace-scoped cache configuration - works for single or multiple namespaces
+		// Create a namespace map for each namespace we want to watch
 		ingressNamespaceMap := make(map[string]cache.Config)
 		for _, ns := range cb.watchNamespaces {
 			ingressNamespaceMap[ns] = cache.Config{}
 		}
 		
-		// Configure cache with ByObject for namespace-scoped resources
+		// Always need access to CoreDNS namespace for ConfigMap operations
+		configMapNamespaceMap := map[string]cache.Config{
+			cb.coreDNSNamespace: {},
+		}
+		
+		// If we're watching namespaces that include the CoreDNS namespace,
+		// we need to merge the configs to avoid conflicts
+		if cb.coreDNSNamespace != "" {
+			for _, ns := range cb.watchNamespaces {
+				if ns == cb.coreDNSNamespace {
+					// CoreDNS namespace is in our watch list, so we can use the same config
+					configMapNamespaceMap[cb.coreDNSNamespace] = cache.Config{}
+					break
+				}
+			}
+		}
+		
 		cacheOptions.ByObject = map[client.Object]cache.ByObject{
 			&networkingv1.Ingress{}: {
 				Namespaces: ingressNamespaceMap,
 			},
 			&corev1.ConfigMap{}: {
-				Namespaces: map[string]cache.Config{
-					cb.coreDNSNamespace: {},
-				},
+				Namespaces: configMapNamespaceMap,
 			},
 		}
-		log.Printf("Configured to watch specific namespaces: %v (plus %s for CoreDNS)", cb.watchNamespaces, cb.coreDNSNamespace)
+		
+		if len(cb.watchNamespaces) == 1 {
+			log.Printf("Using namespace-scoped cache for single namespace: %s", cb.watchNamespaces[0])
+		} else {
+			log.Printf("Using namespace-scoped cache for multiple namespaces: %v", cb.watchNamespaces)
+		}
+		
+		log.Printf("CoreDNS ConfigMap access configured for namespace: %s", cb.coreDNSNamespace)
 	} else {
-		log.Printf("Configured to watch all namespaces")
+		// Cluster-wide watching - no namespace restrictions
+		log.Printf("Using cluster-wide cache - watching all namespaces")
 	}
 
 	return cacheOptions

@@ -78,6 +78,10 @@ test-integration: ## Run integration tests
 test-e2e: ## Run end-to-end tests
 	./tests/run_tests.sh --e2e
 
+.PHONY: test-rbac
+test-rbac: ## Run RBAC end-to-end tests
+	./tests/e2e_rbac_test.sh
+
 .PHONY: test-performance
 test-performance: ## Run performance benchmarks
 	./tests/run_tests.sh --performance
@@ -284,7 +288,7 @@ kind-test-version: ## Test specific Kubernetes version (usage: make kind-test-ve
 
 .PHONY: kind-test-latest
 kind-test-latest: ## Test latest supported Kubernetes version
-	./tests/kind/test-k8s-versions.sh --version 1.30.0
+	./tests/kind/test-k8s-versions.sh --version 1.30.13
 
 .PHONY: kind-test-oldest
 kind-test-oldest: ## Test oldest supported Kubernetes version

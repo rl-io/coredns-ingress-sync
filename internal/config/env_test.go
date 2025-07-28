@@ -18,6 +18,7 @@ func TestLoad(t *testing.T) {
 		"COREDNS_CONFIGMAP_NAME":  os.Getenv("COREDNS_CONFIGMAP_NAME"),
 		"LEADER_ELECTION_ENABLED": os.Getenv("LEADER_ELECTION_ENABLED"),
 		"WATCH_NAMESPACES":        os.Getenv("WATCH_NAMESPACES"),
+		"POD_NAMESPACE":           os.Getenv("POD_NAMESPACE"),
 	}
 
 	// Restore original environment after test
@@ -48,6 +49,7 @@ func TestLoad(t *testing.T) {
 		assert.True(t, config.LeaderElectionEnabled)
 		assert.Equal(t, "", config.WatchNamespaces)
 		assert.Equal(t, "import /etc/coredns/custom/*.server", config.ImportStatement)
+		assert.Equal(t, "coredns-ingress-sync", config.ControllerNamespace) // Default fallback
 	})
 
 	t.Run("environment overrides", func(t *testing.T) {
@@ -60,6 +62,7 @@ func TestLoad(t *testing.T) {
 		os.Setenv("COREDNS_CONFIGMAP_NAME", "custom-coredns")
 		os.Setenv("LEADER_ELECTION_ENABLED", "false")
 		os.Setenv("WATCH_NAMESPACES", "production,staging")
+		os.Setenv("POD_NAMESPACE", "custom-namespace")
 
 		config := Load()
 
@@ -71,6 +74,7 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, "custom-coredns", config.CoreDNSConfigMapName)
 		assert.False(t, config.LeaderElectionEnabled)
 		assert.Equal(t, "production,staging", config.WatchNamespaces)
+		assert.Equal(t, "custom-namespace", config.ControllerNamespace)
 	})
 }
 

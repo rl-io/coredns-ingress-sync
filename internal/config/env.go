@@ -13,6 +13,7 @@ type Config struct {
 	LeaderElectionEnabled bool
 	WatchNamespaces       string
 	ImportStatement       string
+	ControllerNamespace   string // Namespace where the controller is deployed
 }
 
 // Load creates a new Config instance with values loaded from environment variables
@@ -27,6 +28,7 @@ func Load() *Config {
 		LeaderElectionEnabled: getEnvOrDefault("LEADER_ELECTION_ENABLED", "true") == "true",
 		WatchNamespaces:       getEnvOrDefault("WATCH_NAMESPACES", ""), // Comma-separated list, empty = all namespaces
 		ImportStatement:       "import /etc/coredns/custom/*.server",
+		ControllerNamespace:   getEnvOrDefault("POD_NAMESPACE", "coredns-ingress-sync"), // Default fallback
 	}
 }
 

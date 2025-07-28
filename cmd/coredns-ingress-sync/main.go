@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -14,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -70,13 +75,17 @@ func runController() {
 	if err := corev1.AddToScheme(scheme); err != nil {
 		log.Fatal(err)
 	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		log.Fatal(err)
+	}
 
 	// Create the manager
 	mgr, err := manager.New(ctrl.GetConfigOrDie(), manager.Options{
 		Scheme:                  scheme,
 		LeaderElection:          cfg.LeaderElectionEnabled,
 		LeaderElectionID:        "coredns-ingress-sync-leader",
-		LeaderElectionNamespace: cfg.CoreDNSNamespace,
+		LeaderElectionNamespace: cfg.ControllerNamespace, // Use controller's own namespace, not CoreDNS namespace
+		HealthProbeBindAddress:  ":8081",
 		Cache:                   cacheOptions,
 	})
 	if err != nil {
@@ -158,6 +167,22 @@ func runController() {
 	log.Printf("Dynamic ConfigMap: %s", cfg.DynamicConfigMapName)
 	log.Printf("CoreDNS ConfigMap: %s/%s", cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName)
 
+	// Add health check endpoints
+	if err := mgr.AddHealthzCheck("healthz", func(req *http.Request) error {
+		// Basic health check - always return healthy if the manager is running
+		return nil
+	}); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := mgr.AddReadyzCheck("readyz", func(req *http.Request) error {
+		// Ready check - always return ready since controller-runtime handles leader election internally
+		// The manager will only start reconciling when it becomes the leader
+		return nil
+	}); err != nil {
+		log.Fatal(err)
+	}
+
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		log.Fatal(err)
 	}
@@ -166,12 +191,18 @@ func runController() {
 func runCleanup() {
 	// Load configuration
 	cfg := config.Load()
-	log.Printf("Cleanup mode - removing dynamic ConfigMap: %s/%s", cfg.CoreDNSNamespace, cfg.DynamicConfigMapName)
+	log.Printf("Cleanup mode - removing CoreDNS configuration and dynamic ConfigMap: %s/%s", cfg.CoreDNSNamespace, cfg.DynamicConfigMapName)
 
 	// Create a simple client for cleanup operations
 	clientConfig := ctrl.GetConfigOrDie()
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
+		log.Fatal(err)
+	}
+	if err := networkingv1.AddToScheme(scheme); err != nil {
+		log.Fatal(err)
+	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
 		log.Fatal(err)
 	}
 
@@ -180,7 +211,7 @@ func runCleanup() {
 		log.Fatal(err)
 	}
 
-	// Create CoreDNS manager for cleanup (not used but structured for future cleanup logic)
+	// Create CoreDNS manager for cleanup operations
 	coreDNSConfig := coredns.Config{
 		Namespace:            cfg.CoreDNSNamespace,
 		ConfigMapName:        cfg.CoreDNSConfigMapName,
@@ -189,12 +220,22 @@ func runCleanup() {
 		ImportStatement:      cfg.ImportStatement,
 		TargetCNAME:          cfg.TargetCNAME,
 	}
-	_ = coredns.NewManager(k8sClient, coreDNSConfig)
+	coreDNSManager := coredns.NewManager(k8sClient, coreDNSConfig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Delete the dynamic ConfigMap
+	// Step 1: Remove import statement from CoreDNS Corefile
+	if err := removeCoreDNSImport(ctx, coreDNSManager, cfg); err != nil {
+		log.Printf("Warning: Failed to remove import statement from CoreDNS: %v", err)
+	}
+
+	// Step 2: Remove volume mount from CoreDNS deployment
+	if err := removeCoreDNSVolumeMount(ctx, coreDNSManager, cfg); err != nil {
+		log.Printf("Warning: Failed to remove volume mount from CoreDNS deployment: %v", err)
+	}
+
+	// Step 3: Delete the dynamic ConfigMap
 	configMap := &corev1.ConfigMap{}
 	configMapName := types.NamespacedName{
 		Name:      cfg.DynamicConfigMapName,
@@ -203,15 +244,139 @@ func runCleanup() {
 
 	if err := k8sClient.Get(ctx, configMapName, configMap); err != nil {
 		log.Printf("Dynamic ConfigMap %s not found or already deleted: %v", cfg.DynamicConfigMapName, err)
-		return
+	} else {
+		if err := k8sClient.Delete(ctx, configMap); err != nil {
+			log.Printf("Failed to delete dynamic ConfigMap %s: %v", cfg.DynamicConfigMapName, err)
+			os.Exit(1)
+		}
+		log.Printf("Successfully deleted dynamic ConfigMap %s", cfg.DynamicConfigMapName)
 	}
 
-	if err := k8sClient.Delete(ctx, configMap); err != nil {
-		log.Printf("Failed to delete dynamic ConfigMap %s: %v", cfg.DynamicConfigMapName, err)
-		os.Exit(1)
+	log.Printf("Cleanup completed successfully")
+}
+
+// removeCoreDNSImport removes the import statement from CoreDNS Corefile
+func removeCoreDNSImport(ctx context.Context, coreDNSManager *coredns.Manager, cfg *config.Config) error {
+	// Get the CoreDNS ConfigMap directly
+	clientConfig := ctrl.GetConfigOrDie()
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		return err
 	}
 
-	log.Printf("Successfully deleted dynamic ConfigMap %s", cfg.DynamicConfigMapName)
+	k8sClient, err := client.New(clientConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		return err
+	}
+
+	coreDNSConfigMap := &corev1.ConfigMap{}
+	coreDNSConfigMapName := types.NamespacedName{
+		Name:      cfg.CoreDNSConfigMapName,
+		Namespace: cfg.CoreDNSNamespace,
+	}
+
+	if err := k8sClient.Get(ctx, coreDNSConfigMapName, coreDNSConfigMap); err != nil {
+		return fmt.Errorf("failed to get CoreDNS ConfigMap: %w", err)
+	}
+
+	// Check if Corefile exists
+	corefile, exists := coreDNSConfigMap.Data["Corefile"]
+	if !exists {
+		return fmt.Errorf("corefile not found in CoreDNS ConfigMap")
+	}
+
+	// Remove import statement if it exists
+	if !strings.Contains(corefile, cfg.ImportStatement) {
+		log.Printf("Import statement not found in CoreDNS Corefile - already removed")
+		return nil
+	}
+
+	// Remove the import statement line
+	lines := strings.Split(corefile, "\n")
+	var newLines []string
+
+	for _, line := range lines {
+		// Skip lines that contain the import statement
+		if !strings.Contains(line, cfg.ImportStatement) {
+			newLines = append(newLines, line)
+		}
+	}
+
+	// Update the ConfigMap
+	newCorefile := strings.Join(newLines, "\n")
+	coreDNSConfigMap.Data["Corefile"] = newCorefile
+
+	if err := k8sClient.Update(ctx, coreDNSConfigMap); err != nil {
+		return fmt.Errorf("failed to update CoreDNS ConfigMap: %w", err)
+	}
+
+	log.Printf("Removed import statement from CoreDNS Corefile")
+	return nil
+}
+
+// removeCoreDNSVolumeMount removes the volume mount from CoreDNS deployment
+func removeCoreDNSVolumeMount(ctx context.Context, coreDNSManager *coredns.Manager, cfg *config.Config) error {
+	// Get the CoreDNS deployment directly
+	clientConfig := ctrl.GetConfigOrDie()
+	scheme := runtime.NewScheme()
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		return err
+	}
+
+	k8sClient, err := client.New(clientConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		return err
+	}
+
+	deployment := &appsv1.Deployment{}
+	deploymentName := types.NamespacedName{
+		Name:      "coredns",
+		Namespace: cfg.CoreDNSNamespace,
+	}
+
+	if err := k8sClient.Get(ctx, deploymentName, deployment); err != nil {
+		return fmt.Errorf("failed to get CoreDNS deployment: %w", err)
+	}
+
+	modified := false
+
+	// Remove volume if it exists
+	var newVolumes []corev1.Volume
+	for _, volume := range deployment.Spec.Template.Spec.Volumes {
+		if volume.Name != "custom-config-volume" {
+			newVolumes = append(newVolumes, volume)
+		} else {
+			modified = true
+		}
+	}
+	deployment.Spec.Template.Spec.Volumes = newVolumes
+
+	// Remove volume mount from CoreDNS container
+	for i, container := range deployment.Spec.Template.Spec.Containers {
+		if container.Name == "coredns" {
+			var newVolumeMounts []corev1.VolumeMount
+			for _, volumeMount := range container.VolumeMounts {
+				if volumeMount.Name != "custom-config-volume" {
+					newVolumeMounts = append(newVolumeMounts, volumeMount)
+				} else {
+					modified = true
+				}
+			}
+			deployment.Spec.Template.Spec.Containers[i].VolumeMounts = newVolumeMounts
+			break
+		}
+	}
+
+	if modified {
+		if err := k8sClient.Update(ctx, deployment); err != nil {
+			return fmt.Errorf("failed to update CoreDNS deployment: %w", err)
+		}
+		log.Printf("Removed custom config volume mount from CoreDNS deployment")
+	} else {
+		log.Printf("Custom config volume mount not found in CoreDNS deployment - already removed")
+	}
+
+	return nil
 }
 
 func addConfigMapWatch(cache cache.Cache, c ctrlcontroller.Controller, namespace, name, reconcileName string) error {
@@ -234,17 +399,41 @@ func addDynamicConfigMapWatch(cache cache.Cache, c ctrlcontroller.Controller, na
 	return c.Watch(
 		source.Kind(cache, &corev1.ConfigMap{},
 			handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *corev1.ConfigMap) []reconcile.Request {
-				// Only trigger on the specific dynamic ConfigMap and filter for our managed ConfigMaps
+				// Only trigger on the specific dynamic ConfigMap
 				if obj.GetNamespace() == namespace && obj.GetName() == name {
-					if labels := obj.GetLabels(); labels != nil && labels["app.kubernetes.io/managed-by"] == "coredns-ingress-sync" {
-						return []reconcile.Request{{
-							NamespacedName: types.NamespacedName{
-								Name:      reconcileName,
-								Namespace: "default",
-							},
-						}}
-					}
+					return []reconcile.Request{{
+						NamespacedName: types.NamespacedName{
+							Name:      reconcileName,
+							Namespace: "default",
+						},
+					}}
 				}
 				return []reconcile.Request{}
-			})))
+			}),
+			predicate.TypedFuncs[*corev1.ConfigMap]{
+				CreateFunc: func(e event.TypedCreateEvent[*corev1.ConfigMap]) bool {
+					// Don't trigger on create events - we create the ConfigMap ourselves
+					return false
+				},
+				UpdateFunc: func(e event.TypedUpdateEvent[*corev1.ConfigMap]) bool {
+					// Only watch the specific dynamic ConfigMap
+					if e.ObjectNew.GetNamespace() != namespace || e.ObjectNew.GetName() != name {
+						return false
+					}
+					
+					// Only trigger on updates that are NOT from us
+					// If the ConfigMap has our management label, it means we updated it, so ignore
+					labels := e.ObjectNew.GetLabels()
+					if labels != nil && labels["app.kubernetes.io/managed-by"] == "coredns-ingress-sync" {
+						return false // Ignore our own updates
+					}
+					
+					// Trigger on external updates (like Terraform removing our ConfigMap)
+					return true
+				},
+				DeleteFunc: func(e event.TypedDeleteEvent[*corev1.ConfigMap]) bool {
+					// Trigger on delete for disaster recovery
+					return e.Object.GetNamespace() == namespace && e.Object.GetName() == name
+				},
+			}))
 }
