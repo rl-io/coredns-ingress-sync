@@ -30,12 +30,16 @@ spec:
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         - name: INGRESS_CLASS
           value: {{ .Values.controller.ingressClass | quote }}
         - name: TARGET_CNAME
           value: {{ .Values.controller.targetCNAME | quote }}
         - name: WATCH_NAMESPACES
-          value: {{ .Values.controller.watchNamespaces | quote }}
+          value: {{ if .Values.controller.watchNamespaces }}{{ if kindIs "slice" .Values.controller.watchNamespaces }}{{ join "," .Values.controller.watchNamespaces | quote }}{{ else }}{{ .Values.controller.watchNamespaces | quote }}{{ end }}{{ else }}""{{ end }}
         - name: DYNAMIC_CONFIGMAP_NAME
           value: {{ .Values.controller.dynamicConfigMap.name | quote }}
         - name: DYNAMIC_CONFIG_KEY
@@ -48,10 +52,8 @@ spec:
           value: {{ .Values.coreDNS.autoConfigure | quote }}
         - name: LEADER_ELECTION_ENABLED
           value: "true"
-        - name: POD_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
+        - name: LOG_LEVEL
+          value: {{ .Values.controller.logLevel | quote }}
         - name: HOSTNAME
           valueFrom:
             fieldRef:

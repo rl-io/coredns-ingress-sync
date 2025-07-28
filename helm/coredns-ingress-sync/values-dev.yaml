@@ -17,7 +17,7 @@ resources:
 controller:
   ingressClass: "nginx"
   targetCNAME: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
-  watchNamespaces: "gravity"
+  watchNamespaces: "test-namespace"
   logLevel: "debug"
 
 coreDNS:

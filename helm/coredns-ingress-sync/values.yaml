@@ -67,6 +67,8 @@ controller:
   # Namespace filtering - empty means watch all namespaces
   # Set to comma-separated list to watch specific namespaces: "default,production,staging"
   watchNamespaces: ""
+  # Log level: debug, info, warn, error
+  logLevel: "info"
   
   # Dynamic ConfigMap configuration
   dynamicConfigMap:

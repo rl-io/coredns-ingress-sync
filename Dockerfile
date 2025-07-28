@@ -21,7 +21,7 @@ ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build \
     -a -installsuffix cgo \
     -ldflags='-w -s -extldflags "-static"' \
-    -o controller main.go
+    -o controller ./cmd/coredns-ingress-sync
 
 # Final stage - minimal runtime image
 FROM scratch

@@ -94,7 +94,7 @@ minikube addons enable coredns
 make build
 
 # Or manually
-go build -o controller .
+go build -o controller ./cmd/coredns-ingress-sync
 
 # Test the binary
 ./controller --help
@@ -120,7 +120,7 @@ docker tag coredns-ingress-sync:latest coredns-ingress-sync:dev
 make build-cross-platform
 
 # Build for specific platform
-GOOS=linux GOARCH=amd64 go build -o controller-linux-amd64 .
+GOOS=linux GOARCH=amd64 go build -o controller-linux-amd64 ./cmd/coredns-ingress-sync
 ```
 
 ## Testing
@@ -228,11 +228,13 @@ export TEST_VERBOSE="true"
 ### 1. Code Development
 
 ```bash
-# Make your changes
-vim main.go
+# Make your changes to the modular codebase
+vim cmd/coredns-ingress-sync/main.go  # Entry point
+vim internal/controller/reconciler.go  # Core logic
+vim internal/ingress/filter.go         # Ingress filtering
 
 # Test changes
-go test -v .
+go test -v ./...
 
 # Build locally
 make build

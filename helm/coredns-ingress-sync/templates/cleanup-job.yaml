@@ -30,32 +30,11 @@ spec:
         command: ["/controller"]
         args: ["--mode=cleanup"]
         env:
-        - name: POD_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        - name: INGRESS_CLASS
-          value: {{ .Values.controller.ingressClass | quote }}
-        - name: TARGET_CNAME
-          value: {{ .Values.controller.targetCname | quote }}
-        - name: LOG_LEVEL
-          value: {{ .Values.controller.logLevel | quote }}
-        - name: LEADER_ELECTION_ENABLED
-          value: {{ .Values.leaderElection.enabled | quote }}
+        # Only the minimal environment variables needed for cleanup
         - name: COREDNS_NAMESPACE
           value: {{ .Values.coreDNS.namespace | quote }}
         - name: DYNAMIC_CONFIGMAP_NAME
           value: {{ .Values.controller.dynamicConfigMap.name | quote }}
-        - name: DYNAMIC_CONFIG_KEY
-          value: {{ .Values.controller.dynamicConfigMap.key | quote }}
-        - name: COREDNS_CONFIGMAP_NAME
-          value: {{ .Values.coreDNS.configMapName | quote }}
-        - name: COREDNS_AUTO_CONFIGURE
-          value: {{ .Values.coreDNS.autoConfigure | quote }}
-        {{- range $key, $value := .Values.controller.env }}
-        - name: {{ $key }}
-          value: {{ $value | quote }}
-        {{- end }}
         resources:
           limits:
             cpu: 100m
