@@ -210,6 +210,42 @@ helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
 - ✅ Automated cleanup procedures
 - ✅ RBAC with minimal required permissions
 
+## Logging Standards
+
+**IMPORTANT**: This project uses **controller-runtime structured logging (logr)** as the single logging standard.
+
+**Standards**:
+- ✅ **Use `ctrl.LoggerFrom(ctx)` in reconcilers** for context-aware logging
+- ✅ **Use `ctrl.Log.WithName("component")` for global loggers** in managers/builders
+- ✅ **Structured logging with key-value pairs**: `logger.Info("message", "key", value)`
+- ✅ **Log levels**:
+  - `logger.Info()` - Important operational messages (default visible)
+  - `logger.V(1).Info()` - Debug messages (visible when LOG_LEVEL=debug)
+  - `logger.V(2).Info()` - Verbose debug (very detailed, rarely used)
+  - `logger.Error(err, "message")` - Error messages with error details
+- ✅ **Environment variable**: `LOG_LEVEL` controls verbosity (debug, info, warn, error)
+- ✅ **Helm integration**: `controller.logLevel` value passed to deployment
+
+**Anti-patterns to avoid**:
+- ❌ **No `log.Printf()`** - Use structured logging instead
+- ❌ **No `fmt.Printf("DEBUG:")`** - Use `logger.V(1).Info()` instead  
+- ❌ **No mixed logging libraries** - Only use controller-runtime logr
+- ❌ **No capitalized error strings** - Follow Go conventions
+- ❌ **No printf-style formatting** - Use structured key-value pairs
+
+**Example Usage**:
+```go
+// In reconcilers (use context logger)
+logger := ctrl.LoggerFrom(ctx)
+logger.Info("Processing ingress", "namespace", ingress.Namespace, "name", ingress.Name)
+logger.V(1).Info("Debug info", "details", someVariable)
+logger.Error(err, "Failed to update ConfigMap", "configmap", name)
+
+// In managers/components (use named logger)  
+logger := ctrl.Log.WithName("coredns-manager")
+logger.Info("Updated ConfigMap", "domains", len(domains))
+```
+
 **Future Considerations**:
 - Validate that hosts in Ingress resources are owned by the intended team/namespace
 - Add metrics endpoint to the controller

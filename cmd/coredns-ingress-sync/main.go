@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -26,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"github.com/go-logr/logr"
 
 	cacheconfig "github.com/rl-io/coredns-ingress-sync/internal/cache"
 	"github.com/rl-io/coredns-ingress-sync/internal/config"
@@ -39,24 +39,53 @@ func main() {
 	var mode = flag.String("mode", "controller", "Mode to run: 'controller' or 'cleanup'")
 	flag.Parse()
 
-	// Setup logging
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	// Setup logging with configurable level
+	setupLogging()
+	
+	// Get structured logger
+	logger := ctrl.Log.WithName("main")
 
 	switch *mode {
 	case "cleanup":
-		log.Printf("Starting cleanup mode...")
+		logger.Info("Starting cleanup mode")
 		runCleanup()
 		return
 	case "controller":
-		log.Printf("Starting controller mode...")
+		logger.Info("Starting controller mode")
 		runController()
 		return
 	default:
-		log.Fatalf("Invalid mode: %s. Use 'controller' or 'cleanup'", *mode)
+		logger.Error(fmt.Errorf("invalid mode: %s", *mode), "Invalid mode specified. Use 'controller' or 'cleanup'", "mode", *mode)
+		os.Exit(1)
+	}
+}
+
+// setupLogging configures the controller-runtime logger with the specified log level
+func setupLogging() {
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	
+	switch strings.ToLower(logLevel) {
+	case "debug":
+		// Use development mode for debug, which enables debug logging and more human-readable output
+		ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	case "info":
+		// Use production mode for info level
+		ctrl.SetLogger(zap.New(zap.UseDevMode(false)))
+	case "warn", "warning", "error":
+		// Use production mode for warn/error levels
+		ctrl.SetLogger(zap.New(zap.UseDevMode(false)))
+	default:
+		// Default to info level
+		ctrl.SetLogger(zap.New(zap.UseDevMode(false)))
 	}
 }
 
 func runController() {
+	logger := ctrl.Log.WithName("controller")
+	
 	// Load configuration
 	cfg := config.Load()
 	
@@ -70,13 +99,16 @@ func runController() {
 	// Create scheme and register all types before creating the manager
 	scheme := runtime.NewScheme()
 	if err := networkingv1.AddToScheme(scheme); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to add networking/v1 to scheme")
+		os.Exit(1)
 	}
 	if err := corev1.AddToScheme(scheme); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to add core/v1 to scheme")
+		os.Exit(1)
 	}
 	if err := appsv1.AddToScheme(scheme); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to add apps/v1 to scheme")
+		os.Exit(1)
 	}
 
 	// Create the manager
@@ -89,7 +121,8 @@ func runController() {
 		Cache:                   cacheOptions,
 	})
 	if err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Unable to create manager")
+		os.Exit(1)
 	}
 
 	// Create ingress filter
@@ -119,7 +152,8 @@ func runController() {
 		Reconciler: reconciler,
 	})
 	if err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to create controller")
+		os.Exit(1)
 	}
 
 	// Watch for Ingress changes
@@ -142,37 +176,42 @@ func runController() {
 				// If specific namespaces are configured, check if this ingress is in one of them
 				return ingressFilter.ShouldWatchNamespace(obj.GetNamespace())
 			}))); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to set up ingress watch")
+		os.Exit(1)
 	}
 
 	// Watch for CoreDNS ConfigMap changes
 	if err := addConfigMapWatch(mgr.GetCache(), c, cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName, "coredns-configmap-reconcile"); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to set up CoreDNS ConfigMap watch")
+		os.Exit(1)
 	}
 
 	// Watch for dynamic ConfigMap changes (e.g., coredns-custom) - with smart filtering
 	if err := addDynamicConfigMapWatch(mgr.GetCache(), c, cfg.CoreDNSNamespace, cfg.DynamicConfigMapName, "dynamic-configmap-reconcile"); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to set up dynamic ConfigMap watch")
+		os.Exit(1)
 	}
 
-	log.Printf("Starting coredns-ingress-sync controller")
-	log.Printf("Leader election enabled: %t", cfg.LeaderElectionEnabled)
-	log.Printf("Watching ingresses with class: %s", cfg.IngressClass)
+	logger.Info("Starting coredns-ingress-sync controller",
+		"leader_election", cfg.LeaderElectionEnabled,
+		"ingress_class", cfg.IngressClass,
+		"target_cname", cfg.TargetCNAME,
+		"dynamic_configmap", cfg.DynamicConfigMapName,
+		"coredns_configmap", fmt.Sprintf("%s/%s", cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName))
+	
 	if len(watchNamespaces) > 0 {
-		log.Printf("Watching namespaces: %v", watchNamespaces)
+		logger.Info("Watching specific namespaces", "namespaces", watchNamespaces)
 	} else {
-		log.Printf("Watching all namespaces")
+		logger.Info("Watching all namespaces")
 	}
-	log.Printf("Target CNAME: %s", cfg.TargetCNAME)
-	log.Printf("Dynamic ConfigMap: %s", cfg.DynamicConfigMapName)
-	log.Printf("CoreDNS ConfigMap: %s/%s", cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName)
 
 	// Add health check endpoints
 	if err := mgr.AddHealthzCheck("healthz", func(req *http.Request) error {
 		// Basic health check - always return healthy if the manager is running
 		return nil
 	}); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to add health check endpoint")
+		os.Exit(1)
 	}
 
 	if err := mgr.AddReadyzCheck("readyz", func(req *http.Request) error {
@@ -180,35 +219,45 @@ func runController() {
 		// The manager will only start reconciling when it becomes the leader
 		return nil
 	}); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to add readiness check endpoint")
+		os.Exit(1)
 	}
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to start manager")
+		os.Exit(1)
 	}
 }
 
 func runCleanup() {
+	logger := ctrl.Log.WithName("cleanup")
+	
 	// Load configuration
 	cfg := config.Load()
-	log.Printf("Cleanup mode - removing CoreDNS configuration and dynamic ConfigMap: %s/%s", cfg.CoreDNSNamespace, cfg.DynamicConfigMapName)
+	logger.Info("Starting cleanup mode", 
+		"coredns_namespace", cfg.CoreDNSNamespace,
+		"dynamic_configmap", cfg.DynamicConfigMapName)
 
 	// Create a simple client for cleanup operations
 	clientConfig := ctrl.GetConfigOrDie()
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to add core/v1 to scheme")
+		os.Exit(1)
 	}
 	if err := networkingv1.AddToScheme(scheme); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to add networking/v1 to scheme")
+		os.Exit(1)
 	}
 	if err := appsv1.AddToScheme(scheme); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to add apps/v1 to scheme")
+		os.Exit(1)
 	}
 
 	k8sClient, err := client.New(clientConfig, client.Options{Scheme: scheme})
 	if err != nil {
-		log.Fatal(err)
+		logger.Error(err, "Failed to create Kubernetes client")
+		os.Exit(1)
 	}
 
 	// Create CoreDNS manager for cleanup operations
@@ -226,13 +275,13 @@ func runCleanup() {
 	defer cancel()
 
 	// Step 1: Remove import statement from CoreDNS Corefile
-	if err := removeCoreDNSImport(ctx, coreDNSManager, cfg); err != nil {
-		log.Printf("Warning: Failed to remove import statement from CoreDNS: %v", err)
+	if err := removeCoreDNSImport(ctx, coreDNSManager, cfg, logger); err != nil {
+		logger.Error(err, "Failed to remove import statement from CoreDNS")
 	}
 
 	// Step 2: Remove volume mount from CoreDNS deployment
-	if err := removeCoreDNSVolumeMount(ctx, coreDNSManager, cfg); err != nil {
-		log.Printf("Warning: Failed to remove volume mount from CoreDNS deployment: %v", err)
+	if err := removeCoreDNSVolumeMount(ctx, coreDNSManager, cfg, logger); err != nil {
+		logger.Error(err, "Failed to remove volume mount from CoreDNS deployment")
 	}
 
 	// Step 3: Delete the dynamic ConfigMap
@@ -243,20 +292,22 @@ func runCleanup() {
 	}
 
 	if err := k8sClient.Get(ctx, configMapName, configMap); err != nil {
-		log.Printf("Dynamic ConfigMap %s not found or already deleted: %v", cfg.DynamicConfigMapName, err)
+		logger.Info("Dynamic ConfigMap not found or already deleted", 
+			"configmap", cfg.DynamicConfigMapName, 
+			"error", err.Error())
 	} else {
 		if err := k8sClient.Delete(ctx, configMap); err != nil {
-			log.Printf("Failed to delete dynamic ConfigMap %s: %v", cfg.DynamicConfigMapName, err)
+			logger.Error(err, "Failed to delete dynamic ConfigMap", "configmap", cfg.DynamicConfigMapName)
 			os.Exit(1)
 		}
-		log.Printf("Successfully deleted dynamic ConfigMap %s", cfg.DynamicConfigMapName)
+		logger.Info("Successfully deleted dynamic ConfigMap", "configmap", cfg.DynamicConfigMapName)
 	}
 
-	log.Printf("Cleanup completed successfully")
+	logger.Info("Cleanup completed successfully")
 }
 
 // removeCoreDNSImport removes the import statement from CoreDNS Corefile
-func removeCoreDNSImport(ctx context.Context, coreDNSManager *coredns.Manager, cfg *config.Config) error {
+func removeCoreDNSImport(ctx context.Context, coreDNSManager *coredns.Manager, cfg *config.Config, logger logr.Logger) error {
 	// Get the CoreDNS ConfigMap directly
 	clientConfig := ctrl.GetConfigOrDie()
 	scheme := runtime.NewScheme()
@@ -287,7 +338,7 @@ func removeCoreDNSImport(ctx context.Context, coreDNSManager *coredns.Manager, c
 
 	// Remove import statement if it exists
 	if !strings.Contains(corefile, cfg.ImportStatement) {
-		log.Printf("Import statement not found in CoreDNS Corefile - already removed")
+		logger.Info("Import statement not found in CoreDNS Corefile - already removed")
 		return nil
 	}
 
@@ -310,12 +361,12 @@ func removeCoreDNSImport(ctx context.Context, coreDNSManager *coredns.Manager, c
 		return fmt.Errorf("failed to update CoreDNS ConfigMap: %w", err)
 	}
 
-	log.Printf("Removed import statement from CoreDNS Corefile")
+	logger.Info("Removed import statement from CoreDNS Corefile")
 	return nil
 }
 
 // removeCoreDNSVolumeMount removes the volume mount from CoreDNS deployment
-func removeCoreDNSVolumeMount(ctx context.Context, coreDNSManager *coredns.Manager, cfg *config.Config) error {
+func removeCoreDNSVolumeMount(ctx context.Context, coreDNSManager *coredns.Manager, cfg *config.Config, logger logr.Logger) error {
 	// Get the CoreDNS deployment directly
 	clientConfig := ctrl.GetConfigOrDie()
 	scheme := runtime.NewScheme()
@@ -371,9 +422,9 @@ func removeCoreDNSVolumeMount(ctx context.Context, coreDNSManager *coredns.Manag
 		if err := k8sClient.Update(ctx, deployment); err != nil {
 			return fmt.Errorf("failed to update CoreDNS deployment: %w", err)
 		}
-		log.Printf("Removed custom config volume mount from CoreDNS deployment")
+		logger.Info("Removed custom config volume mount from CoreDNS deployment")
 	} else {
-		log.Printf("Custom config volume mount not found in CoreDNS deployment - already removed")
+		logger.Info("Custom config volume mount not found in CoreDNS deployment - already removed")
 	}
 
 	return nil

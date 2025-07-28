@@ -3,7 +3,6 @@ package coredns
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"github.com/go-logr/logr"
 )
 
 // Config holds CoreDNS configuration
@@ -31,6 +31,7 @@ type Config struct {
 type Manager struct {
 	client client.Client
 	config Config
+	logger logr.Logger
 }
 
 // DeploymentClient interface for Kubernetes deployment operations
@@ -54,6 +55,7 @@ func NewManager(client client.Client, config Config) *Manager {
 	return &Manager{
 		client: client,
 		config: config,
+		logger: ctrl.Log.WithName("coredns-manager"),
 	}
 }
 
@@ -95,13 +97,16 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 				}
 				continue // Retry
 			}
-			log.Printf("Created dynamic ConfigMap %s with %d domains", m.config.DynamicConfigMapName, len(domains))
+			m.logger.Info("Created dynamic ConfigMap", 
+				"configmap", m.config.DynamicConfigMapName, 
+				"domains", len(domains))
 			return nil
 		}
 
 		// Check if content has actually changed to avoid unnecessary updates
 		if existingConfig, exists := configMap.Data[m.config.DynamicConfigKey]; exists && existingConfig == dynamicConfig {
-			log.Printf("Dynamic ConfigMap %s is already up to date", m.config.DynamicConfigMapName)
+			m.logger.V(1).Info("Dynamic ConfigMap is already up to date", 
+				"configmap", m.config.DynamicConfigMapName)
 			return nil
 		}
 
@@ -124,7 +129,9 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 			continue // Retry with fresh read
 		}
 
-		log.Printf("Updated dynamic ConfigMap %s with %d domains", m.config.DynamicConfigMapName, len(domains))
+		m.logger.Info("Updated dynamic ConfigMap", 
+			"configmap", m.config.DynamicConfigMapName, 
+			"domains", len(domains))
 		return nil
 	}
 
@@ -152,21 +159,21 @@ func (m *Manager) generateDynamicConfig(domains []string, hosts []string) string
 func (m *Manager) EnsureConfiguration(ctx context.Context) error {
 	// Check if we should manage CoreDNS configuration
 	if os.Getenv("COREDNS_AUTO_CONFIGURE") == "false" {
-		log.Printf("CoreDNS auto-configuration disabled")
+		m.logger.Info("CoreDNS auto-configuration disabled")
 		return nil
 	}
 
 	// First, ensure the import statement is in the CoreDNS Corefile
 	if err := m.ensureImport(ctx); err != nil {
 		// Log the error but don't fail the reconciliation if CoreDNS is not available
-		log.Printf("Warning: Failed to ensure CoreDNS import statement: %v", err)
+		m.logger.Error(err, "Failed to ensure CoreDNS import statement")
 		return nil
 	}
 
 	// Then, ensure the CoreDNS deployment has the volume mount
 	if err := m.ensureVolumeMount(ctx); err != nil {
 		// Log the error but don't fail the reconciliation if CoreDNS is not available
-		log.Printf("Warning: Failed to ensure CoreDNS volume mount: %v", err)
+		m.logger.Error(err, "Failed to ensure CoreDNS volume mount")
 		return nil
 	}
 
@@ -189,12 +196,12 @@ func (m *Manager) ensureImport(ctx context.Context) error {
 	// Check if Corefile exists
 	corefile, exists := coreDNSConfigMap.Data["Corefile"]
 	if !exists {
-		return fmt.Errorf("Corefile not found in CoreDNS ConfigMap")
+		return fmt.Errorf("corefile not found in CoreDNS ConfigMap")
 	}
 
 	// Check if import statement already exists
 	if strings.Contains(corefile, m.config.ImportStatement) {
-		log.Printf("Import statement already exists in CoreDNS Corefile")
+		m.logger.V(1).Info("Import statement already exists in CoreDNS Corefile")
 		return nil
 	}
 
@@ -213,7 +220,7 @@ func (m *Manager) ensureImport(ctx context.Context) error {
 	}
 
 	if !importAdded {
-		log.Printf("Warning: Could not find '.:53 {' in Corefile, appending import statement")
+		m.logger.Info("Could not find standard Corefile format, appending import statement")
 		newLines = append(newLines, m.config.ImportStatement)
 	}
 
@@ -225,7 +232,7 @@ func (m *Manager) ensureImport(ctx context.Context) error {
 		return fmt.Errorf("failed to update CoreDNS ConfigMap: %w", err)
 	}
 
-	log.Printf("Added import statement to CoreDNS Corefile")
+	m.logger.Info("Added import statement to CoreDNS Corefile")
 	return nil
 }
 
@@ -259,18 +266,20 @@ func (m *Manager) ensureVolumeMount(ctx context.Context) error {
 
 // ensureVolumeMountWithClient ensures volume mount using a deployment client
 func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentClient DeploymentClient) error {
-	fmt.Printf("DEBUG: Starting ensureVolumeMountWithClient\n")
+	m.logger.V(1).Info("Starting volume mount configuration for CoreDNS")
 	
 	// Retry logic to handle resource version conflicts
 	for attempt := 0; attempt < 3; attempt++ {
-		fmt.Printf("DEBUG: Attempt %d - Getting CoreDNS deployment from namespace: %s\n", attempt+1, m.config.Namespace)
+		m.logger.V(1).Info("Getting CoreDNS deployment", 
+			"attempt", attempt+1, 
+			"namespace", m.config.Namespace)
 		deployment, err := deploymentClient.GetDeployment(ctx, m.config.Namespace, "coredns")
 		if err != nil {
-			fmt.Printf("DEBUG: Failed to get CoreDNS deployment: %v\n", err)
+			m.logger.Error(err, "Failed to get CoreDNS deployment")
 			return fmt.Errorf("failed to get CoreDNS deployment: %w", err)
 		}
 
-		fmt.Printf("DEBUG: Retrieved deployment, checking volumes and volume mounts\n")
+		m.logger.V(1).Info("Retrieved deployment, checking volumes and volume mounts")
 		modified := false
 
 		// Check if volume and volume mount already exist
@@ -279,24 +288,22 @@ func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentCli
 		volumeName := "coredns-custom-volume"
 
 		// Check for existing volume
-		fmt.Printf("DEBUG: Checking for existing volumes (total: %d)\n", len(deployment.Spec.Template.Spec.Volumes))
-		for i, volume := range deployment.Spec.Template.Spec.Volumes {
-			fmt.Printf("DEBUG:   Volume[%d]: name=%s\n", i, volume.Name)
+		m.logger.V(1).Info("Checking for existing volumes", "volume_count", len(deployment.Spec.Template.Spec.Volumes))
+		for _, volume := range deployment.Spec.Template.Spec.Volumes {
 			if volume.Name == volumeName {
 				hasVolume = true
-				fmt.Printf("DEBUG: Found existing %s volume\n", volumeName)
+				m.logger.V(1).Info("Found existing volume", "name", volumeName)
 				break
 			}
 		}
 
 		// Check for existing volume mount
 		if len(deployment.Spec.Template.Spec.Containers) > 0 {
-			fmt.Printf("DEBUG: Current volume mounts in CoreDNS container: %d mounts\n", len(deployment.Spec.Template.Spec.Containers[0].VolumeMounts))
-			for j, mount := range deployment.Spec.Template.Spec.Containers[0].VolumeMounts {
-				fmt.Printf("DEBUG:   [%d] name=%s, path=%s\n", j, mount.Name, mount.MountPath)
+			m.logger.V(1).Info("Checking volume mounts", "mount_count", len(deployment.Spec.Template.Spec.Containers[0].VolumeMounts))
+			for _, mount := range deployment.Spec.Template.Spec.Containers[0].VolumeMounts {
 				if mount.Name == volumeName {
 					hasVolumeMount = true
-					fmt.Printf("DEBUG: Found existing %s mount\n", volumeName)
+					m.logger.V(1).Info("Found existing volume mount", "name", volumeName)
 					break
 				}
 			}
@@ -304,8 +311,7 @@ func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentCli
 
 		// If both exist, nothing to do
 		if hasVolume && hasVolumeMount {
-			fmt.Printf("DEBUG: CoreDNS deployment already has custom config volume mount\n")
-			log.Printf("CoreDNS deployment already has custom config volume mount")
+			m.logger.V(1).Info("CoreDNS deployment already has custom config volume mount")
 			return nil
 		}
 
@@ -329,7 +335,7 @@ func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentCli
 			}
 			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, newVolume)
 			modified = true
-			log.Printf("Added %s to CoreDNS deployment", volumeName)
+			m.logger.Info("Added volume to CoreDNS deployment", "volume", volumeName)
 		}
 
 		// Add volume mount if missing
@@ -344,11 +350,11 @@ func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentCli
 				newVolumeMount,
 			)
 			modified = true
-			log.Printf("Added %s mount to CoreDNS container", volumeName)
+			m.logger.Info("Added volume mount to CoreDNS container", "volume", volumeName)
 		}
 
 		if !modified {
-			fmt.Printf("DEBUG: No modifications needed\n")
+			m.logger.V(1).Info("No modifications needed for CoreDNS deployment")
 			return nil
 		}
 
@@ -357,12 +363,12 @@ func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentCli
 			if attempt == 2 {
 				return fmt.Errorf("failed to update CoreDNS deployment after retries: %w", err)
 			}
-			log.Printf("Failed to update CoreDNS deployment (attempt %d): %v, retrying...", attempt+1, err)
+			m.logger.Error(err, "Failed to update CoreDNS deployment, retrying", "attempt", attempt+1)
 			time.Sleep(time.Millisecond * 100) // Brief delay before retry
 			continue
 		}
 
-		log.Printf("Updated CoreDNS deployment with custom config volume mount")
+		m.logger.Info("Updated CoreDNS deployment with custom config volume mount")
 		return nil
 	}
 

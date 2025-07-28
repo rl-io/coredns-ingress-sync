@@ -2,13 +2,13 @@ package controller
 
 import (
 	"context"
-	"log"
 	"os"
 	"strings"
 	"time"
 
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -36,11 +36,16 @@ func NewIngressReconciler(client client.Client, scheme *runtime.Scheme, ingressF
 
 // Reconcile handles reconciliation requests for ingress changes
 func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	logger := ctrl.LoggerFrom(ctx)
+	
 	podName := os.Getenv("HOSTNAME")
 	if podName == "" {
 		podName = "unknown-pod"
 	}
-	log.Printf("[%s] Reconciling changes for request: %s", podName, req.NamespacedName)
+	
+	logger.Info("Reconciling changes", 
+		"pod", podName, 
+		"request", req.NamespacedName.String())
 
 	// List ingresses with namespace filtering
 	var ingressList networkingv1.IngressList
@@ -49,7 +54,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 	if r.IngressFilter.WatchesAllNamespaces() {
 		// List all ingresses
 		if err := r.List(ctx, &ingressList); err != nil {
-			log.Printf("Failed to list ingresses: %v", err)
+			logger.Error(err, "Failed to list ingresses")
 			return reconcile.Result{RequeueAfter: time.Minute}, err
 		}
 	} else {
@@ -57,7 +62,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 		for _, ns := range watchNamespaces {
 			var nsIngressList networkingv1.IngressList
 			if err := r.List(ctx, &nsIngressList, client.InNamespace(ns)); err != nil {
-				log.Printf("Failed to list ingresses in namespace %s: %v", ns, err)
+				logger.Error(err, "Failed to list ingresses in namespace", "namespace", ns)
 				continue
 			}
 			ingressList.Items = append(ingressList.Items, nsIngressList.Items...)
@@ -70,20 +75,27 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 	// Extract unique domains from hosts
 	domains := r.extractDomains(hosts)
 
+	logger.V(1).Info("Processing ingresses", 
+		"domains", len(domains), 
+		"hosts", len(hosts),
+		"domainList", domains)
+
 	// Update dynamic ConfigMap with discovered domains
 	if err := r.CoreDNSManager.UpdateDynamicConfigMap(ctx, domains, hosts); err != nil {
-		log.Printf("Failed to update dynamic ConfigMap: %v", err)
+		logger.Error(err, "Failed to update dynamic ConfigMap")
 		return reconcile.Result{RequeueAfter: time.Minute}, err
 	}
 
 	// Ensure CoreDNS ConfigMap has import statement and volume mount
 	if err := r.CoreDNSManager.EnsureConfiguration(ctx); err != nil {
-		log.Printf("Failed to ensure CoreDNS configuration: %v", err)
+		logger.Error(err, "Failed to ensure CoreDNS configuration")
 		return reconcile.Result{RequeueAfter: time.Minute}, err
 	}
 
-	log.Printf("[%s] Successfully updated dynamic ConfigMap with %d domains and %d hosts", podName, len(domains), len(hosts))
-	log.Printf("[%s] CoreDNS configuration validated and updated if needed", podName)
+	logger.Info("Successfully updated CoreDNS configuration", 
+		"pod", podName,
+		"domains", len(domains), 
+		"hosts", len(hosts))
 	return reconcile.Result{}, nil
 }
 

@@ -52,6 +52,8 @@ spec:
           value: {{ .Values.coreDNS.autoConfigure | quote }}
         - name: LEADER_ELECTION_ENABLED
           value: "true"
+        - name: LOG_LEVEL
+          value: {{ .Values.controller.logLevel | quote }}
         - name: HOSTNAME
           valueFrom:
             fieldRef:

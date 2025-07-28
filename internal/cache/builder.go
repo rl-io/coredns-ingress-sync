@@ -1,11 +1,11 @@
 package cacheconfig
 
 import (
-	"log"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -62,16 +62,19 @@ func (cb *ConfigBuilder) BuildCacheOptions() cache.Options {
 			},
 		}
 		
+		logger := ctrl.Log.WithName("cache-builder")
+		
 		if len(cb.watchNamespaces) == 1 {
-			log.Printf("Using namespace-scoped cache for single namespace: %s", cb.watchNamespaces[0])
+			logger.V(1).Info("Using namespace-scoped cache for single namespace", "namespace", cb.watchNamespaces[0])
 		} else {
-			log.Printf("Using namespace-scoped cache for multiple namespaces: %v", cb.watchNamespaces)
+			logger.V(1).Info("Using namespace-scoped cache for multiple namespaces", "namespaces", cb.watchNamespaces)
 		}
 		
-		log.Printf("CoreDNS ConfigMap access configured for namespace: %s", cb.coreDNSNamespace)
+		logger.V(1).Info("CoreDNS ConfigMap access configured", "namespace", cb.coreDNSNamespace)
 	} else {
 		// Cluster-wide watching - no namespace restrictions
-		log.Printf("Using cluster-wide cache - watching all namespaces")
+		logger := ctrl.Log.WithName("cache-builder")
+		logger.V(1).Info("Using cluster-wide cache - watching all namespaces")
 	}
 
 	return cacheOptions
