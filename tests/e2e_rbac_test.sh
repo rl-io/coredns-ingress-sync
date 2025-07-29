@@ -348,6 +348,12 @@ test_rbac_permissions() {
         for ns in "${NAMESPACES[@]}"; do
             ns=$(echo "$ns" | xargs) # trim whitespace
             if [ -n "$ns" ]; then
+                # Only validate namespaces that still exist
+                if ! kubectl get namespace "$ns" > /dev/null 2>&1; then
+                    log_info "⏭️  Skipping validation for deleted namespace: ${ns}"
+                    continue
+                fi
+                
                 if ! kubectl get role coredns-ingress-sync-${ns} -n ${ns} > /dev/null 2>&1; then
                     log_error "Expected namespace-scoped Role not found in namespace ${ns}"
                     success=false
