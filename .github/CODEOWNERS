@@ -1,0 +1,11 @@
+# CODEOWNERS - Default reviewers for pull requests including Dependabot PRs
+
+# Default owner for everything in the repository
+* @rl-io
+
+# Specific ownership for critical files
+/.github/ @rl-io
+/helm/ @rl-io
+/Dockerfile @rl-io
+/go.mod @rl-io
+/go.sum @rl-io
