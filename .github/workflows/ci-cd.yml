@@ -6,6 +6,11 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
+    types: [ opened, synchronize, reopened ]
+  # Handle release-please events
+  repository_dispatch:
+    types: [release-please]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,6 +24,19 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  debug-info:
+    name: Debug Information
+    runs-on: ubuntu-latest
+    steps:
+    - name: Debug PR info
+      run: |
+        echo "Event: ${{ github.event_name }}"
+        echo "Ref: ${{ github.ref }}"
+        echo "Head ref: ${{ github.head_ref }}"
+        echo "Base ref: ${{ github.base_ref }}"
+        echo "Actor: ${{ github.actor }}"
+        echo "Repository: ${{ github.repository }}"
+
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest

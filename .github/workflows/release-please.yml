@@ -26,71 +26,17 @@ jobs:
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
           token: ${{ secrets.GITHUB_TOKEN }}
-
-  # Build and push Docker image when release is created
-  build-and-push:
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+          
+      - name: Trigger CI for release PR
+        if: steps.release.outputs.pr
+        uses: peter-evans/repository-dispatch@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: release-please
+          client-payload: |
+            {
+              "pr_number": "${{ steps.release.outputs.pr }}",
+              "branch": "release-please--branches--main--components--coredns-ingress-sync"
+            }
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ needs.release-please.outputs.version }}
-            ghcr.io/${{ github.repository }}:latest
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
-  # Package and push Helm chart when release is created
-  helm-release:
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: '3.12.0'
-
-      - name: Log in to GitHub Container Registry
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Package Helm chart
-        run: |
-          helm package helm/coredns-ingress-sync --destination ./charts
-
-      - name: Push Helm chart to registry
-        run: |
-          helm push ./charts/coredns-ingress-sync-${{ needs.release-please.outputs.version }}.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
-
-      - name: Verify chart deployment
-        run: |
-          echo "Helm chart deployed successfully"
-          echo "Chart: oci://ghcr.io/${{ github.repository_owner }}/charts/coredns-ingress-sync:${{ needs.release-please.outputs.version }}"
