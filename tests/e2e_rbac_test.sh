@@ -211,7 +211,8 @@ EOF
     # Create test ingresses in watched and unwatched namespaces
     log_info "Creating test ingresses in watched and unwatched namespaces..."
     
-    # Create test namespace (unwatched)
+    # Create test namespaces
+    kubectl create namespace test-namespace --dry-run=client -o yaml | kubectl apply -f -
     kubectl create namespace rbac-test-unwatched --dry-run=client -o yaml | kubectl apply -f -
     
     # Create ingresses
@@ -253,6 +254,7 @@ EOF
     cleanup_test_ingress "scoped-test-1" "default"
     cleanup_test_ingress "scoped-test-2" "test-namespace"
     cleanup_test_ingress "scoped-test-3" "rbac-test-unwatched"
+    kubectl delete namespace test-namespace --ignore-not-found=true
     kubectl delete namespace rbac-test-unwatched --ignore-not-found=true
     
     if [ "$success" = true ]; then
