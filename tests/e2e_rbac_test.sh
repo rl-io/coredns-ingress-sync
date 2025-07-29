@@ -2,7 +2,8 @@
 
 # Enhanced E2E test suite to test both cluster-wide and namespace-scoped RBAC configurations
 
-set -e
+# Note: We don't use set -e here because we need to handle some expected failures gracefully
+# in the controller readiness checks
 
 # Get test directory and source helpers
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -139,7 +140,8 @@ test_cluster_wide_rbac() {
     done
     
     # Check controller logs for RBAC errors
-    local logs=$(kubectl logs deployment/coredns-ingress-sync -n coredns-ingress-sync --tail=50)
+    local logs
+    logs=$(kubectl logs deployment/coredns-ingress-sync -n coredns-ingress-sync --tail=50)
     if echo "$logs" | grep -i "forbidden" > /dev/null; then
         log_error "Found RBAC forbidden errors in controller logs"
         echo "$logs" | grep -i "forbidden"
