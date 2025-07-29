@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -142,6 +143,16 @@ func TestIsTargetIngress(t *testing.T) {
 			assert.Equal(t, tt.expectedResult, result)
 		})
 	}
+	
+	// Test non-Ingress object
+	t.Run("non_ingress_object", func(t *testing.T) {
+		// Use a Service object as a non-Ingress client.Object
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-service"},
+		}
+		result := filter.IsTargetIngress(service)
+		assert.False(t, result)
+	})
 }
 
 func TestExtractHostnames(t *testing.T) {

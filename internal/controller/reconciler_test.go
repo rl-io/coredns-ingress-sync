@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	networkingv1 "k8s.io/api/networking/v1"
@@ -365,4 +366,123 @@ func TestReconcile(t *testing.T) {
 		// Reset hostname for other tests
 		os.Setenv("HOSTNAME", "test-pod-123")
 	})
+	
+	t.Run("reconcile_with_namespace_filtering", func(t *testing.T) {
+		// Create fake client and scheme
+		scheme := runtime.NewScheme()
+		_ = networkingv1.AddToScheme(scheme)
+		_ = corev1.AddToScheme(scheme)
+		
+		ingressClassName := "nginx"
+		// Ingress in watched namespace
+		watchedIngress := &networkingv1.Ingress{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "watched-ingress",
+				Namespace: "production",
+			},
+			Spec: networkingv1.IngressSpec{
+				IngressClassName: &ingressClassName,
+				Rules: []networkingv1.IngressRule{
+					{Host: "watched.example.com"},
+				},
+			},
+		}
+		
+		// Ingress in unwatched namespace  
+		unwatchedIngress := &networkingv1.Ingress{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "unwatched-ingress",
+				Namespace: "development",
+			},
+			Spec: networkingv1.IngressSpec{
+				IngressClassName: &ingressClassName,
+				Rules: []networkingv1.IngressRule{
+					{Host: "unwatched.example.com"},
+				},
+			},
+		}
+		
+		// CoreDNS ConfigMap
+		coreDNSConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "coredns",
+				Namespace: "kube-system",
+			},
+			Data: map[string]string{
+				"Corefile": `.:53 {
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+    }
+}`,
+			},
+		}
+		
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(watchedIngress, unwatchedIngress, coreDNSConfigMap).
+			Build()
+		
+		// Create filter that only watches production namespace
+		ingressFilter := ingress.NewFilter("nginx", "production")
+		coreDNSConfig := coredns.Config{
+			Namespace:            "kube-system",
+			ConfigMapName:        "coredns",
+			DynamicConfigMapName: "coredns-custom",
+			DynamicConfigKey:     "dynamic.server",
+			ImportStatement:      "import /etc/coredns/custom/*.server",
+			TargetCNAME:          "ingress-nginx.svc.cluster.local.",
+		}
+		coreDNSManager := coredns.NewManager(fakeClient, coreDNSConfig)
+		
+		reconciler := NewIngressReconciler(fakeClient, scheme, ingressFilter, coreDNSManager)
+		
+		req := reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      "test-request",
+				Namespace: "default",
+			},
+		}
+		
+		result, err := reconciler.Reconcile(context.Background(), req)
+		
+		if err != nil {
+			t.Errorf("Expected no error, got: %v", err)
+		}
+		
+		if result.Requeue {
+			t.Error("Expected no requeue")
+		}
+		
+		// Verify that dynamic ConfigMap was created with only watched namespace content
+		var dynamicConfigMap corev1.ConfigMap
+		err = fakeClient.Get(context.Background(), 
+			types.NamespacedName{Name: "coredns-custom", Namespace: "kube-system"}, 
+			&dynamicConfigMap)
+		
+		if err != nil {
+			t.Errorf("Expected dynamic ConfigMap to be created, got error: %v", err)
+		}
+		
+		// The dynamic ConfigMap should contain the watched hostname but not the unwatched one
+		dynamicConfig := dynamicConfigMap.Data["dynamic.server"]
+		if dynamicConfig == "" {
+			t.Error("Expected dynamic config to be populated")
+		}
+		
+		// Should contain watched.example.com but not unwatched.example.com
+		if !contains(dynamicConfig, "watched.example.com") {
+			t.Error("Expected dynamic config to contain watched.example.com")
+		}
+		if contains(dynamicConfig, "unwatched.example.com") {
+			t.Error("Expected dynamic config to NOT contain unwatched.example.com")
+		}
+	})
+}
+
+// Helper function to check if a string contains a substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && 
+		(len(substr) == 0 || 
+		 strings.Contains(s, substr))
 }
