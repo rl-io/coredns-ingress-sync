@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	cacheconfig "github.com/rl-io/coredns-ingress-sync/internal/cache"
+	"github.com/rl-io/coredns-ingress-sync/internal/cache"
 	"github.com/rl-io/coredns-ingress-sync/internal/cleanup"
 	"github.com/rl-io/coredns-ingress-sync/internal/config"
 	ingresscontroller "github.com/rl-io/coredns-ingress-sync/internal/controller"
@@ -62,10 +62,10 @@ func runController(logger logr.Logger) {
 	cfg := config.Load()
 	
 	// Parse watch namespaces
-	watchNamespaces := cacheconfig.ParseNamespaces(cfg.WatchNamespaces)
+	watchNamespaces := cache.ParseNamespaces(cfg.WatchNamespaces)
 	
 	// Build cache options
-	cacheBuilder := cacheconfig.NewConfigBuilder(watchNamespaces, cfg.CoreDNSNamespace)
+	cacheBuilder := cache.NewConfigBuilder(watchNamespaces, cfg.CoreDNSNamespace)
 	cacheOptions := cacheBuilder.BuildCacheOptions()
 
 	// Create scheme and register all types before creating the manager

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	
-	cacheconfig "github.com/rl-io/coredns-ingress-sync/internal/cache"
+	cachebuilder "github.com/rl-io/coredns-ingress-sync/internal/cache"
 )
 
 func TestCacheConfigurationLogic(t *testing.T) {
@@ -71,7 +71,7 @@ func TestCacheConfigurationLogic(t *testing.T) {
 				t.Logf("✅ %s: Correctly configured to watch all namespaces", tt.name)
 			} else {
 				// Parse namespace list using the new cache package
-				namespaces := cacheconfig.ParseNamespaces(watchNamespacesEnv)
+				namespaces := cachebuilder.ParseNamespaces(watchNamespacesEnv)
 				
 				assert.False(t, tt.expectedAllNS, "Should not watch all namespaces when specific namespaces are configured")
 				assert.Equal(t, tt.expectedNSCount, len(namespaces), "Should have correct number of namespaces")

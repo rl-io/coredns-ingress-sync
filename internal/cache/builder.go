@@ -1,4 +1,4 @@
-package cacheconfig
+package cache
 
 import (
 	"strings"
