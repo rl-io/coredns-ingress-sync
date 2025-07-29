@@ -38,11 +38,11 @@ build: ## Build the binary
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-ldflags "$(LDFLAGS)" \
 		-o bin/$(PROJECT_NAME) \
-		main.go
+		./cmd/coredns-ingress-sync
 
 .PHONY: run
 run: ## Run the controller locally
-	go run main.go
+	go run ./cmd/coredns-ingress-sync
 
 .PHONY: manifests
 manifests: ## Generate Kubernetes manifests
@@ -77,6 +77,10 @@ test-integration: ## Run integration tests
 .PHONY: test-e2e
 test-e2e: ## Run end-to-end tests
 	./tests/run_tests.sh --e2e
+
+.PHONY: test-rbac
+test-rbac: ## Run RBAC end-to-end tests
+	./tests/e2e_rbac_test.sh
 
 .PHONY: test-performance
 test-performance: ## Run performance benchmarks
@@ -284,7 +288,7 @@ kind-test-version: ## Test specific Kubernetes version (usage: make kind-test-ve
 
 .PHONY: kind-test-latest
 kind-test-latest: ## Test latest supported Kubernetes version
-	./tests/kind/test-k8s-versions.sh --version 1.30.0
+	./tests/kind/test-k8s-versions.sh --version 1.30.13
 
 .PHONY: kind-test-oldest
 kind-test-oldest: ## Test oldest supported Kubernetes version

@@ -241,14 +241,27 @@ run_e2e_tests() {
     
     cd "$TEST_DIR"
     
-    # Make sure script is executable
+    # Run main E2E tests
+    log_section "Core End-to-End Tests"
     chmod +x e2e_test.sh
     
     if ./e2e_test.sh; then
-        log_info "✅ End-to-end tests passed"
+        log_info "✅ Core end-to-end tests passed"
+    else
+        log_error "❌ Core end-to-end tests failed"
+        E2E_RESULT=1
+        return
+    fi
+    
+    # Run comprehensive RBAC E2E tests
+    log_section "RBAC End-to-End Tests"
+    chmod +x e2e_rbac_test.sh
+    
+    if ./e2e_rbac_test.sh; then
+        log_info "✅ RBAC end-to-end tests passed"
         E2E_RESULT=0
     else
-        log_error "❌ End-to-end tests failed"
+        log_error "❌ RBAC end-to-end tests failed"
         E2E_RESULT=1
     fi
 }

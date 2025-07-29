@@ -16,7 +16,7 @@ resources:
 
 controller:
   ingressClass: "nginx"
-  targetCname: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+  targetCNAME: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
   logLevel: "debug"
 
 coreDNS:
