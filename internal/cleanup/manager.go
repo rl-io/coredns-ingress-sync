@@ -27,24 +27,39 @@ type Manager struct {
 
 // NewManager creates a new cleanup manager
 func NewManager(logger logr.Logger) (*Manager, error) {
+	logger.V(1).Info("DEBUG: Starting NewManager")
+	
 	// Create a simple client for cleanup operations
-	clientConfig := ctrl.GetConfigOrDie()
+	logger.V(1).Info("DEBUG: Getting client config")
+	clientConfig, err := ctrl.GetConfig()
+	if err != nil {
+		logger.Error(err, "DEBUG: Failed to get client config")
+		return nil, fmt.Errorf("failed to get Kubernetes config: %w", err)
+	}
+	
+	logger.V(1).Info("DEBUG: Creating scheme")
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "DEBUG: Failed to add core/v1 to scheme")
 		return nil, fmt.Errorf("failed to add core/v1 to scheme: %w", err)
 	}
 	if err := networkingv1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "DEBUG: Failed to add networking/v1 to scheme")
 		return nil, fmt.Errorf("failed to add networking/v1 to scheme: %w", err)
 	}
 	if err := appsv1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "DEBUG: Failed to add apps/v1 to scheme")
 		return nil, fmt.Errorf("failed to add apps/v1 to scheme: %w", err)
 	}
 
+	logger.V(1).Info("DEBUG: Creating Kubernetes client")
 	k8sClient, err := client.New(clientConfig, client.Options{Scheme: scheme})
 	if err != nil {
+		logger.Error(err, "DEBUG: Failed to create Kubernetes client")
 		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
 
+	logger.V(1).Info("DEBUG: Successfully created Manager")
 	return &Manager{
 		client: k8sClient,
 		logger: logger,

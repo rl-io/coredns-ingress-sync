@@ -94,7 +94,7 @@ jobs:
         go mod verify
       
     - name: Run unit tests
-      run: go test -v -race -coverprofile=coverage.out ./...
+      run: LOG_LEVEL=debug go test -v -race -coverprofile=coverage.out ./...
       
     - name: Generate coverage report
       run: go tool cover -html=coverage.out -o coverage.html
