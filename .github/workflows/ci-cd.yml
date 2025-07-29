@@ -29,38 +29,72 @@ jobs:
     name: Setup PR Status Checks
     runs-on: ubuntu-latest
     if: github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+    outputs:
+      sha: ${{ steps.get-pr-sha.outputs.sha }}
     steps:
+    - name: Get PR SHA and repository info
+      id: get-pr-sha
+      run: |
+        PR_NUMBER="${{ github.event.client_payload.pr_number }}"
+        if [ -n "$PR_NUMBER" ]; then
+          SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.sha')
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "Retrieved SHA $SHA for PR #$PR_NUMBER"
+          
+          # Extract owner and repo
+          echo "owner=${{ github.repository_owner }}" >> $GITHUB_OUTPUT
+          echo "repo=${{ github.event.repository.name }}" >> $GITHUB_OUTPUT
+        fi
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
     - name: Set Pending Status for Build
-      uses: ouzi-dev/commit-status-updater@v2
+      if: steps.get-pr-sha.outputs.sha
+      uses: guibranco/github-status-action-v2@v1
       with:
-        status: "pending"
-        name: "CI / build"
+        authToken: ${{ secrets.GITHUB_TOKEN }}
+        owner: ${{ github.repository_owner }}
+        repository: ${{ github.event.repository.name }}
+        sha: ${{ steps.get-pr-sha.outputs.sha }}
+        state: "pending"
+        context: "CI / build"
         description: "Running build job..."
-        token: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Set Pending Status for Test
-      uses: ouzi-dev/commit-status-updater@v2
+      if: steps.get-pr-sha.outputs.sha
+      uses: guibranco/github-status-action-v2@v1
       with:
-        status: "pending"
-        name: "CI / test"
+        authToken: ${{ secrets.GITHUB_TOKEN }}
+        owner: ${{ github.repository_owner }}
+        repository: ${{ github.event.repository.name }}
+        sha: ${{ steps.get-pr-sha.outputs.sha }}
+        state: "pending"
+        context: "CI / test"
         description: "Running test job..."
-        token: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Set Pending Status for Security Scan
-      uses: ouzi-dev/commit-status-updater@v2
+      if: steps.get-pr-sha.outputs.sha
+      uses: guibranco/github-status-action-v2@v1
       with:
-        status: "pending"
-        name: "CI / security-scan"
+        authToken: ${{ secrets.GITHUB_TOKEN }}
+        owner: ${{ github.repository_owner }}
+        repository: ${{ github.event.repository.name }}
+        sha: ${{ steps.get-pr-sha.outputs.sha }}
+        state: "pending"
+        context: "CI / security-scan"
         description: "Running security scan job..."
-        token: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Set Pending Status for Build and Push
-      uses: ouzi-dev/commit-status-updater@v2
+      if: steps.get-pr-sha.outputs.sha
+      uses: guibranco/github-status-action-v2@v1
       with:
-        status: "pending"
-        name: "CI / build-and-push"
+        authToken: ${{ secrets.GITHUB_TOKEN }}
+        owner: ${{ github.repository_owner }}
+        repository: ${{ github.event.repository.name }}
+        sha: ${{ steps.get-pr-sha.outputs.sha }}
+        state: "pending"
+        context: "CI / build-and-push"
         description: "Running build and push job..."
-        token: ${{ secrets.GITHUB_TOKEN }}
 
   debug-info:
     name: Debug Information
@@ -578,36 +612,68 @@ jobs:
     name: Update PR Status Checks
     runs-on: ubuntu-latest
     if: always() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
-    needs: [build, test, security-scan, build-and-push]
+    needs: [setup-pr-status, build, test, security-scan, build-and-push]
     steps:
+    - name: Get PR SHA
+      id: get-pr-sha
+      run: |
+        PR_NUMBER="${{ github.event.client_payload.pr_number }}"
+        if [ -n "$PR_NUMBER" ]; then
+          SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.sha')
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "Retrieved SHA $SHA for PR #$PR_NUMBER"
+        fi
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Update Build Status
-      uses: ouzi-dev/commit-status-updater@v2
+      if: steps.get-pr-sha.outputs.sha
+      uses: guibranco/github-status-action-v2@v1
       with:
-        status: "${{ needs.build.result == 'success' && 'success' || 'failure' }}"
-        name: "CI / build"
+        authToken: ${{ secrets.GITHUB_TOKEN }}
+        owner: ${{ github.repository_owner }}
+        repository: ${{ github.event.repository.name }}
+        sha: ${{ steps.get-pr-sha.outputs.sha }}
+        state: "${{ needs.build.result == 'success' && 'success' || 'failure' }}"
+        context: "CI / build"
         description: "${{ needs.build.result == 'success' && 'Build completed successfully' || 'Build failed' }}"
-        token: ${{ secrets.GITHUB_TOKEN }}
+        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
     
-    - name: Update Test Status  
-      uses: ouzi-dev/commit-status-updater@v2
+    - name: Update Test Status
+      if: steps.get-pr-sha.outputs.sha
+      uses: guibranco/github-status-action-v2@v1
       with:
-        status: "${{ needs.test.result == 'success' && 'success' || 'failure' }}"
-        name: "CI / test"
+        authToken: ${{ secrets.GITHUB_TOKEN }}
+        owner: ${{ github.repository_owner }}
+        repository: ${{ github.event.repository.name }}
+        sha: ${{ steps.get-pr-sha.outputs.sha }}
+        state: "${{ needs.test.result == 'success' && 'success' || 'failure' }}"
+        context: "CI / test"
         description: "${{ needs.test.result == 'success' && 'Tests completed successfully' || 'Tests failed' }}"
-        token: ${{ secrets.GITHUB_TOKEN }}
+        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
     
     - name: Update Security Scan Status
-      uses: ouzi-dev/commit-status-updater@v2
+      if: steps.get-pr-sha.outputs.sha
+      uses: guibranco/github-status-action-v2@v1
       with:
-        status: "${{ needs.security-scan.result == 'success' && 'success' || 'failure' }}"
-        name: "CI / security-scan"
+        authToken: ${{ secrets.GITHUB_TOKEN }}
+        owner: ${{ github.repository_owner }}
+        repository: ${{ github.event.repository.name }}
+        sha: ${{ steps.get-pr-sha.outputs.sha }}
+        state: "${{ needs.security-scan.result == 'success' && 'success' || 'failure' }}"
+        context: "CI / security-scan"
         description: "${{ needs.security-scan.result == 'success' && 'Security scan completed successfully' || 'Security scan failed' }}"
-        token: ${{ secrets.GITHUB_TOKEN }}
+        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
     
     - name: Update Build and Push Status
-      uses: ouzi-dev/commit-status-updater@v2
+      if: steps.get-pr-sha.outputs.sha
+      uses: guibranco/github-status-action-v2@v1
       with:
-        status: "${{ needs.build-and-push.result == 'success' && 'success' || 'failure' }}"
-        name: "CI / build-and-push"
+        authToken: ${{ secrets.GITHUB_TOKEN }}
+        owner: ${{ github.repository_owner }}
+        repository: ${{ github.event.repository.name }}
+        sha: ${{ steps.get-pr-sha.outputs.sha }}
+        state: "${{ needs.build-and-push.result == 'success' && 'success' || 'failure' }}"
+        context: "CI / build-and-push"
         description: "${{ needs.build-and-push.result == 'success' && 'Build and push completed successfully' || 'Build and push failed' }}"
-        token: ${{ secrets.GITHUB_TOKEN }}
+        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
