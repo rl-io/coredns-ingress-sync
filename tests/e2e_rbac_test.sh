@@ -190,6 +190,20 @@ test_namespace_scoped_rbac() {
     done
     log_info "✅ Namespace cleanup completed"
     
+    # Create test namespaces BEFORE Helm deployment (they're referenced in watchNamespaces)
+    log_info "Creating test namespaces..."
+    log_info "Creating test-namespace..."
+    if ! kubectl create namespace test-namespace --dry-run=client -o yaml | kubectl apply -f -; then
+        log_error "Failed to create test-namespace"
+        return 1
+    fi
+    
+    log_info "Creating rbac-test-unwatched namespace..."
+    if ! kubectl create namespace rbac-test-unwatched --dry-run=client -o yaml | kubectl apply -f -; then
+        log_error "Failed to create rbac-test-unwatched namespace"
+        return 1
+    fi
+    
     # Deploy with namespace-scoped configuration
     log_info "Deploying controller with namespace-scoped RBAC (watching: default,test-namespace)..."
     
@@ -227,20 +241,6 @@ EOF
     
     # Create test ingresses in watched and unwatched namespaces
     log_info "Creating test ingresses in watched and unwatched namespaces..."
-    
-    # Create test namespaces
-    log_info "Creating test namespaces..."
-    log_info "Creating test-namespace..."
-    if ! kubectl create namespace test-namespace --dry-run=client -o yaml | kubectl apply -f -; then
-        log_error "Failed to create test-namespace"
-        return 1
-    fi
-    
-    log_info "Creating rbac-test-unwatched namespace..."
-    if ! kubectl create namespace rbac-test-unwatched --dry-run=client -o yaml | kubectl apply -f -; then
-        log_error "Failed to create rbac-test-unwatched namespace"
-        return 1
-    fi
     
     # Create ingresses
     log_info "Creating test ingresses..."
