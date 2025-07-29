@@ -166,12 +166,27 @@ test_cluster_wide_rbac() {
 
 # Test 2: Namespace-scoped RBAC (watchNamespaces set)
 test_namespace_scoped_rbac() {
+    log_info "🔧 Starting namespace-scoped RBAC test..."
     log_info "Testing namespace-scoped RBAC configuration..."
     
     # Clean up any existing deployment
+    log_info "Cleaning up existing deployments..."
     helm uninstall coredns-ingress-sync -n coredns-ingress-sync --ignore-not-found=true 2>/dev/null || true
     kubectl delete namespace coredns-ingress-sync --ignore-not-found=true 2>/dev/null || true
-    sleep 5
+    
+    # Wait for namespace deletion to complete
+    local timeout=60
+    local elapsed=0
+    while kubectl get namespace coredns-ingress-sync >/dev/null 2>&1; do
+        if [ $elapsed -ge $timeout ]; then
+            log_warn "Namespace deletion timeout after ${timeout}s, continuing anyway"
+            break
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+        log_info "Waiting for namespace deletion... (${elapsed}s)"
+    done
+    log_info "✅ Namespace cleanup completed"
     
     # Deploy with namespace-scoped configuration
     log_info "Deploying controller with namespace-scoped RBAC (watching: default,test-namespace)..."
@@ -212,12 +227,28 @@ EOF
     log_info "Creating test ingresses in watched and unwatched namespaces..."
     
     # Create test namespaces
-    kubectl create namespace test-namespace --dry-run=client -o yaml | kubectl apply -f -
-    kubectl create namespace rbac-test-unwatched --dry-run=client -o yaml | kubectl apply -f -
+    log_info "Creating test namespaces..."
+    log_info "Creating test-namespace..."
+    if ! kubectl create namespace test-namespace --dry-run=client -o yaml | kubectl apply -f -; then
+        log_error "Failed to create test-namespace"
+        return 1
+    fi
+    
+    log_info "Creating rbac-test-unwatched namespace..."
+    if ! kubectl create namespace rbac-test-unwatched --dry-run=client -o yaml | kubectl apply -f -; then
+        log_error "Failed to create rbac-test-unwatched namespace"
+        return 1
+    fi
     
     # Create ingresses
+    log_info "Creating test ingresses..."
+    log_info "Creating scoped-test-1 ingress in default namespace..."
     create_test_ingress "scoped-test-1" "default" "scoped-test-1.$TEST_DOMAIN"      # watched
+    
+    log_info "Creating scoped-test-2 ingress in test-namespace..."
     create_test_ingress "scoped-test-2" "test-namespace" "scoped-test-2.$TEST_DOMAIN"     # watched
+    
+    log_info "Creating scoped-test-3 ingress in rbac-test-unwatched namespace..."
     create_test_ingress "scoped-test-3" "rbac-test-unwatched" "scoped-test-3.$TEST_DOMAIN"  # unwatched
     
     # Wait for controller to process
@@ -364,12 +395,15 @@ test_rbac_permissions() {
 echo ""
 log_info "Starting RBAC configuration tests..."
 
+log_info "🧪 Running Test 1: Cluster-wide RBAC test..."
 test_cluster_wide_rbac
 test_result $? "Cluster-wide RBAC test"
 
+log_info "🧪 Running Test 2: Namespace-scoped RBAC test..."
 test_namespace_scoped_rbac  
 test_result $? "Namespace-scoped RBAC test"
 
+log_info "🧪 Running Test 3: RBAC permissions validation..."
 test_rbac_permissions
 test_result $? "RBAC permissions validation"
 
