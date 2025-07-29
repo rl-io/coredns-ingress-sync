@@ -35,8 +35,8 @@ jobs:
           event-type: release-please
           client-payload: |
             {
-              "pr_number": "${{ steps.release.outputs.pr }}",
-              "branch": "release-please--branches--main--components--coredns-ingress-sync"
+              "pr_number": "${{ fromJSON(steps.release.outputs.pr).number }}",
+              "branch": "${{ fromJSON(steps.release.outputs.pr).headBranchName }}"
             }
 
 
