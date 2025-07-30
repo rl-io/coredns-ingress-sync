@@ -1,6 +1,7 @@
 name: Build and Push
 
 on:
+  # Only run for release-please repository_dispatch events, workflow_run, and tags
   workflow_run:
     workflows: ["Build and Test", "Security Scan"]
     types: [completed]

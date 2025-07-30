@@ -1,12 +1,7 @@
 name: Build and Test
 
 on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-    types: [ opened, synchronize, reopened ]
-  # Handle release-please events
+  # Only run for release-please repository_dispatch events
   repository_dispatch:
     types: [release-please]
   workflow_dispatch:
@@ -73,7 +68,6 @@ jobs:
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [setup-pr-status]
     outputs:
       image-tag: ${{ steps.meta.outputs.tags }}
       image-digest: ${{ steps.build.outputs.digest }}

@@ -1,13 +1,11 @@
 name: Security Scan
 
 on:
+  # Only run for release-please repository_dispatch events and workflow_run
   workflow_run:
     workflows: ["Build and Test"]
     types: [completed]
     branches: [main, develop]
-  pull_request:
-    branches: [ main ]
-    types: [ opened, synchronize, reopened ]
   repository_dispatch:
     types: [release-please]
   workflow_dispatch:

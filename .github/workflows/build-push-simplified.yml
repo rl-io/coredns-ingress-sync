@@ -1,0 +1,37 @@
+name: Build and Push (Simplified)
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Build and Push Docker Image
+      uses: ./.github/actions/docker-build
+      with:
+        image_name: ${{ env.REGISTRY }}/${{ github.repository }}
+        push: true
+        platforms: linux/amd64,linux/arm64
+        export_artifact: false

@@ -1,0 +1,137 @@
+name: Pull Request Tests (Simplified)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [ main, develop ]
+
+# Cancel in-progress runs for the same PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  security-events: write
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      go-changes: ${{ steps.changes.outputs.go }}
+      docker-changes: ${{ steps.changes.outputs.docker }}
+      k8s-changes: ${{ steps.changes.outputs.k8s }}
+      docs-changes: ${{ steps.changes.outputs.docs }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Detect changes
+      uses: dorny/paths-filter@v3
+      id: changes
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        filters: |
+          go:
+            - '**/*.go'
+            - 'go.mod'
+            - 'go.sum'
+            - 'Makefile'
+          docker:
+            - 'Dockerfile'
+            - '.dockerignore'
+          k8s:
+            - 'helm/**'
+            - 'scripts/**'
+          docs:
+            - '**/*.md'
+            - 'docs/**'
+
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.go-changes == 'true' || needs.changes.outputs.docker-changes == 'true'
+    outputs:
+      image-tags: ${{ steps.docker_build.outputs.image_tags }}
+      image-digest: ${{ steps.docker_build.outputs.image_digest }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Build Docker Image
+      id: docker_build
+      uses: ./.github/actions/docker-build
+      with:
+        image_name: coredns-ingress-sync
+        push: false
+        platforms: linux/amd64
+        export_artifact: true
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: [changes, build]
+    if: needs.changes.outputs.go-changes == 'true' || needs.changes.outputs.k8s-changes == 'true'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download image artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-image
+        path: /tmp
+        
+    - name: Run Comprehensive Tests
+      uses: ./.github/actions/test-runner
+      with:
+        go_version: '1.24'
+        run_integration_tests: true
+        run_e2e_tests: true
+        codecov_token: ${{ secrets.CODECOV_TOKEN }}
+        image_artifact_path: /tmp
+        cluster_timeout: 120
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: [changes, build]
+    if: needs.changes.outputs.go-changes == 'true' || needs.changes.outputs.docker-changes == 'true'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download image artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-image
+        path: /tmp
+        
+    - name: Run Security Scan
+      uses: ./.github/actions/security-scan
+      with:
+        image_name: coredns-ingress-sync:test
+        image_artifact_path: /tmp
+        scan_filesystem: true
+        upload_sarif: true
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  docs-check:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.docs-changes == 'true'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Check markdown links
+      uses: gaurav-nelson/github-action-markdown-link-check@v1
+      with:
+        use-quiet-mode: 'yes'
+        use-verbose-mode: 'yes'
+        config-file: '.github/mlc_config.json'
