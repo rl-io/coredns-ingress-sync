@@ -111,10 +111,10 @@ Recommended branch protection rules for `main`:
 Branch protection rules:
 - Require pull request reviews before merging
 - Require status checks to pass before merging:
-  - Test Suite
-  - Lint Code  
-  - Docker Build Test
-  - Integration Tests
+  - CI/CD Pipeline / build
+  - CI/CD Pipeline / test
+  - CI/CD Pipeline / security-scan
+  - CI/CD Pipeline / build-and-push
 - Require branches to be up to date before merging
 - Require linear history
 - Do not allow force pushes

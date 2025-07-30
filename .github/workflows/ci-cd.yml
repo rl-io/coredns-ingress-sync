@@ -58,7 +58,7 @@ jobs:
         repository: ${{ github.event.repository.name }}
         sha: ${{ steps.get-pr-sha.outputs.sha }}
         state: "pending"
-        context: "CI / build"
+        context: "CI/CD Pipeline / build"
         description: "Running build job..."
     
     - name: Set Pending Status for Test
@@ -70,7 +70,7 @@ jobs:
         repository: ${{ github.event.repository.name }}
         sha: ${{ steps.get-pr-sha.outputs.sha }}
         state: "pending"
-        context: "CI / test"
+        context: "CI/CD Pipeline / test"
         description: "Running test job..."
     
     - name: Set Pending Status for Security Scan
@@ -82,7 +82,7 @@ jobs:
         repository: ${{ github.event.repository.name }}
         sha: ${{ steps.get-pr-sha.outputs.sha }}
         state: "pending"
-        context: "CI / security-scan"
+        context: "CI/CD Pipeline / security-scan"
         description: "Running security scan job..."
     
     - name: Set Pending Status for Build and Push
@@ -94,7 +94,7 @@ jobs:
         repository: ${{ github.event.repository.name }}
         sha: ${{ steps.get-pr-sha.outputs.sha }}
         state: "pending"
-        context: "CI / build-and-push"
+        context: "CI/CD Pipeline / build-and-push"
         description: "Running build and push job..."
 
   debug-info:
@@ -636,7 +636,7 @@ jobs:
         repository: ${{ github.event.repository.name }}
         sha: ${{ steps.get-pr-sha.outputs.sha }}
         state: "${{ needs.build.result == 'success' && 'success' || 'failure' }}"
-        context: "CI / build"
+        context: "CI/CD Pipeline / build"
         description: "${{ needs.build.result == 'success' && 'Build completed successfully' || 'Build failed' }}"
         target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
     
@@ -649,7 +649,7 @@ jobs:
         repository: ${{ github.event.repository.name }}
         sha: ${{ steps.get-pr-sha.outputs.sha }}
         state: "${{ needs.test.result == 'success' && 'success' || 'failure' }}"
-        context: "CI / test"
+        context: "CI/CD Pipeline / test"
         description: "${{ needs.test.result == 'success' && 'Tests completed successfully' || 'Tests failed' }}"
         target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
     
@@ -662,7 +662,7 @@ jobs:
         repository: ${{ github.event.repository.name }}
         sha: ${{ steps.get-pr-sha.outputs.sha }}
         state: "${{ needs.security-scan.result == 'success' && 'success' || 'failure' }}"
-        context: "CI / security-scan"
+        context: "CI/CD Pipeline / security-scan"
         description: "${{ needs.security-scan.result == 'success' && 'Security scan completed successfully' || 'Security scan failed' }}"
         target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
     
@@ -675,6 +675,6 @@ jobs:
         repository: ${{ github.event.repository.name }}
         sha: ${{ steps.get-pr-sha.outputs.sha }}
         state: "${{ needs.build-and-push.result == 'success' && 'success' || 'failure' }}"
-        context: "CI / build-and-push"
+        context: "CI/CD Pipeline / build-and-push"
         description: "${{ needs.build-and-push.result == 'success' && 'Build and push completed successfully' || 'Build and push failed' }}"
         target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
