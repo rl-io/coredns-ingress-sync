@@ -60,6 +60,7 @@ jobs:
         state: "pending"
         context: "CI/CD Pipeline / build"
         description: "Running build job..."
+        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
     
     - name: Set Pending Status for Test
       if: steps.get-pr-sha.outputs.sha
@@ -72,6 +73,7 @@ jobs:
         state: "pending"
         context: "CI/CD Pipeline / test"
         description: "Running test job..."
+        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
     
     - name: Set Pending Status for Security Scan
       if: steps.get-pr-sha.outputs.sha
@@ -84,6 +86,7 @@ jobs:
         state: "pending"
         context: "CI/CD Pipeline / security-scan"
         description: "Running security scan job..."
+        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
     
     - name: Set Pending Status for Build and Push
       if: steps.get-pr-sha.outputs.sha
@@ -96,6 +99,7 @@ jobs:
         state: "pending"
         context: "CI/CD Pipeline / build-and-push"
         description: "Running build and push job..."
+        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   debug-info:
     name: Debug Information
@@ -627,6 +631,34 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Get Job URLs
+      id: get-job-urls
+      run: |
+        # Get job details from the current workflow run
+        JOBS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[] | select(.name | test("^(Build Docker Image|Run Tests|Security Scan|Build and Push Docker Image)$")) | {name: .name, html_url: .html_url}')
+        
+        # Extract URLs for each job
+        BUILD_URL=$(echo "$JOBS" | jq -r 'select(.name == "Build Docker Image") | .html_url // ""')
+        TEST_URL=$(echo "$JOBS" | jq -r 'select(.name == "Run Tests") | .html_url // ""')
+        SECURITY_URL=$(echo "$JOBS" | jq -r 'select(.name == "Security Scan") | .html_url // ""')
+        BUILD_PUSH_URL=$(echo "$JOBS" | jq -r 'select(.name == "Build and Push Docker Image") | .html_url // ""')
+        
+        # Fall back to workflow run URL if job URL not found
+        WORKFLOW_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        
+        echo "build_url=${BUILD_URL:-$WORKFLOW_URL}" >> $GITHUB_OUTPUT
+        echo "test_url=${TEST_URL:-$WORKFLOW_URL}" >> $GITHUB_OUTPUT
+        echo "security_url=${SECURITY_URL:-$WORKFLOW_URL}" >> $GITHUB_OUTPUT
+        echo "build_push_url=${BUILD_PUSH_URL:-$WORKFLOW_URL}" >> $GITHUB_OUTPUT
+        
+        echo "Job URLs:"
+        echo "Build: ${BUILD_URL:-$WORKFLOW_URL}"
+        echo "Test: ${TEST_URL:-$WORKFLOW_URL}" 
+        echo "Security: ${SECURITY_URL:-$WORKFLOW_URL}"
+        echo "Build Push: ${BUILD_PUSH_URL:-$WORKFLOW_URL}"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Update Build Status
       if: steps.get-pr-sha.outputs.sha
       uses: guibranco/github-status-action-v2@v1
@@ -638,7 +670,7 @@ jobs:
         state: "${{ needs.build.result == 'success' && 'success' || 'failure' }}"
         context: "CI/CD Pipeline / build"
         description: "${{ needs.build.result == 'success' && 'Build completed successfully' || 'Build failed' }}"
-        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        target_url: "${{ steps.get-job-urls.outputs.build_url }}"
     
     - name: Update Test Status
       if: steps.get-pr-sha.outputs.sha
@@ -651,7 +683,7 @@ jobs:
         state: "${{ needs.test.result == 'success' && 'success' || 'failure' }}"
         context: "CI/CD Pipeline / test"
         description: "${{ needs.test.result == 'success' && 'Tests completed successfully' || 'Tests failed' }}"
-        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        target_url: "${{ steps.get-job-urls.outputs.test_url }}"
     
     - name: Update Security Scan Status
       if: steps.get-pr-sha.outputs.sha
@@ -664,7 +696,7 @@ jobs:
         state: "${{ needs.security-scan.result == 'success' && 'success' || 'failure' }}"
         context: "CI/CD Pipeline / security-scan"
         description: "${{ needs.security-scan.result == 'success' && 'Security scan completed successfully' || 'Security scan failed' }}"
-        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        target_url: "${{ steps.get-job-urls.outputs.security_url }}"
     
     - name: Update Build and Push Status
       if: steps.get-pr-sha.outputs.sha
@@ -677,4 +709,4 @@ jobs:
         state: "${{ needs.build-and-push.result == 'success' && 'success' || 'failure' }}"
         context: "CI/CD Pipeline / build-and-push"
         description: "${{ needs.build-and-push.result == 'success' && 'Build and push completed successfully' || 'Build and push failed' }}"
-        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        target_url: "${{ steps.get-job-urls.outputs.build_push_url }}"
