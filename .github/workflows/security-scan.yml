@@ -1,0 +1,114 @@
+name: Security Scan
+
+on:
+  workflow_run:
+    workflows: ["Build and Test"]
+    types: [completed]
+    branches: [main, develop]
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened ]
+  repository_dispatch:
+    types: [release-please]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  statuses: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' || 
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'repository_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download image artifact
+      if: github.event_name == 'workflow_run'
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-image
+        path: /tmp
+        run-id: ${{ github.event.workflow_run.id }}
+        
+    - name: Build image for scanning (if no artifact)
+      if: github.event_name != 'workflow_run'
+      run: |
+        docker build -t coredns-ingress-sync:scan .
+        
+    - name: Load Docker image (if artifact available)
+      if: github.event_name == 'workflow_run'
+      run: |
+        docker load -i /tmp/image.tar
+        docker tag coredns-ingress-sync:test coredns-ingress-sync:scan
+      
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'coredns-ingress-sync:scan'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Upload Trivy scan results to GitHub Security tab
+      if: always() && github.event.repository.visibility == 'public'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-results.sarif'
+        category: 'trivy-container-scan'
+        
+    - name: Run Trivy filesystem scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-fs-results.sarif'
+        
+    - name: Upload filesystem scan results
+      if: always() && github.event.repository.visibility == 'public'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-fs-results.sarif'
+        category: 'trivy-filesystem-scan'
+        
+    - name: Upload SARIF files as artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-sarif-results
+        path: |
+          trivy-results.sarif
+          trivy-fs-results.sarif
+        retention-days: 30
+
+    # Update security scan status using reusable action
+    - name: Update Security Scan Status on Success
+      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+      uses: ./.github/actions/update-pr-status
+      with:
+        context: "CI/CD Pipeline / security-scan"
+        state: "success"
+        description: "Security scan completed successfully"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update Security Scan Status on Failure
+      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+      uses: ./.github/actions/update-pr-status
+      with:
+        context: "CI/CD Pipeline / security-scan"
+        state: "failure"
+        description: "Security scan failed"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
