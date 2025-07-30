@@ -1,45 +1,25 @@
-name: Build and Push
+name: Build and Push (Simplified)
 
 on:
-  # Only run for release-please repository_dispatch events, workflow_run, and tags
-  workflow_run:
-    workflows: ["Build and Test", "Security Scan"]
-    types: [completed]
-    branches: [main, develop]
   push:
-    tags: [ 'v*' ]
-  repository_dispatch:
-    types: [release-please]
+    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
-  id-token: write
-  statuses: write
-  pull-requests: write
-  issues: write
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  build-push:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'repository_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
       
     - name: Log in to Container Registry
       uses: docker/login-action@v3
@@ -48,91 +28,10 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
         
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
+    - name: Build and Push Docker Image
+      uses: ./.github/actions/docker-build
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=sha,prefix={{branch}}-,enable={{is_default_branch}}
-          type=sha,prefix=pr-,enable=${{ github.event_name == 'pull_request' }}
-          type=raw,value=latest,enable={{is_default_branch}}
-          
-    - name: Build and push multi-platform Docker image
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        platforms: linux/amd64,linux/arm64
+        image_name: ${{ env.REGISTRY }}/${{ github.repository }}
         push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        
-    - name: Generate SBOM
-      uses: anchore/sbom-action@v0
-      with:
-        image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-        format: spdx-json
-        output-file: sbom.spdx.json
-        
-    - name: Upload SBOM
-      uses: actions/upload-artifact@v4
-      with:
-        name: sbom
-        path: sbom.spdx.json
-        
-    - name: Install cosign
-      uses: sigstore/cosign-installer@v3.9.2
-      
-    - name: Sign the published Docker image
-      if: github.event_name != 'pull_request'
-      env:
-        COSIGN_EXPERIMENTAL: 1
-        COSIGN_OIDC_CLIENT_ID: sigstore
-        COSIGN_OIDC_ISSUER: https://token.actions.githubusercontent.com
-      run: |
-        echo "${{ steps.meta.outputs.tags }}" | while read tag; do
-          if [[ -n "$tag" ]]; then
-            echo "Signing $tag"
-            for attempt in {1..3}; do
-              if cosign sign --yes "$tag"; then
-                echo "Successfully signed $tag on attempt $attempt"
-                break
-              else
-                echo "Failed to sign $tag on attempt $attempt"
-                if [[ $attempt -eq 3 ]]; then
-                  echo "All signing attempts failed for $tag"
-                  exit 1
-                fi
-                echo "Waiting 10 seconds before retry..."
-                sleep 10
-              fi
-            done
-          fi
-        done
-
-    # Update build and push status using reusable action
-    - name: Update Build and Push Status on Success
-      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
-      uses: ./.github/actions/update-pr-status
-      with:
-        context: "CI/CD Pipeline / build-and-push"
-        state: "success"
-        description: "Build and push completed successfully"
-        pr_number: ${{ github.event.client_payload.pr_number }}
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Update Build and Push Status on Failure
-      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
-      uses: ./.github/actions/update-pr-status
-      with:
-        context: "CI/CD Pipeline / build-and-push"
-        state: "failure"
-        description: "Build and push failed"
-        pr_number: ${{ github.event.client_payload.pr_number }}
-        github_token: ${{ secrets.GITHUB_TOKEN }}
+        platforms: linux/amd64,linux/arm64
+        export_artifact: false
