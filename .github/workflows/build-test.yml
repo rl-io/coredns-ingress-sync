@@ -1,4 +1,4 @@
-name: Build and Test (Simplified)
+name: Build and Test
 
 on:
   # Only run for release-please repository_dispatch events
