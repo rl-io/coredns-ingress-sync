@@ -41,7 +41,7 @@ runs:
       if: inputs.image_artifact_path != ''
       shell: bash
       run: |
-        echo "##[group]📦 Loading Docker Image from Artifact"
+        echo "::group::📦 Loading Docker Image from Artifact"
         if [ -f "${{ inputs.image_artifact_path }}/image.tar" ]; then
           echo "Loading Docker image from artifact..."
           docker load -i "${{ inputs.image_artifact_path }}/image.tar"
@@ -49,16 +49,16 @@ runs:
         else
           echo "No image artifact found, will build image"
         fi
-        echo "##[endgroup]"
+        echo "::endgroup::"
         
     - name: Build image for scanning
       if: inputs.image_artifact_path == ''
       shell: bash
       run: |
-        echo "##[group]🔨 Building Docker Image for Scanning"
+        echo "::group::🔨 Building Docker Image for Scanning"
         echo "Building Docker image for scanning..."
         docker build -t "${{ inputs.image_name }}" .
-        echo "##[endgroup]"
+        echo "::endgroup::"
       
     - name: Run Trivy container vulnerability scanner
       id: container_scan
@@ -98,7 +98,7 @@ runs:
       if: always()
       shell: bash
       run: |
-        echo "##[group]🔍 Security Scan Results Summary"
+        echo "::group::🔍 Security Scan Results Summary"
         echo "Container scan: ${{ steps.container_scan.outcome }}"
         echo "Filesystem scan: ${{ steps.filesystem_scan.outcome }}"
         
@@ -113,7 +113,7 @@ runs:
         if [ -f "trivy-filesystem-results.sarif" ]; then
           echo "Filesystem scan results available"
         fi
-        echo "##[endgroup]"
+        echo "::endgroup::"
         
     - name: Upload SARIF files as artifacts
       if: always()
