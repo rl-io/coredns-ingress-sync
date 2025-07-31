@@ -5,6 +5,7 @@ This directory contains scripts for testing the CoreDNS Ingress Sync controller 
 ## Overview
 
 The KIND test suite validates our controller against all supported Kubernetes versions (1.25+) by:
+
 - Creating KIND clusters with specific K8s versions
 - Installing ingress-nginx in each cluster
 - Building and deploying our controller
@@ -100,7 +101,7 @@ For each Kubernetes version, the test:
 
 The script provides detailed output for each step and a final summary:
 
-```
+```text
 ==========================================
 TEST SUMMARY
 ==========================================
@@ -121,32 +122,41 @@ Controller is compatible with Kubernetes 1.25.16 through 1.30.0
 ### Common Issues
 
 1. **Docker not running**:
-   ```
+
+   ```text
    ❌ docker is not installed. Please install it.
    ```
+
    Start Docker Desktop or Docker daemon.
 
 2. **KIND cluster creation fails**:
-   ```
+
+   ```text
    ❌ Failed to create KIND cluster
    ```
+
    Check if ports 80/443 are available, or if you have resource constraints.
 
 3. **Image pull failures**:
-   ```
+
+   ```text
    ❌ Failed to build/load image
    ```
+
    Ensure Docker has enough disk space and memory.
 
 4. **Integration test failures**:
-   ```
+
+   ```text
    ❌ Dynamic ConfigMap not found
    ```
+
    Check controller logs: `kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync`
 
 ### Resource Requirements
 
 Each KIND cluster requires:
+
 - **CPU**: ~1 core per cluster
 - **Memory**: ~2GB per cluster
 - **Disk**: ~1GB per cluster
@@ -157,6 +167,7 @@ Since tests run sequentially, only one cluster exists at a time.
 ### Timeouts
 
 Default timeouts are:
+
 - Cluster creation: 300s
 - Component readiness: 300s
 - Overall test timeout: 10m
@@ -205,6 +216,7 @@ run_integration_tests() {
 ### Changing Cluster Configuration
 
 Modify the KIND config in `create_kind_cluster()` to adjust:
+
 - Node count
 - Port mappings  
 - Kubernetes feature gates
@@ -220,6 +232,7 @@ Use this test suite when:
 4. **Debugging version-specific issues**: Test isolated versions
 
 Example workflow:
+
 ```bash
 # Quick test on latest version
 ./tests/kind/test-k8s-versions.sh --version 1.30.0

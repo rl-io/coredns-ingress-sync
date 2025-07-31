@@ -132,6 +132,7 @@ The project includes comprehensive testing with safety checks to prevent testing
 The test suite validates the kubecontext to ensure you're testing against a safe environment:
 
 **Safe contexts:**
+
 - `kind-*` (kind clusters)
 - `minikube`
 - `docker-desktop`
@@ -307,7 +308,7 @@ kind delete cluster --name coredns-test
 
 ### Chart Structure
 
-```
+```text
 helm/coredns-ingress-sync/
 ├── Chart.yaml              # Chart metadata
 ├── values.yaml             # Default values
@@ -372,6 +373,7 @@ kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync -f
 ### Common Development Issues
 
 For detailed solutions to common issues including:
+
 - Controller startup problems
 - DNS resolution issues  
 - ConfigMap update failures
@@ -410,15 +412,17 @@ golangci-lint run
 
 Follow conventional commit format:
 
+```text
+feat: add new feature
+fix: bug fix
+docs: documentation changes
+test: add or update tests
+refactor: code refactoring
 ```
-
-## Commit Message Guidelines
-
-This project follows [Conventional Commits](https://www.conventionalcommits.org/) specification for commit messages.
 
 ### Format
 
-```
+```text
 <type>[optional scope]: <description>
 
 [optional body]
@@ -442,7 +446,7 @@ This project follows [Conventional Commits](https://www.conventionalcommits.org/
 
 ### Examples
 
-```
+```text
 feat: add leader election support
 fix: resolve ConfigMap update race condition
 docs: update installation guide
@@ -503,14 +507,14 @@ This project supports multiple validation approaches:
 
 For breaking changes, add `!` after the type/scope:
 
-```
+```text
 feat!: change API response format
 fix(api)!: remove deprecated endpoint
 ```
 
 Or include `BREAKING CHANGE:` in the footer:
 
-```
+```text
 feat: add new configuration option
 
 BREAKING CHANGE: Default configuration format has changed

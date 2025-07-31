@@ -2,7 +2,6 @@
 
 ## [0.1.1](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.0...coredns-ingress-sync-v0.1.1) (2025-07-23)
 
-
 ### Features
 
 * add codecov badge ([68a8187](https://github.com/rl-io/coredns-ingress-sync/commit/68a8187ca34a6f2f5db4956c3630b056057cdb8f))
@@ -12,7 +11,6 @@
 * create dependabot.yml ([966d265](https://github.com/rl-io/coredns-ingress-sync/commit/966d2652fc64ac874afddf62c8f61ad297491b89))
 * create dependabot.yml ([020c0c1](https://github.com/rl-io/coredns-ingress-sync/commit/020c0c1156f5b439c6b51be670415958f6281bbd))
 * **git-hooks:** add conventional commit validation script and update setup script ([0f35642](https://github.com/rl-io/coredns-ingress-sync/commit/0f35642209fa34211b0c99e34a3f3b34e9f360a1))
-
 
 ### Bug Fixes
 

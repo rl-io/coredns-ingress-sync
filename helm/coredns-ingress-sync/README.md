@@ -75,6 +75,7 @@ helm install my-dns-controller rl-io/coredns-ingress-sync \
 | `replicaCount` | Number of replicas | `1` |
 | `controller.ingressClass` | Ingress class to watch | `nginx` |
 | `controller.targetCname` | Target service for DNS resolution | `ingress-nginx-controller.ingress-nginx.svc.cluster.local.` |
+| `controller.watchNamespaces` | Namespaces to monitor (empty = all) | `""` |
 | `controller.logLevel` | Controller log level | `info` |
 
 ### Advanced Configuration

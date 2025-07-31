@@ -1,0 +1,126 @@
+name: 'Security Scan with Trivy'
+description: 'Runs Trivy security scanning on container and filesystem'
+inputs:
+  image_name:
+    description: 'Docker image name to scan'
+    required: true
+    default: 'coredns-ingress-sync:scan'
+  image_artifact_path:
+    description: 'Path to Docker image artifact (optional)'
+    required: false
+    default: ''
+  scan_filesystem:
+    description: 'Whether to scan the filesystem (in addition to container)'
+    required: false
+    default: 'true'
+  upload_sarif:
+    description: 'Whether to upload SARIF results to GitHub Security tab'
+    required: false
+    default: 'true'
+  github_token:
+    description: 'GitHub token for SARIF upload'
+    required: false
+    default: ''
+  artifact_retention_days:
+    description: 'Days to retain artifact'
+    required: false
+    default: '30'
+
+outputs:
+  container_scan_status:
+    description: 'Status of container scan (success/failure)'
+    value: ${{ steps.container_scan.outcome }}
+  filesystem_scan_status:
+    description: 'Status of filesystem scan (success/failure)'  
+    value: ${{ steps.filesystem_scan.outcome }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Load Docker image from artifact
+      if: inputs.image_artifact_path != ''
+      shell: bash
+      run: |
+        echo "::group::📦 Loading Docker Image from Artifact"
+        if [ -f "${{ inputs.image_artifact_path }}/image.tar" ]; then
+          echo "Loading Docker image from artifact..."
+          docker load -i "${{ inputs.image_artifact_path }}/image.tar"
+          docker tag coredns-ingress-sync:test "${{ inputs.image_name }}"
+        else
+          echo "No image artifact found, will build image"
+        fi
+        echo "::endgroup::"
+        
+    - name: Build image for scanning
+      if: inputs.image_artifact_path == ''
+      shell: bash
+      run: |
+        echo "::group::🔨 Building Docker Image for Scanning"
+        echo "Building Docker image for scanning..."
+        docker build -t "${{ inputs.image_name }}" .
+        echo "::endgroup::"
+      
+    - name: Run Trivy container vulnerability scanner
+      id: container_scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ inputs.image_name }}
+        format: 'sarif'
+        output: 'trivy-container-results.sarif'
+        
+    - name: Run Trivy filesystem scanner
+      if: inputs.scan_filesystem == 'true'
+      id: filesystem_scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-filesystem-results.sarif'
+        
+    - name: Upload container scan results to GitHub Security tab
+      if: always() && inputs.upload_sarif == 'true' && github.event.repository.visibility == 'public'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-container-results.sarif'
+        token: ${{ inputs.github_token || github.token }}
+        category: 'trivy-container-scan'
+        
+    - name: Upload filesystem scan results to GitHub Security tab
+      if: always() && inputs.scan_filesystem == 'true' && inputs.upload_sarif == 'true' && github.event.repository.visibility == 'public'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-filesystem-results.sarif'
+        token: ${{ inputs.github_token || github.token }}
+        category: 'trivy-filesystem-scan'
+        
+    - name: Display scan results summary
+      if: always()
+      shell: bash
+      run: |
+        echo "::group::🔍 Security Scan Results Summary"
+        echo "Container scan: ${{ steps.container_scan.outcome }}"
+        echo "Filesystem scan: ${{ steps.filesystem_scan.outcome }}"
+        
+        if [ "${{ github.event.repository.visibility }}" != "public" ]; then
+          echo "Repository is private - SARIF uploads skipped"
+        fi
+        
+        if [ -f "trivy-container-results.sarif" ]; then
+          echo "Container scan results available"
+        fi
+        
+        if [ -f "trivy-filesystem-results.sarif" ]; then
+          echo "Filesystem scan results available"
+        fi
+        echo "::endgroup::"
+        
+    - name: Upload SARIF files as artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-security-scan-results
+        path: |
+          trivy-container-results.sarif
+          trivy-filesystem-results.sarif
+        retention-days: ${{ inputs.artifact_retention_days }}

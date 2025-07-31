@@ -27,6 +27,7 @@ kubectl logs -n kube-system deployment/coredns --tail=20
 ### 1. Controller Not Starting
 
 #### Symptoms
+
 - Pod in `CrashLoopBackOff` or `Pending` state
 - Container fails to start
 - No logs from controller
@@ -46,7 +47,7 @@ kubectl top pod -n coredns-ingress-sync
 
 #### Common Causes and Solutions
 
-**Image Pull Errors**
+##### Image Pull Errors
 
 ```bash
 # Check image pull policy and availability
@@ -56,7 +57,7 @@ kubectl describe pod -n coredns-ingress-sync -l app.kubernetes.io/name=coredns-i
 kind load docker-image coredns-ingress-sync:latest --name your-cluster-name
 ```
 
-**Resource Constraints**
+##### Resource Constraints
 
 ```bash
 # Check node resources
@@ -69,7 +70,7 @@ helm upgrade coredns-ingress-sync ./helm/coredns-ingress-sync \
   --namespace coredns-ingress-sync
 ```
 
-**RBAC Permissions**
+##### RBAC Permissions
 
 ```bash
 # Check service account permissions
@@ -82,12 +83,13 @@ helm upgrade coredns-ingress-sync ./helm/coredns-ingress-sync --namespace coredn
 
 ### 2. DNS Resolution Not Working
 
-#### Symptoms
+#### DNS Resolution Symptoms
+
 - DNS queries for ingress hostnames fail
 - Hostnames resolve to incorrect IP addresses
 - Intermittent DNS resolution issues
 
-#### Diagnostic Steps
+#### DNS Resolution Diagnostic Steps
 
 ```bash
 # Test DNS resolution from within cluster
@@ -103,9 +105,9 @@ kubectl get configmap coredns-custom -n kube-system -o jsonpath='{.data.dynamic\
 kubectl logs -n kube-system deployment/coredns | grep -i error
 ```
 
-#### Common Causes and Solutions
+#### DNS Resolution Solutions
 
-**Missing Import Statement in CoreDNS**
+##### Missing Import Statement in CoreDNS
 
 ```bash
 # Check if import statement exists
@@ -118,7 +120,7 @@ kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync | grep -i "
 kubectl patch configmap coredns -n kube-system --type merge -p '{"data":{"Corefile":".:53 {\n    import /etc/coredns/custom/*.server\n    errors\n    health {\n       lameduck 5s\n    }\n    ready\n    kubernetes cluster.local in-addr.arpa ip6.arpa {\n       pods insecure\n       fallthrough in-addr.arpa ip6.arpa\n       ttl 30\n    }\n    prometheus :9153\n    forward . /etc/resolv.conf {\n       max_concurrent 1000\n    }\n    cache 30\n    loop\n    reload\n    loadbalance\n}"}}'
 ```
 
-**Missing Volume Mount in CoreDNS**
+##### Missing Volume Mount in CoreDNS
 
 ```bash
 # Check if volume mount exists
@@ -130,7 +132,7 @@ kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync | grep -i "
 # Controller should automatically add this if autoConfigure is enabled
 ```
 
-**Empty or Incorrect Dynamic ConfigMap**
+##### Empty or Incorrect Dynamic ConfigMap
 
 ```bash
 # Check ConfigMap content
@@ -143,7 +145,7 @@ kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync | grep "Suc
 kubectl get ingress -A -o wide | grep nginx
 ```
 
-**CoreDNS Pod Issues**
+##### CoreDNS Pod Issues
 
 ```bash
 # Restart CoreDNS to reload configuration
@@ -158,12 +160,13 @@ kubectl exec -n kube-system deployment/coredns -- ls -la /etc/coredns/custom/
 
 ### 3. Ingresses Not Being Processed
 
-#### Symptoms
+#### Ingress Processing Symptoms
+
 - New ingresses don't appear in dynamic ConfigMap
 - Controller logs show no reconciliation activity
 - Expected hostnames missing from DNS configuration
 
-#### Diagnostic Steps
+#### Ingress Processing Diagnostic Steps
 
 ```bash
 # Check if controller is receiving ingress events
@@ -176,9 +179,9 @@ kubectl get ingress -A -o custom-columns=NAME:.metadata.name,NAMESPACE:.metadata
 kubectl get deployment coredns-ingress-sync -n coredns-ingress-sync -o yaml | grep -A 10 "env:"
 ```
 
-#### Common Causes and Solutions
+#### Ingress Processing Solutions
 
-**Wrong IngressClass**
+##### Wrong IngressClass
 
 ```bash
 # Check what IngressClass the controller is watching
@@ -193,7 +196,7 @@ helm upgrade coredns-ingress-sync ./helm/coredns-ingress-sync \
   --namespace coredns-ingress-sync
 ```
 
-**Controller Not Running**
+##### Controller Not Running
 
 ```bash
 # Check controller status
@@ -221,12 +224,13 @@ kubectl delete lease coredns-ingress-sync-leader -n coredns-ingress-sync
 
 ### 4. ConfigMap Update Issues
 
-#### Symptoms
+#### ConfigMap Update Symptoms
+
 - Controller logs show reconciliation but ConfigMap doesn't update
 - "Failed to update dynamic ConfigMap" errors
 - Stale configuration in dynamic ConfigMap
 
-#### Diagnostic Steps
+#### ConfigMap Update Diagnostic Steps
 
 ```bash
 # Check for ConfigMap update errors
@@ -239,9 +243,9 @@ kubectl auth can-i update configmaps --as=system:serviceaccount:coredns-ingress-
 kubectl get configmap coredns-custom -n kube-system -o yaml | grep resourceVersion
 ```
 
-#### Common Causes and Solutions
+#### ConfigMap Update Solutions
 
-**Permission Denied**
+##### Permission Denied
 
 ```bash
 # Verify RBAC permissions
@@ -252,7 +256,7 @@ kubectl describe rolebinding coredns-ingress-sync-coredns -n kube-system
 helm upgrade coredns-ingress-sync ./helm/coredns-ingress-sync --namespace coredns-ingress-sync
 ```
 
-**Resource Version Conflicts**
+##### Resource Version Conflicts
 
 This typically resolves automatically due to retry logic, but if persistent:
 
@@ -272,12 +276,13 @@ helm upgrade coredns-ingress-sync ./helm/coredns-ingress-sync \
 
 ### 5. Performance Issues
 
-#### Symptoms
+#### Performance Symptoms
+
 - Slow ingress processing
 - High CPU/memory usage
 - Reconciliation timeouts
 
-#### Diagnostic Steps
+#### Performance Diagnostic Steps
 
 ```bash
 # Check resource usage
@@ -290,9 +295,9 @@ kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync | grep "Suc
 ./tests/benchmark_test.sh
 ```
 
-#### Common Causes and Solutions
+#### Performance Solutions
 
-**Resource Constraints**
+##### Performance Resource Constraints
 
 ```bash
 # Increase resource limits
@@ -304,7 +309,7 @@ helm upgrade coredns-ingress-sync ./helm/coredns-ingress-sync \
   --namespace coredns-ingress-sync
 ```
 
-**Large Number of Ingresses**
+##### Large Number of Ingresses
 
 ```bash
 # Check number of ingresses being processed
