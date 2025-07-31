@@ -4,9 +4,11 @@ This document explains the technical implementation and architecture of the core
 
 ## Architecture Overview
 
-The coredns-ingress-sync controller follows the Kubernetes controller pattern, using controller-runtime for efficient event-driven reconciliation. It acts as a bridge between Ingress resources and CoreDNS configuration, with support for **namespace filtering** and **modular CI/CD automation**.
+The coredns-ingress-sync controller follows the Kubernetes controller pattern, using controller-runtime for
+efficient event-driven reconciliation. It acts as a bridge between Ingress resources and CoreDNS configuration,
+with support for **namespace filtering** and **modular CI/CD automation**.
 
-```
+```text
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │     Ingress     │    │                  │    │     CoreDNS     │
 │   Resources     │───▶│   Controller     │───▶│  Configuration  │
@@ -21,6 +23,7 @@ The coredns-ingress-sync controller follows the Kubernetes controller pattern, u
 ```
 
 **Namespace Monitoring**: The controller can operate in two modes:
+
 - **Cluster-wide**: Monitors ingresses across all namespaces (requires ClusterRole)
 - **Namespace-scoped**: Monitors only specific namespaces (uses per-namespace Roles)
 
@@ -49,11 +52,11 @@ controller.Watch(
     handler.EnqueueRequestsFromMapFunc(mapIngressesToReconcile),
     predicate.Funcs{CreateFunc: isTargetIngress, UpdateFunc: hasIngressChanged},
 )
-```
+```text
 
 ### 2. Ingress Processing Pipeline
 
-```
+```text
 Ingress Event → Filter by IngressClass → Extract Hostnames → Generate Config → Update ConfigMap
 ```
 
@@ -401,7 +404,7 @@ Future enhancement: Prometheus metrics for:
 
 The project uses a **modular CI/CD approach** with reusable GitHub Actions:
 
-```
+```text
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │  Pull Request   │    │   Reusable       │    │   Production    │
 │   Validation    │───▶│   Actions        │───▶│   Deployment    │

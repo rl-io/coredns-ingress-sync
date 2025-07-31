@@ -84,6 +84,7 @@ rewrite name exact web.example.com ingress-nginx-controller.ingress-nginx.svc.cl
 ```
 
 ### 4. **Cleanup on Uninstall**
+
 The Helm chart includes pre-delete hooks that:
 
 - **Remove Import Statement**: Removes the import line from CoreDNS Corefile
@@ -192,7 +193,7 @@ The controller automatically discovers ingress hostnames and configures CoreDNS 
 
 For ingresses with hostnames `api.example.com` and `web.example.com`, the controller generates:
 
-```
+```text
 rewrite name exact api.example.com ingress-nginx-controller.ingress-nginx.svc.cluster.local.
 rewrite name exact web.example.com ingress-nginx-controller.ingress-nginx.svc.cluster.local.
 ```
@@ -253,7 +254,7 @@ We welcome contributions! Please see the [Development Guide](docs/DEVELOPMENT.md
 ## Support
 
 - **🐛 Issues**: [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues)
-- ** Documentation**: See the `docs/` directory for comprehensive guides
+- **Documentation**: See the `docs/` directory for comprehensive guides
 - **🤝 Contributing**: See the [Development Guide](docs/DEVELOPMENT.md)
 
 ## License

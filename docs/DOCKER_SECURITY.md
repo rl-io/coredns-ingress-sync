@@ -1,19 +1,22 @@
 # Docker Security Improvements Summary
 
 ## Overview
+
 We've significantly improved the Docker security posture of the coredns-ingress-sync controller by implementing several security best practices.
 
 ## Key Security Improvements
 
 ### 1. **Scratch Base Image**
+
 - **Before**: Used `alpine:latest` (~5MB base + additional packages)
 - **After**: Uses `scratch` (no base image, ~0MB)
-- **Benefits**: 
+- **Benefits**:
   - Minimal attack surface (no shell, no package manager, no utilities)
   - No known vulnerabilities from base OS
   - Smallest possible container size
 
 ### 2. **Non-Root User**
+
 - **Before**: Ran as root user (UID 0)
 - **After**: Runs as user 65534 (nobody)
 - **Benefits**:
@@ -22,6 +25,7 @@ We've significantly improved the Docker security posture of the coredns-ingress-
   - Complies with security best practices
 
 ### 3. **Static Binary Compilation**
+
 - **CGO_ENABLED=0**: Disables CGO for fully static binary
 - **Static linking**: `-ldflags='-w -s -extldflags "-static"'`
 - **Benefits**:
@@ -30,6 +34,7 @@ We've significantly improved the Docker security posture of the coredns-ingress-
   - Smaller binary size (stripped symbols)
 
 ### 4. **Build Optimization**
+
 - **Multi-stage build**: Separates build and runtime environments
 - **Layer caching**: Copies go.mod/go.sum first for better caching
 - **Minimal context**: Uses .dockerignore to exclude unnecessary files
@@ -37,6 +42,7 @@ We've significantly improved the Docker security posture of the coredns-ingress-
 ## Security Features
 
 ### Container Security
+
 ```dockerfile
 # Runs as non-root user (nobody)
 USER 65534:65534
@@ -49,6 +55,7 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 ```
 
 ### Binary Security
+
 ```dockerfile
 # Static compilation with security flags
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
@@ -58,11 +65,13 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 ```
 
 ## Size Comparison
+
 - **Previous**: ~50-100MB (alpine + packages)
 - **Current**: ~37.3MB (scratch + static binary)
 - **Reduction**: ~50%+ smaller
 
 ## Security Compliance
+
 ✅ **Non-root execution**: Runs as UID 65534  
 ✅ **Minimal attack surface**: No shell, no package manager  
 ✅ **No known vulnerabilities**: No base OS packages  
@@ -71,13 +80,16 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 ✅ **Minimal context**: Only necessary files included  
 
 ## Testing
+
 The container has been tested to confirm:
+
 - Builds successfully
 - Runs as non-root user (65534)
 - Executes without shell dependencies
 - Maintains all functionality
 
 ## Deployment Updates
+
 Update your Kubernetes deployments to leverage these security improvements:
 
 ```yaml
@@ -93,6 +105,7 @@ securityContext:
 ```
 
 ## Recommendations
+
 1. **Regular rebuilds**: Rebuild images regularly for latest dependencies
 2. **Vulnerability scanning**: Scan images with tools like Trivy or Clair
 3. **Runtime security**: Use Pod Security Standards or OPA Gatekeeper

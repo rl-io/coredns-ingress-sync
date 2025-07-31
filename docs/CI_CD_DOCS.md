@@ -4,7 +4,9 @@ This document describes the comprehensive, modular CI/CD pipeline setup for the 
 
 ## Overview
 
-The project uses GitHub Actions for continuous integration and deployment, with a **modular approach** using reusable actions and multiple specialized workflows for different aspects of the development lifecycle.
+The project uses GitHub Actions for continuous integration and deployment,
+with a **modular approach** using reusable actions and multiple specialized workflows
+for different aspects of the development lifecycle.
 
 ## Modular Architecture
 
@@ -13,9 +15,11 @@ The project uses GitHub Actions for continuous integration and deployment, with 
 The pipeline is built on four core reusable actions located in `.github/actions/`:
 
 #### 1. Docker Build Action (`.github/actions/docker-build/action.yml`)
+
 **Purpose**: Builds Docker images with consistent tagging, caching, and multi-platform support
 
 **Features**:
+
 - ✅ Consistent tagging strategy across workflows
 - 📦 Multi-platform builds (AMD64/ARM64)
 - 💾 GitHub Actions cache optimization
@@ -23,6 +27,7 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 - 📤 Artifact export for downstream jobs
 
 **Usage**:
+
 ```yaml
 - uses: ./.github/actions/docker-build
   with:
@@ -33,9 +38,11 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 ```
 
 #### 2. Security Scan Action (`.github/actions/security-scan/action.yml`)
+
 **Purpose**: Trivy-based security scanning for containers and filesystem
 
 **Features**:
+
 - 🔒 Container vulnerability scanning
 - 📁 Filesystem security analysis
 - 📊 SARIF uploads to GitHub Security tab
@@ -43,6 +50,7 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 - 📋 Artifact retention for scan results
 
 **Usage**:
+
 ```yaml
 - uses: ./.github/actions/security-scan
   with:
@@ -53,9 +61,11 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 ```
 
 #### 3. Test Runner Action (`.github/actions/test-runner/action.yml`)
+
 **Purpose**: Comprehensive Go testing with Kubernetes Kind clusters
 
 **Features**:
+
 - 🧪 Unit, integration, and E2E tests
 - ☸️ Kind cluster provisioning
 - 📈 Codecov integration
@@ -63,6 +73,7 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 - 📊 Coverage reporting
 
 **Usage**:
+
 ```yaml
 - uses: ./.github/actions/test-runner
   with:
@@ -73,15 +84,18 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 ```
 
 #### 4. PR Status Update Action (`.github/actions/update-pr-status/action.yml`)
+
 **Purpose**: Updates PR status checks for release-please workflows
 
 **Features**:
+
 - ✅ Automated status check updates
 - 🔗 PR integration with repository dispatch
 - � Configurable status messages
 - 🎯 Targeted PR status management
 
 **Usage**:
+
 ```yaml
 - uses: ./.github/actions/update-pr-status
   with:
@@ -96,9 +110,11 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 ### 1. Pull Request Tests (`.github/workflows/pr-tests.yml`)
 
 **Triggers:**
+
 - Pull request events (opened, synchronize, reopened)
 
 **Jobs:**
+
 - **Detect Changes**: Smart change detection for targeted testing
 - **Build Docker Image**: Uses reusable docker-build action
 - **Run Tests**: Uses reusable test-runner action
@@ -106,6 +122,7 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 - **Documentation Check**: Markdown validation
 
 **Features:**
+
 - ⚡ Fast feedback loop for PRs
 - 🎯 Only runs tests for changed components
 - 🔄 Parallel execution where possible
@@ -114,14 +131,17 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 ### 2. Main CI/CD Pipeline (`.github/workflows/ci-cd.yml`)
 
 **Triggers:**
+
 - Repository dispatch events from release-please
 - Manual workflow dispatch
 
 **Jobs:**
+
 - **Debug Information**: Workflow context logging
 - **Trigger Build and Test**: Dispatches to build-test workflow
 
 **Features:**
+
 - 🔗 Integration with release-please
 - 📋 Centralized orchestration
 - 🚀 Event-driven automation
@@ -129,16 +149,19 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 ### 3. Build and Test Workflow (`.github/workflows/build-test.yml`)
 
 **Triggers:**
+
 - Repository dispatch from CI/CD pipeline
 - Manual workflow dispatch
 
 **Jobs:**
+
 - **Setup PR Status**: Initializes status checks for release-please PRs
 - **Build**: Uses reusable docker-build action
 - **Test**: Uses reusable test-runner action  
 - **Security Scan**: Uses reusable security-scan action
 
 **Features:**
+
 - � Status check management for release-please
 - 📦 Artifact passing between jobs
 - ✅ Comprehensive validation pipeline
@@ -146,14 +169,17 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 ### 4. Build and Push (`.github/workflows/build-push.yml`)
 
 **Triggers:**
+
 - Push to `main` branch
 - Version tags (`v*`)
 - Manual workflow dispatch
 
 **Jobs:**
+
 - **Build and Push**: Production Docker builds with registry push
 
 **Features:**
+
 - 🏗️ Multi-platform production builds
 - 📦 Container registry publishing
 - 🔧 Uses reusable docker-build action
@@ -161,15 +187,18 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 ### 5. Security Scanning (`.github/workflows/security.yml`)
 
 **Triggers:**
+
 - Schedule (daily)
 - Push to main
 - Manual workflow dispatch
 
 **Jobs:**
+
 - **CodeQL Analysis**: GitHub's semantic code analysis
 - **Dependency Review**: Automated dependency security checks
 
 **Features:**
+
 - 🔒 Comprehensive security analysis
 - 📊 SARIF integration with GitHub Security tab
 - ⏰ Scheduled security monitoring
@@ -177,15 +206,18 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 ### 3. Security and Maintenance (`.github/workflows/security.yml`)
 
 **Triggers:**
+
 - Daily schedule (2 AM UTC)
 - Manual trigger
 
 **Jobs:**
+
 - **Dependency Update**: Automated dependency updates
 - **Security Scan**: Daily vulnerability scanning
 - **Image Cleanup**: Removes old container images
 
 **Features:**
+
 - 🔄 Automated dependency updates with PR creation
 - 🛡️ Daily security scanning
 - 🧹 Automatic cleanup of old container images
@@ -303,6 +335,7 @@ make test-safety
 ### Automated Release
 
 1. **Create a tag:**
+
    ```bash
    git tag v1.0.0
    git push origin v1.0.0
@@ -328,6 +361,7 @@ make release
 ## Security Features
 
 ### Image Security
+
 - 🔒 Non-root user (65534)
 - 📦 Scratch base image (minimal attack surface)
 - 🔐 Signed container images with Cosign
@@ -335,12 +369,14 @@ make release
 - 📋 SBOM generation for compliance
 
 ### Code Security
+
 - 🔍 Static analysis with golangci-lint
 - 🛡️ Security scanning with gosec
 - 🔒 Dependency vulnerability scanning
 - 📊 Code coverage reporting
 
 ### Supply Chain Security
+
 - 🔐 Container image signing
 - 📋 Software Bill of Materials (SBOM)
 - 🔒 Reproducible builds
@@ -349,11 +385,13 @@ make release
 ## Monitoring and Alerts
 
 ### GitHub Actions Notifications
+
 - Failed build notifications
 - Security vulnerability alerts
 - Dependency update notifications
 
 ### Metrics and Reporting
+
 - Test coverage reporting to Codecov
 - Security scan results in GitHub Security tab
 - Performance benchmark results

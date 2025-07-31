@@ -17,6 +17,7 @@ A: Yes, completely compatible. This controller only affects internal DNS resolut
 ### Q: Which Kubernetes versions are supported?
 
 A: The controller is built using controller-runtime and supports Kubernetes 1.19+. It has been tested with:
+
 - EKS 1.21-1.28
 - GKE 1.21-1.28  
 - AKS 1.21-1.28
@@ -31,6 +32,7 @@ A: No, the controller automatically discovers existing ingress resources based o
 ### Q: Can I use this with ingress controllers other than nginx?
 
 A: Yes, you can configure any ingress class via the `controller.ingressClass` Helm value. Common examples:
+
 - `nginx` (default)
 - `traefik`
 - `haproxy`
@@ -178,6 +180,7 @@ A: The current implementation uses simple hostname-to-target mapping. For custom
 ### Q: How do I contribute to the project?
 
 A: See the [Development Guide](DEVELOPMENT.md) for contribution guidelines, including:
+
 - Setting up the development environment
 - Running tests
 - Submitting pull requests
@@ -191,6 +194,7 @@ A: The controller uses the standard Kubernetes controller pattern with watch-bas
 ### Q: What permissions does the controller need?
 
 A: The controller requires minimal RBAC permissions:
+
 - Read ingresses cluster-wide
 - Read/write specific ConfigMaps in kube-system
 - Read/write deployments in kube-system (for auto-configuration)
@@ -210,6 +214,7 @@ A: The controller uses a least-privilege approach and only adds DNS resolution r
 ### Q: How many ingresses can this handle?
 
 A: The controller has been tested with hundreds of ingresses. Performance depends on:
+
 - Kubernetes cluster size and performance
 - Frequency of ingress changes
 - Controller resource allocation
@@ -223,6 +228,7 @@ A: No, it actually reduces latency for internal communications by eliminating ex
 ### Q: How often does the controller reconcile?
 
 A: The controller uses event-driven reconciliation and only processes changes when:
+
 - Ingress resources are created, updated, or deleted
 - CoreDNS configuration is modified externally
 - Controller startup/restart
@@ -240,6 +246,7 @@ A: Yes, it works perfectly in development environments. See the [Development Gui
 ### Q: Is this production-ready?
 
 A: Yes, the controller includes:
+
 - Comprehensive error handling and logging
 - Leader election for high availability
 - Defensive configuration management
@@ -259,6 +266,7 @@ helm upgrade coredns-ingress-sync ./helm/coredns-ingress-sync \
 ### Q: What's the upgrade/rollback strategy?
 
 A: The controller supports standard Kubernetes rolling updates. During upgrades:
+
 1. New controller version starts
 2. Leader election ensures only one active controller
 3. Old controller gracefully shuts down
@@ -307,6 +315,7 @@ A: The controller currently only handles HTTP/HTTPS ingresses. For TCP/UDP servi
 ### Q: Are there metrics available?
 
 A: The controller currently logs reconciliation events. Adding Prometheus metrics is a potential future enhancement. You can monitor:
+
 - Controller pod health and logs
 - CoreDNS configuration changes
 - DNS resolution success rates
@@ -314,6 +323,7 @@ A: The controller currently logs reconciliation events. Adding Prometheus metric
 ### Q: How do I monitor DNS resolution performance?
 
 A: Use standard DNS monitoring tools:
+
 - Monitor CoreDNS metrics (enabled by default)
 - Test DNS resolution from application pods
 - Track DNS query response times
@@ -321,6 +331,7 @@ A: Use standard DNS monitoring tools:
 ### Q: What logs should I monitor in production?
 
 A: Key log patterns to monitor:
+
 - `Successfully updated dynamic ConfigMap` (successful operations)
 - `Failed to` (error conditions)
 - `Leader election` (leadership changes in multi-replica setups)
