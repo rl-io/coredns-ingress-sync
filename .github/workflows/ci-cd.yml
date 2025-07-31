@@ -64,6 +64,27 @@ jobs:
         platforms: linux/amd64
         export_artifact: true
 
+    # Update build status for release-please PRs
+    - name: Update Build Status on Success
+      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
+      with:
+        context: "Build Docker Image"
+        state: "success"
+        description: "Build completed successfully"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update Build Status on Failure
+      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
+      with:
+        context: "Build Docker Image"
+        state: "failure"
+        description: "Build failed"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
   test:
     name: Run Tests
     runs-on: ubuntu-latest
@@ -93,6 +114,27 @@ jobs:
         image_artifact_path: /tmp
         cluster_timeout: 120
 
+    # Update test status for release-please PRs
+    - name: Update Test Status on Success
+      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
+      with:
+        context: "Run Tests"
+        state: "success"
+        description: "Tests completed successfully"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update Test Status on Failure
+      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
+      with:
+        context: "Run Tests"
+        state: "failure"
+        description: "Tests failed"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -119,6 +161,27 @@ jobs:
         image_artifact_path: /tmp
         scan_filesystem: true
         upload_sarif: true
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    # Update security scan status for release-please PRs
+    - name: Update Security Scan Status on Success
+      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
+      with:
+        context: "Security Scan"
+        state: "success"
+        description: "Security scan completed successfully"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update Security Scan Status on Failure
+      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
+      with:
+        context: "Security Scan"
+        state: "failure"
+        description: "Security scan failed"
+        pr_number: ${{ github.event.client_payload.pr_number }}
         github_token: ${{ secrets.GITHUB_TOKEN }}
 
   release:
