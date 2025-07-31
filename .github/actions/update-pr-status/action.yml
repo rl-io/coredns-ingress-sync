@@ -38,22 +38,41 @@ runs:
       id: get-job-id
       shell: bash
       run: |
-        echo "Current job name: '${{ github.job }}'"
+        echo "Current job key: '${{ github.job }}'"
         echo "Looking for job ID in run ${{ github.run_id }}"
+        
+        # Map job keys to job names
+        case "${{ github.job }}" in
+          "build")
+            JOB_NAME="Build Docker Image"
+            ;;
+          "test")
+            JOB_NAME="Run Tests"
+            ;;
+          "security-scan")
+            JOB_NAME="Security Scan"
+            ;;
+          *)
+            echo "Unknown job key: ${{ github.job }}"
+            JOB_NAME="${{ github.job }}"
+            ;;
+        esac
+        
+        echo "Mapped job name: $JOB_NAME"
         
         # Get all jobs for debugging
         echo "All jobs in this run:"
         gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[] | {name: .name, id: .id, status: .status}'
         
         # Try to find job ID by name
-        JOB_ID=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[] | select(.name == "${{ github.job }}") | .id')
+        JOB_ID=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq ".jobs[] | select(.name == \"$JOB_NAME\") | .id")
         
         if [ -z "$JOB_ID" ]; then
-          echo "Job ID not found for name '${{ github.job }}', falling back to run URL"
+          echo "Job ID not found for name '$JOB_NAME', falling back to run URL"
           echo "job_id=" >> $GITHUB_OUTPUT
         else
           echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
-          echo "Found Job ID for '${{ github.job }}': $JOB_ID"
+          echo "Found Job ID for '$JOB_NAME': $JOB_ID"
         fi
       env:
         GH_TOKEN: ${{ inputs.github_token }}
