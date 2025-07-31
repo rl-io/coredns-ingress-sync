@@ -35,8 +35,8 @@ jobs:
           event-type: release-please
           client-payload: |
             {
-              "pr_number": "${{ fromJSON(steps.release.outputs.pr).number }}",
-              "branch": "${{ fromJSON(steps.release.outputs.pr).headBranchName }}"
+              "pr_number": "${{ fromJSON(steps.release.outputs.prs)[0].number }}",
+              "ref": "${{ fromJSON(steps.release.outputs.prs)[0].headBranchName }}"
             }
 
 
