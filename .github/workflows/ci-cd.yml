@@ -43,6 +43,9 @@ jobs:
   trigger-build-test:
     name: Trigger Build and Test
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
     if: |
       (github.event_name == 'repository_dispatch' && github.event.action == 'release-please') ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
