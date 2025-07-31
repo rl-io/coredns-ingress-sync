@@ -39,39 +39,21 @@ jobs:
           echo "PR number: ${{ github.event.client_payload.pr_number }}"
         fi
 
-  # Trigger repository dispatch for release-please events only
-  trigger-build-test:
-    name: Trigger Build and Test (Release Please)
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-      contents: write
-    if: github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
-    steps:
-    - name: Trigger Build and Test Workflow
-      uses: peter-evans/repository-dispatch@v3
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        repository: ${{ github.repository }}
-        event-type: build-test
-        client-payload: |
-          {
-            "pr_number": "${{ github.event.client_payload.pr_number }}",
-            "ref": "${{ github.event.client_payload.ref }}",
-            "sha": "${{ github.event.client_payload.sha }}"
-          }
-
-  # Direct build and test jobs for push events
+  # Build and test jobs for both push events and release-please events
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'repository_dispatch' && github.event.action == 'release-please')
     outputs:
       image-tags: ${{ steps.docker_build.outputs.image_tags }}
       image-digest: ${{ steps.docker_build.outputs.image_digest }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.client_payload.ref || github.ref }}
       
     - name: Build Docker Image
       id: docker_build
@@ -85,11 +67,15 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'repository_dispatch' && github.event.action == 'release-please')
     needs: build
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.client_payload.ref || github.ref }}
       
     - name: Download image artifact
       uses: actions/download-artifact@v4
@@ -110,11 +96,15 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'repository_dispatch' && github.event.action == 'release-please')
     needs: build
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.client_payload.ref || github.ref }}
       
     - name: Download image artifact
       uses: actions/download-artifact@v4
