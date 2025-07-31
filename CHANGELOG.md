@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.2...coredns-ingress-sync-v0.1.3) (2025-07-31)
+
+
+### Bug Fixes
+
+* **ci:** correct JSON parsing for PR number and branch reference in release-please workflow ([7cddd74](https://github.com/rl-io/coredns-ingress-sync/commit/7cddd74833eae361b7b2a74ddbcd640f1a0c8f86))
+
 ## [0.1.2](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.1...coredns-ingress-sync-v0.1.2) (2025-07-31)
 
 
