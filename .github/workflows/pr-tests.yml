@@ -25,6 +25,7 @@ jobs:
       docker-changes: ${{ steps.changes.outputs.docker }}
       k8s-changes: ${{ steps.changes.outputs.k8s }}
       docs-changes: ${{ steps.changes.outputs.docs }}
+      cicd-changes: ${{ steps.changes.outputs.cicd }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -58,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     # Always run build for CI/CD testing, or when code changes
-    if: always() && (needs.changes.outputs.go-changes == 'true' || needs.changes.outputs.docker-changes == 'true' || github.event_name == 'pull_request')
+    if: always() && (needs.changes.outputs.go-changes == 'true' || needs.changes.outputs.docker-changes == 'true' || needs.changes.outputs.cicd-changes == 'true' || github.event_name == 'pull_request')
     outputs:
       image-tags: ${{ steps.docker_build.outputs.image_tags }}
       image-digest: ${{ steps.docker_build.outputs.image_digest }}
