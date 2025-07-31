@@ -15,52 +15,6 @@ permissions:
   statuses: write
 
 jobs:
-  # Create status checks on release-please PR
-  setup-pr-status:
-    name: Setup PR Status Checks
-    runs-on: ubuntu-latest
-    if: github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
-    outputs:
-      sha: ${{ steps.get-pr-sha.outputs.sha }}
-    steps:
-    - name: Get PR SHA and repository info
-      id: get-pr-sha
-      run: |
-        PR_NUMBER="${{ github.event.client_payload.pr_number }}"
-        if [ -n "$PR_NUMBER" ]; then
-          SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.sha')
-          echo "sha=$SHA" >> $GITHUB_OUTPUT
-          echo "Retrieved SHA $SHA for PR #$PR_NUMBER"
-        fi
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Set Pending Status for Build
-      if: steps.get-pr-sha.outputs.sha
-      uses: guibranco/github-status-action-v2@v1
-      with:
-        authToken: ${{ secrets.GITHUB_TOKEN }}
-        owner: ${{ github.repository_owner }}
-        repository: ${{ github.event.repository.name }}
-        sha: ${{ steps.get-pr-sha.outputs.sha }}
-        state: "pending"
-        context: "CI/CD Pipeline / build"
-        description: "Running build job..."
-        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-    
-    - name: Set Pending Status for Test
-      if: steps.get-pr-sha.outputs.sha
-      uses: guibranco/github-status-action-v2@v1
-      with:
-        authToken: ${{ secrets.GITHUB_TOKEN }}
-        owner: ${{ github.repository_owner }}
-        repository: ${{ github.event.repository.name }}
-        sha: ${{ steps.get-pr-sha.outputs.sha }}
-        state: "pending"
-        context: "CI/CD Pipeline / test"
-        description: "Running test job..."
-        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
@@ -70,6 +24,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.client_payload.branch || github.ref }}
       
     - name: Build Docker Image
       id: docker_build
@@ -85,7 +41,7 @@ jobs:
       if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
       uses: ./.github/actions/update-pr-status
       with:
-        context: "CI/CD Pipeline / build"
+        context: "Build Docker Image"
         state: "success"
         description: "Build completed successfully"
         pr_number: ${{ github.event.client_payload.pr_number }}
@@ -95,7 +51,7 @@ jobs:
       if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
       uses: ./.github/actions/update-pr-status
       with:
-        context: "CI/CD Pipeline / build"
+        context: "Build Docker Image"
         state: "failure"
         description: "Build failed"
         pr_number: ${{ github.event.client_payload.pr_number }}
@@ -108,6 +64,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.client_payload.branch || github.ref }}
       
     - name: Download image artifact
       uses: actions/download-artifact@v4
@@ -130,7 +88,7 @@ jobs:
       if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
       uses: ./.github/actions/update-pr-status
       with:
-        context: "CI/CD Pipeline / test"
+        context: "Run Tests"
         state: "success"
         description: "Tests completed successfully"
         pr_number: ${{ github.event.client_payload.pr_number }}
@@ -140,7 +98,7 @@ jobs:
       if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
       uses: ./.github/actions/update-pr-status
       with:
-        context: "CI/CD Pipeline / test"
+        context: "Run Tests"
         state: "failure"
         description: "Tests failed"
         pr_number: ${{ github.event.client_payload.pr_number }}
@@ -153,6 +111,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.client_payload.branch || github.ref }}
       
     - name: Download image artifact
       uses: actions/download-artifact@v4
@@ -167,4 +127,25 @@ jobs:
         image_artifact_path: /tmp
         scan_filesystem: true
         upload_sarif: true
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    # Update security scan status using reusable action
+    - name: Update Security Scan Status on Success
+      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+      uses: ./.github/actions/update-pr-status
+      with:
+        context: "Security Scan"
+        state: "success"
+        description: "Security scan completed successfully"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update Security Scan Status on Failure
+      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+      uses: ./.github/actions/update-pr-status
+      with:
+        context: "Security Scan"
+        state: "failure"
+        description: "Security scan failed"
+        pr_number: ${{ github.event.client_payload.pr_number }}
         github_token: ${{ secrets.GITHUB_TOKEN }}
