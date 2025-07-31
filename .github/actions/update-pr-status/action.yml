@@ -1,0 +1,91 @@
+name: 'Update PR Status Check'
+description: 'Updates a status check for a release-please PR'
+inputs:
+  context:
+    description: 'Status check context (e.g., "CI/CD Pipeline / build")'
+    required: true
+  state:
+    description: 'Status state (pending, success, failure)'
+    required: true
+  description:
+    description: 'Status description'
+    required: true
+  pr_number:
+    description: 'PR number from repository_dispatch payload'
+    required: false
+  github_token:
+    description: 'GitHub token'
+    required: true
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Get PR SHA
+      if: inputs.pr_number != '' && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+      id: get-pr-sha
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.pr_number }}" ]; then
+          SHA=$(gh api repos/${{ github.repository }}/pulls/${{ inputs.pr_number }} --jq '.head.sha')
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "Retrieved SHA $SHA for PR #${{ inputs.pr_number }}"
+        fi
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+
+    - name: Get Job ID
+      id: get-job-id
+      shell: bash
+      run: |
+        echo "Current job key: '${{ github.job }}'"
+        echo "Looking for job ID in run ${{ github.run_id }}"
+        
+        # Map job keys to job names
+        case "${{ github.job }}" in
+          "build")
+            JOB_NAME="Build Docker Image"
+            ;;
+          "test")
+            JOB_NAME="Run Tests"
+            ;;
+          "security-scan")
+            JOB_NAME="Security Scan"
+            ;;
+          *)
+            echo "Unknown job key: ${{ github.job }}"
+            JOB_NAME="${{ github.job }}"
+            ;;
+        esac
+        
+        echo "Mapped job name: $JOB_NAME"
+        
+        # Get all jobs for debugging
+        echo "All jobs in this run:"
+        gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[] | {name: .name, id: .id, status: .status}'
+        
+        # Try to find job ID by name
+        JOB_ID=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq ".jobs[] | select(.name == \"$JOB_NAME\") | .id")
+        
+        if [ -z "$JOB_ID" ]; then
+          echo "Job ID not found for name '$JOB_NAME', falling back to run URL"
+          echo "job_id=" >> $GITHUB_OUTPUT
+        else
+          echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
+          echo "Found Job ID for '$JOB_NAME': $JOB_ID"
+        fi
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+
+    - name: Update Status Check
+      if: steps.get-pr-sha.outputs.sha != ''
+      uses: guibranco/github-status-action-v2@v1
+      with:
+        authToken: ${{ inputs.github_token }}
+        owner: ${{ github.repository_owner }}
+        repository: ${{ github.event.repository.name }}
+        sha: ${{ steps.get-pr-sha.outputs.sha }}
+        state: ${{ inputs.state }}
+        context: ${{ inputs.context }}
+        description: ${{ inputs.description }}
+        target_url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}${{ steps.get-job-id.outputs.job_id && format('/job/{0}', steps.get-job-id.outputs.job_id) || '' }}"

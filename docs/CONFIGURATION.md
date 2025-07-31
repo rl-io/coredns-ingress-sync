@@ -16,6 +16,14 @@ controller:
   # Target service for DNS resolution (where ingress hostnames should resolve)
   targetCNAME: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
   
+  # Namespace filtering - controls which namespaces to monitor for ingresses
+  # Empty string = watch all namespaces cluster-wide (default)
+  # Comma-separated list = watch only specific namespaces
+  watchNamespaces: ""
+  # Examples:
+  # watchNamespaces: "production,staging"  # Watch only production and staging
+  # watchNamespaces: "default"             # Watch only default namespace
+  
   # Dynamic ConfigMap configuration
   dynamicConfigMap:
     name: "coredns-custom"
@@ -84,6 +92,7 @@ The controller supports configuration through environment variables (set via Hel
 |----------|-------------|---------|
 | `INGRESS_CLASS` | IngressClass to watch | `nginx` |
 | `TARGET_CNAME` | Target service for DNS resolution | `ingress-nginx-controller.ingress-nginx.svc.cluster.local.` |
+| `WATCH_NAMESPACES` | Namespaces to monitor (empty = all) | `""` |
 | `COREDNS_NAMESPACE` | CoreDNS namespace | `kube-system` |
 | `COREDNS_CONFIGMAP_NAME` | CoreDNS ConfigMap name | `coredns` |
 | `DYNAMIC_CONFIGMAP_NAME` | Dynamic ConfigMap name | `coredns-custom` |
@@ -114,6 +123,38 @@ helm install coredns-ingress-sync-traefik ./helm/coredns-ingress-sync \
   --set controller.dynamicConfigMap.name=coredns-traefik \
   --set controller.targetCNAME=traefik.traefik.svc.cluster.local. \
   --namespace coredns-ingress-sync
+```
+
+### Namespace Filtering
+
+Control which namespaces the controller monitors for ingress resources:
+
+```yaml
+# Watch all namespaces (cluster-wide monitoring)
+controller:
+  watchNamespaces: ""
+
+# Watch specific namespaces only
+controller:
+  watchNamespaces: "production,staging"
+
+# Watch only the default namespace
+controller:
+  watchNamespaces: "default"
+```
+
+**RBAC Requirements by Configuration**:
+
+- **Cluster-wide** (`watchNamespaces: ""`): Requires `ClusterRole` with ingress read permissions
+- **Namespace-scoped** (`watchNamespaces: "ns1,ns2"`): Requires `Role` in each specified namespace
+
+```bash
+# Deploy with namespace filtering
+helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
+  --set coreDNS.autoConfigure=true \
+  --set controller.watchNamespaces="production,staging" \
+  --namespace coredns-ingress-sync \
+  --create-namespace
 ```
 
 ### Custom Target Service

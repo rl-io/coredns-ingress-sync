@@ -4,8 +4,10 @@ on:
   push:
     branches: [ main, develop ]
     tags: [ 'v*' ]
-  pull_request:
-    branches: [ main ]
+  # Handle release-please events
+  repository_dispatch:
+    types: [release-please]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,282 +15,151 @@ permissions:
   security-events: write
   pull-requests: write
   issues: write
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  statuses: write
+  actions: write
 
 jobs:
+  # Build and test jobs for both push events and release-please events
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'repository_dispatch' && github.event.action == 'release-please')
     outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
-      image-digest: ${{ steps.build.outputs.digest }}
+      image-tags: ${{ steps.docker_build.outputs.image_tags }}
+      image-digest: ${{ steps.docker_build.outputs.image_digest }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
       with:
-        images: coredns-ingress-sync
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=sha,prefix={{branch}}-,enable={{is_default_branch}}
-          type=sha,prefix=pr-,enable=${{ github.event_name == 'pull_request' }}
-          type=raw,value=latest,enable={{is_default_branch}}
-          
-    - name: Build and export image
-      id: build
-      uses: docker/build-push-action@v6
+        ref: ${{ github.event.client_payload.ref || github.ref }}
+      
+    # Update build status to pending for release-please PRs
+    - name: Update Build Status to Pending
+      if: github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
       with:
-        context: .
-        platforms: linux/amd64
+        context: "Build Docker Image"
+        state: "pending"
+        description: "Building Docker image..."
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+      
+    - name: Build Docker Image
+      id: docker_build
+      uses: ./.github/actions/docker-build
+      with:
+        image_name: coredns-ingress-sync
         push: false
-        tags: |
-          coredns-ingress-sync:test
-          coredns-ingress-sync:latest
-          ${{ steps.meta.outputs.tags }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        outputs: type=docker,dest=/tmp/image.tar
-        
-    - name: Upload image artifact
-      uses: actions/upload-artifact@v4
+        platforms: linux/amd64
+        export_artifact: true
+
+    # Update build status for release-please PRs
+    - name: Update Build Status on Success
+      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
       with:
-        name: docker-image
-        path: /tmp/image.tar
-        retention-days: 1
+        context: "Build Docker Image"
+        state: "success"
+        description: "Build completed successfully"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update Build Status on Failure
+      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
+      with:
+        context: "Build Docker Image"
+        state: "failure"
+        description: "Build failed"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
 
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'repository_dispatch' && github.event.action == 'release-please')
     needs: build
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
-    - name: Set up Go
-      uses: actions/setup-go@v5
       with:
-        go-version: '1.24'
-        cache: true
-          
-    - name: Set up Go module permissions
-      run: |
-        # Ensure proper permissions for Go modules
-        if [ -d ~/go/pkg/mod ]; then
-          chmod -R u+w ~/go/pkg/mod || true
-        fi
-          
-    - name: Download dependencies
-      run: |
-        go mod download
-        go mod verify
+        ref: ${{ github.event.client_payload.ref || github.ref }}
       
-    - name: Run unit tests
-      run: LOG_LEVEL=debug go test -v -race -coverprofile=coverage.out ./...
-      
-    - name: Generate coverage report
-      run: go tool cover -html=coverage.out -o coverage.html
-      
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
+    # Update test status to pending for release-please PRs
+    - name: Update Test Status to Pending
+      if: github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
       with:
-        flags: unittests
-        name: codecov-umbrella
-        slug: rl-io/coredns-ingress-sync
-        token: ${{ secrets.CODECOV_TOKEN }}
-        fail_ci_if_error: false
-        
-    - name: Coverage upload status
-      if: env.CODECOV_TOKEN == ''
-      run: |
-        echo "ℹ️  Codecov token not configured - coverage upload skipped"
-        echo "Coverage report still generated and available in artifacts"
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        
-    - name: Upload coverage reports
-      uses: actions/upload-artifact@v4
-      with:
-        name: coverage-reports
-        path: |
-          coverage.out
-          coverage.html
-          
+        context: "Run Tests"
+        state: "pending"
+        description: "Running comprehensive tests..."
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+      
     - name: Download image artifact
       uses: actions/download-artifact@v4
       with:
         name: docker-image
         path: /tmp
         
-    - name: Load Docker image
-      run: docker load -i /tmp/image.tar
-          
-    - name: Create Kind config
-      run: |
-        cat > kind-config.yaml << 'EOF'
-        kind: Cluster
-        apiVersion: kind.x-k8s.io/v1alpha4
-        nodes:
-        - role: control-plane
-          kubeadmConfigPatches:
-          - |
-            kind: InitConfiguration
-            nodeRegistration:
-              kubeletExtraArgs:
-                node-labels: "ingress-ready=true"
-          extraPortMappings:
-          - containerPort: 80
-            hostPort: 80
-            protocol: TCP
-          - containerPort: 443
-            hostPort: 443
-            protocol: TCP
-        EOF
-        
-    - name: Set up Kind cluster
-      uses: helm/kind-action@v1.12.0
+    - name: Run Comprehensive Tests
+      uses: ./.github/actions/test-runner
       with:
-        cluster_name: test-cluster
-        config: kind-config.yaml
-              
-    - name: Load image into Kind cluster
-      run: |
-        # The image is already loaded from the artifact
-        docker tag coredns-ingress-sync:test coredns-ingress-sync:latest
-        kind load docker-image coredns-ingress-sync:latest --name test-cluster
-        
-    - name: Install nginx-ingress
-      run: |
-        kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-        kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=120s
-        
-    - name: Install Helm
-      uses: azure/setup-helm@v4
+        go_version: '1.24'
+        run_integration_tests: true
+        run_e2e_tests: true
+        codecov_token: ${{ secrets.CODECOV_TOKEN }}
+        image_artifact_path: /tmp
+        cluster_timeout: 120
+
+    # Update test status for release-please PRs
+    - name: Update Test Status on Success
+      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
       with:
-        version: v3.12.0
-        
-    - name: Cache Helm repositories
-      uses: actions/cache@v4
+        context: "Run Tests"
+        state: "success"
+        description: "Tests completed successfully"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update Test Status on Failure
+      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
       with:
-        path: ~/.cache/helm
-        key: ${{ runner.os }}-helm-${{ hashFiles('**/Chart.yaml') }}
-        restore-keys: |
-          ${{ runner.os }}-helm-
-        
-    - name: Deploy controller for testing
-      run: |
-        # Deploy the controller using Helm with development values (local image)
-        helm upgrade --install coredns-ingress-sync \
-          ./helm/coredns-ingress-sync \
-          --namespace coredns-ingress-sync \
-          --create-namespace \
-          --wait \
-          --timeout 30s \
-          --values ./helm/coredns-ingress-sync/values-dev.yaml \
-          --set image.pullPolicy=Never
-        
-        # Wait for deployment with timeout and detailed logging
-        echo "Waiting for controller deployment..."
-        kubectl wait --for=condition=available --timeout=30s deployment/coredns-ingress-sync -n coredns-ingress-sync || {
-          echo "Controller deployment failed to become ready. Debugging..."
-          kubectl get pods -n coredns-ingress-sync
-          kubectl describe deployment coredns-ingress-sync -n coredns-ingress-sync
-          kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync --tail=50 || echo "No logs available"
-          exit 1
-        }
-        
-        echo "Controller deployment successful"
-        
-    - name: Run integration tests
-      run: |
-        export KUBECONFIG=$HOME/.kube/config
-        chmod +x tests/run_tests.sh
-        
-        # Debug cluster state before running tests
-        echo "=== Cluster state before tests ==="
-        kubectl get pods -A
-        kubectl get deployments -A
-        kubectl get configmaps -n kube-system | grep coredns
-        
-        echo "=== Controller status ==="
-        kubectl get deployment coredns-ingress-sync -n coredns-ingress-sync -o yaml
-        kubectl get pods -n coredns-ingress-sync
-        kubectl describe pods -n coredns-ingress-sync
-        
-        echo "=== ConfigMap status ==="
-        kubectl get configmap coredns -n kube-system -o yaml
-        
-        echo "=== Controller logs ==="
-        kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync --tail=100 || echo "No logs available"
-        
-        echo "=== Running integration tests ==="
-        ./tests/run_tests.sh --integration || {
-          echo "Integration tests failed. Debugging..."
-          echo "=== Final cluster state ==="
-          kubectl get pods -A
-          kubectl get ingresses -A
-          kubectl get configmaps -n kube-system | grep coredns
-          
-          echo "=== Controller ConfigMap content ==="
-          kubectl get configmap coredns -n kube-system -o yaml
-          
-          echo "=== Controller logs ==="
-          kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync --tail=100
-          
-          echo "=== Recent events ==="
-          kubectl get events --sort-by=.metadata.creationTimestamp --tail=20
-          
-          exit 1
-        }
-        
-    - name: Run E2E tests
-      run: |
-        export KUBECONFIG=$HOME/.kube/config
-        
-        echo "=== Running E2E tests ==="
-        ./tests/run_tests.sh --e2e || {
-          echo "E2E tests failed. Debugging..."
-          echo "=== Final cluster state ==="
-          kubectl get pods -A
-          kubectl get events --sort-by=.metadata.creationTimestamp
-          exit 1
-        }
-        
-    - name: Upload test results
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: test-results
-        path: test_results/
+        context: "Run Tests"
+        state: "failure"
+        description: "Tests failed"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
 
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
-    needs: [test, build]
-    
-    # Primary security scanning job - runs Trivy on every push/PR
-    # SARIF uploads to Security tab only work for public repositories
-    # For private repos, results are displayed in logs and uploaded as artifacts
-    
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
-      statuses: read
-    
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'repository_dispatch' && github.event.action == 'release-please')
+    needs: build
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.client_payload.ref || github.ref }}
+      
+    # Update security scan status to pending for release-please PRs
+    - name: Update Security Scan Status to Pending
+      if: github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
+      with:
+        context: "Security Scan"
+        state: "pending"
+        description: "Running security scans..."
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
       
     - name: Download image artifact
       uses: actions/download-artifact@v4
@@ -296,181 +167,39 @@ jobs:
         name: docker-image
         path: /tmp
         
-    - name: Load Docker image
-      run: |
-        docker load -i /tmp/image.tar
-        docker tag coredns-ingress-sync:test coredns-ingress-sync:scan
-      
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
+    - name: Run Security Scan
+      uses: ./.github/actions/security-scan
       with:
-        image-ref: 'coredns-ingress-sync:scan'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        
-    - name: Upload Trivy scan results to GitHub Security tab
-      if: always() && github.event.repository.visibility == 'public'
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: 'trivy-results.sarif'
-        category: 'trivy-container-scan'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Display Trivy scan results (for private repos)
-      if: always() && github.event.repository.visibility != 'public'
-      run: |
-        echo "=== Trivy Container Scan Results ==="
-        echo "Repository is private - security scanning upload skipped"
-        echo "Scan results saved to trivy-results.sarif"
-        if [ -f "trivy-results.sarif" ]; then
-          echo "Scan completed successfully"
-          # Show summary of findings
-          cat trivy-results.sarif | jq -r '.runs[0].results[] | "Found: " + .ruleId + " - " + .message.text' || echo "No vulnerabilities found or jq not available"
-        else
-          echo "Scan file not found"
-        fi
-        
-    - name: Run Trivy filesystem scan
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        scan-ref: '.'
-        format: 'sarif'
-        output: 'trivy-fs-results.sarif'
-        
-    - name: Upload filesystem scan results
-      if: always() && github.event.repository.visibility == 'public'
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: 'trivy-fs-results.sarif'
-        category: 'trivy-filesystem-scan'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Display filesystem scan results (for private repos)
-      if: always() && github.event.repository.visibility != 'public'
-      run: |
-        echo "=== Trivy Filesystem Scan Results ==="
-        echo "Repository is private - security scanning upload skipped"
-        echo "Scan results saved to trivy-fs-results.sarif"
-        if [ -f "trivy-fs-results.sarif" ]; then
-          echo "Scan completed successfully"
-          # Show summary of findings
-          cat trivy-fs-results.sarif | jq -r '.runs[0].results[] | "Found: " + .ruleId + " - " + .message.text' || echo "No vulnerabilities found or jq not available"
-        else
-          echo "Scan file not found"
-        fi
-        
-    - name: Upload SARIF files as artifacts
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: trivy-sarif-results
-        path: |
-          trivy-results.sarif
-          trivy-fs-results.sarif
-        retention-days: 30
+        image_name: coredns-ingress-sync:test
+        image_artifact_path: /tmp
+        scan_filesystem: true
+        upload_sarif: true
+        github_token: ${{ secrets.GITHUB_TOKEN }}
 
-  build-and-push:
-    name: Build and Push Docker Image
-    runs-on: ubuntu-latest
-    needs: [test, security-scan]
-    if: github.event_name != 'pull_request'
-    
-    permissions:
-      contents: read
-      packages: write
-      id-token: write # Required for keyless signing
-      
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
+    # Update security scan status for release-please PRs
+    - name: Update Security Scan Status on Success
+      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
       with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
+        context: "Security Scan"
+        state: "success"
+        description: "Security scan completed successfully"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update Security Scan Status on Failure
+      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
+      uses: ./.github/actions/update-pr-status
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=sha,prefix={{branch}}-,enable={{is_default_branch}}
-          type=sha,prefix=pr-,enable=${{ github.event_name == 'pull_request' }}
-          type=raw,value=latest,enable={{is_default_branch}}
-          
-    - name: Build and push multi-platform Docker image
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        platforms: linux/amd64,linux/arm64
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        
-    - name: Generate SBOM
-      uses: anchore/sbom-action@v0
-      with:
-        image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-        format: spdx-json
-        output-file: sbom.spdx.json
-        
-    - name: Upload SBOM
-      uses: actions/upload-artifact@v4
-      with:
-        name: sbom
-        path: sbom.spdx.json
-        
-    - name: Install cosign
-      uses: sigstore/cosign-installer@v3.9.2
-      
-    - name: Sign the published Docker image
-      if: github.event_name != 'pull_request'
-      env:
-        COSIGN_EXPERIMENTAL: 1
-        COSIGN_OIDC_CLIENT_ID: sigstore
-        COSIGN_OIDC_ISSUER: https://token.actions.githubusercontent.com
-      run: |
-        # Sign all the tags that were pushed using keyless signing with retry logic
-        echo "${{ steps.meta.outputs.tags }}" | while read tag; do
-          if [[ -n "$tag" ]]; then
-            echo "Signing $tag"
-            # Retry signing up to 3 times to handle transient TUF errors
-            for attempt in {1..3}; do
-              if cosign sign --yes "$tag"; then
-                echo "Successfully signed $tag on attempt $attempt"
-                break
-              else
-                echo "Failed to sign $tag on attempt $attempt"
-                if [[ $attempt -eq 3 ]]; then
-                  echo "All signing attempts failed for $tag"
-                  exit 1
-                fi
-                echo "Waiting 10 seconds before retry..."
-                sleep 10
-              fi
-            done
-          fi
-        done
+        context: "Security Scan"
+        state: "failure"
+        description: "Security scan failed"
+        pr_number: ${{ github.event.client_payload.pr_number }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
 
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: build-and-push
     if: startsWith(github.ref, 'refs/tags/v')
     
     permissions:

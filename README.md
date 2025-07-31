@@ -2,7 +2,11 @@
 
 [![codecov](https://codecov.io/github/rl-io/coredns-ingress-sync/graph/badge.svg?token=3IW3N6MURN)](https://codecov.io/github/rl-io/coredns-ingress-sync)
 
-A Kubernetes controller that dynamically updates CoreDNS configuration based on Ingress resources, enabling automatic internal DNS resolution for ingress hostnames to the ingress-nginx service.
+A Kubernetes controller that dynamically updates CoreDNS configuratio## Support
+
+- **🐛 Issues**: [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues)
+- **📖 Documentation**: See the `docs/` directory for comprehensive guides
+- **🤝 Contributing**: See the [Development Guide](docs/DEVELOPMENT.md)ed on Ingress resources, enabling automatic internal DNS resolution for ingress hostnames to the ingress-nginx service.
 
 This eliminates the need to create internal ingress resources, manage private DNS zones, or manually update CoreDNS configurations - everything is handled automatically through a simple Helm chart deployment.
 
@@ -15,11 +19,12 @@ This has been tested to work with [ingress-nginx](https://github.com/kubernetes/
 - **🚀 Zero Configuration**: Works out-of-the-box with automatic CoreDNS setup
 - **🔄 Event-driven**: Real-time response to ingress changes using controller-runtime
 - **🎯 Selective Processing**: Only handles ingresses with specified IngressClass
+- **📍 Namespace Filtering**: Monitor all namespaces or specific namespaces only
 - **⚡ Dynamic DNS**: Auto-generates CoreDNS rewrite rules for ingress hostnames
-- **�️ Defensive Configuration**: Protects against external configuration drift (Terraform-compatible)
+- **🛡️ Defensive Configuration**: Protects against external configuration drift (Terraform-compatible)
 - **♻️ Clean Uninstall**: Automatic cleanup with proper Helm hooks
 - **🔐 Secure**: Minimal RBAC permissions with namespace isolation
-- **� Leader election, health checks, comprehensive testing
+- **📈 Production Ready**: Leader election, health checks, comprehensive testing
 
 ## Quick Start
 
@@ -46,8 +51,9 @@ helm install coredns-ingress-sync \
   --namespace coredns-ingress-sync \
   --create-namespace
 
-# To enable automatic CoreDNS configuration, add:
-#   --set coreDNS.autoConfigure=true
+# Configuration options:
+#   --set coreDNS.autoConfigure=true                      # Enable automatic CoreDNS setup
+#   --set controller.watchNamespaces="production,staging" # Monitor specific namespaces only
 ```
 
 ### Verification
@@ -78,6 +84,7 @@ rewrite name exact web.example.com ingress-nginx-controller.ingress-nginx.svc.cl
 ```
 
 ### 4. **Cleanup on Uninstall**
+
 The Helm chart includes pre-delete hooks that:
 
 - **Remove Import Statement**: Removes the import line from CoreDNS Corefile
@@ -186,7 +193,7 @@ The controller automatically discovers ingress hostnames and configures CoreDNS 
 
 For ingresses with hostnames `api.example.com` and `web.example.com`, the controller generates:
 
-```
+```text
 rewrite name exact api.example.com ingress-nginx-controller.ingress-nginx.svc.cluster.local.
 rewrite name exact web.example.com ingress-nginx-controller.ingress-nginx.svc.cluster.local.
 ```
@@ -247,8 +254,8 @@ We welcome contributions! Please see the [Development Guide](docs/DEVELOPMENT.md
 ## Support
 
 - **🐛 Issues**: [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues)
-- **💬 Discussions**: [GitHub Discussions](https://github.com/rl-io/coredns-ingress-sync/discussions)
-- **📖 Documentation**: See the `docs/` directory for comprehensive guides
+- **Documentation**: See the `docs/` directory for comprehensive guides
+- **🤝 Contributing**: See the [Development Guide](docs/DEVELOPMENT.md)
 
 ## License
 

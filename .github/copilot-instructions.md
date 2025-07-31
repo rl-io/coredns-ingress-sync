@@ -1,6 +1,7 @@
 Dynamic Internal DNS Resolution for Ingress Hosts in EKS Using CoreDNS
 
 ## agent instructions
+
 - use the information in this file to provide context for yourself to the project purpose and design
 - keep this file up to date with the latest project design and architecture
 - question every request for code changes, and ensure they align with the project goals
@@ -31,38 +32,46 @@ Changes should be reactive to Ingress creation, deletion, and updates.
 
 ## Current Implementation Status
 
-**Status**: In progress - The controller is tested and functional, but unit tests require better coverage.
+**Status**: Production-ready - The controller is fully functional with comprehensive testing, namespace filtering capabilities, and modular CI/CD pipeline.
 
 **Architecture**: Kubernetes controller built with controller-runtime that automatically manages CoreDNS configuration for internal DNS resolution of ingress hostnames.
 
 **Key Components**:
+
 - Go-based controller using controller-runtime framework (modular architecture with cmd/ and internal/ packages)
 - Helm chart for deployment with configurable values
 - Automated CoreDNS ConfigMap and deployment management
 - Cleanup scripts for proper uninstall procedures
 - Comprehensive test suite with integration tests
+- **Namespace filtering support**: Can monitor specific namespaces or cluster-wide
+- **Modular CI/CD pipeline**: Reusable GitHub Actions for build, test, security scanning, and deployment
 
 **Current Implementation**: Custom Controller with Automated CoreDNS Integration
 
 The deployed controller:
 
 **Watches Multiple Resources**:
+
 - Ingress resources filtered by `spec.ingressClassName == "nginx"`
+- **Namespace filtering**: Configurable to watch specific namespaces or all namespaces cluster-wide
 - CoreDNS ConfigMap changes for reactive configuration management and defensive protection
 - Automatic reconciliation on resource changes
 
 **Defensive Configuration Management**:
+
 - Continuously monitors CoreDNS ConfigMap for external changes (e.g., Terraform updates)
 - Automatically re-adds import statement if removed by external tools
 - Ensures volume mounts remain intact even if deployment is modified externally
 - Reactive protection against configuration drift
 
 **Generates DNS Configuration**:
+
 - Creates dynamic ConfigMap with rewrite rules for each ingress hostname
 - Maps each hostname to configurable internal target (default: ingress-nginx-controller.ingress-nginx.svc.cluster.local)
 - Uses CoreDNS rewrite plugin instead of file plugin for better performance
 
 **Automated CoreDNS Integration**:
+
 - Automatically adds import statement to CoreDNS Corefile: `import /etc/coredns/custom/*.server`
 - Dynamically adds volume and volume mount to CoreDNS deployment
 - No manual CoreDNS configuration required
@@ -70,6 +79,7 @@ The deployed controller:
 - **Defensive protection**: Continuously monitors and restores configuration if modified by external tools (e.g., Terraform)
 
 **Configuration Management**:
+
 - Helm chart with structured values (not environment variables)
 - Configurable target CNAME, namespace, and ConfigMap names
 - Optional auto-configuration can be disabled
@@ -77,6 +87,7 @@ The deployed controller:
 - **Terraform compatibility**: Works alongside Terraform-managed CoreDNS configuration
 
 **Deployment Architecture**:
+
 - Packaged as Kubernetes deployment via Helm chart
 - Uses ConfigMap volumes for dynamic DNS configuration
 - Monitors and reacts to CoreDNS configuration changes
@@ -87,6 +98,7 @@ The deployed controller:
 **Current Implementation**: The controller automatically manages CoreDNS configuration without manual intervention.
 
 **Dynamic ConfigMap Approach**:
+
 ```yaml
 # Controller creates: coredns-custom ConfigMap with dynamic.server
 rewrite name exact api.app-staging.example.com ingress-nginx-controller.ingress-nginx.svc.cluster.local.
@@ -94,17 +106,21 @@ rewrite name exact web.app-staging.example.com ingress-nginx-controller.ingress-
 ```
 
 **Automatic CoreDNS Integration**:
+
 - Controller automatically adds import statement to CoreDNS Corefile:
-  ```
+
+  ```text
   .:53 {
       import /etc/coredns/custom/*.server
       # ... existing configuration ...
   }
   ```
+
 - Automatically adds volume and volume mount to CoreDNS deployment
 - No manual CoreDNS configuration required
 
 **Helm Values Configuration**:
+
 ```yaml
 coreDNS:
   # IMPORTANT: Default is false for safety - must be explicitly enabled
@@ -115,6 +131,9 @@ coreDNS:
 controller:
   ingressClass: nginx
   targetCNAME: ingress-nginx-controller.ingress-nginx.svc.cluster.local.
+  # Namespace filtering configuration
+  watchNamespaces: ""  # Empty = watch all namespaces cluster-wide
+  # watchNamespaces: "production,staging"  # Comma-separated list for specific namespaces
   dynamicConfigMap:
     name: coredns-custom
     key: dynamic.server
@@ -125,6 +144,7 @@ controller:
 **Current Status**: ✅ COMPLETE - Production-ready Go implementation
 
 **Implementation Details**:
+
 - Built with controller-runtime framework
 - Uses direct Kubernetes client for deployment operations (avoids cluster-wide permissions)
 - Watches Ingress resources with `spec.ingressClassName == "nginx"`
@@ -133,6 +153,7 @@ controller:
 - Automatically manages CoreDNS import statements and volume mounts
 
 **Key Functions**:
+
 - `extractHostnames()` - Extracts hostnames from matching ingress resources
 - `updateDynamicConfigMap()` - Updates the dynamic DNS configuration
 - `ensureCoreDNSConfiguration()` - Manages CoreDNS import statements and volumes
@@ -140,27 +161,65 @@ controller:
 - `ensureCoreDNSVolumeMount()` - Adds volume mount to CoreDNS deployment
 
 **RBAC Permissions**:
+
 - Minimal required permissions for specific resources
 - Cross-namespace access to CoreDNS in kube-system
 - No cluster-wide deployment watching (uses direct client)
+
+## Modular CI/CD Pipeline
+
+**Current Status**: ✅ COMPLETE - Fully automated and modular CI/CD pipeline with reusable GitHub Actions
+
+**Pipeline Architecture**:
+
+- **Reusable Actions**: Modular, composable GitHub Actions for common tasks
+- **Multi-workflow Strategy**: Separate workflows for different triggers and purposes
+- **Security Integration**: Automated security scanning with SARIF uploads
+- **Quality Gates**: Comprehensive testing before deployment
+
+**Reusable Actions**:
+
+- **`.github/actions/docker-build`**: Builds Docker images with consistent tagging, caching, and multi-platform support
+- **`.github/actions/security-scan`**: Trivy-based security scanning for containers and filesystem
+- **`.github/actions/test-runner`**: Comprehensive Go testing with Kubernetes Kind clusters and Codecov integration
+- **`.github/actions/update-pr-status`**: Updates PR status checks for release-please workflows
+
+**Workflow Organization**:
+
+- **`pr-tests.yml`**: Fast feedback on pull requests (build, test, security scan)
+- **`ci-cd.yml`**: Main CI/CD orchestration with release-please integration
+- **`build-test.yml`**: Triggered by repository dispatch for release-please events
+- **`build-push.yml`**: Production builds and pushes to container registry
+- **`security.yml`**: CodeQL and advanced security scanning
+
+**Key Features**:
+
+- ✅ **Artifact-based workflows**: Docker images built once and reused across jobs
+- ✅ **Parallel execution**: Security scans, tests, and builds run in parallel when possible
+- ✅ **Status check management**: Automated PR status updates for release-please integration
+- ✅ **Multi-platform builds**: AMD64 and ARM64 support for production images
+- ✅ **Caching strategy**: Optimized build times with GitHub Actions cache
 
 ## Deployment Plan
 
 **Current Status**: ✅ COMPLETE - Fully automated deployment with Helm
 
 **Deployment Architecture**:
+
 - Packaged as Helm chart (`helm/coredns-ingress-sync/`)
 - Kubernetes deployment with configurable replicas
 - RBAC with minimal required permissions
 - Automated cleanup via Helm pre-delete hooks
 
 **Helm Chart Features**:
+
 - Structured values.yaml configuration (no environment variables)
 - Configurable CoreDNS auto-configuration
 - Proper service account and RBAC setup
 - Pre-delete cleanup jobs for proper uninstall
 
 **Cleanup Implementation**:
+
 - Dedicated shell script (`scripts/cleanup.sh`) for IDE validation
 - Removes import statements from CoreDNS Corefile
 - Removes volume mounts and volumes from CoreDNS deployment
@@ -168,6 +227,7 @@ controller:
 - Proper error handling and logging
 
 **Installation**:
+
 ```bash
 helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
   --set coreDNS.autoConfigure=true \
@@ -177,6 +237,7 @@ helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
 ## Benefits
 
 **Achieved Benefits**:
+
 - ✅ Fully decouples internal and external DNS resolution logic
 - ✅ Supports dynamic hostname updates with zero manual intervention
 - ✅ Reduces configuration drift and manual work
@@ -188,6 +249,7 @@ helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
 ## Testing and Validation
 
 **Test Suite**:
+
 - Integration tests with 8 test scenarios
 - DNS resolution validation
 - CoreDNS configuration verification
@@ -196,6 +258,7 @@ helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
 - **Defensive configuration test**: Simulates Terraform removing import statement and verifies automatic restoration
 
 **Quality Assurance**:
+
 - All integration tests passing
 - Proper RBAC permissions validated
 - Cleanup procedures verified
@@ -205,6 +268,7 @@ helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
 ## Optional Enhancements
 
 **Completed**:
+
 - ✅ Configurable target CNAME via Helm values
 - ✅ Comprehensive logging and error handling
 - ✅ Automated cleanup procedures
@@ -215,6 +279,7 @@ helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
 **IMPORTANT**: This project uses **controller-runtime structured logging (logr)** as the single logging standard.
 
 **Standards**:
+
 - ✅ **Use `ctrl.LoggerFrom(ctx)` in reconcilers** for context-aware logging
 - ✅ **Use `ctrl.Log.WithName("component")` for global loggers** in managers/builders
 - ✅ **Structured logging with key-value pairs**: `logger.Info("message", "key", value)`
@@ -227,6 +292,7 @@ helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
 - ✅ **Helm integration**: `controller.logLevel` value passed to deployment
 
 **Anti-patterns to avoid**:
+
 - ❌ **No `log.Printf()`** - Use structured logging instead
 - ❌ **No `fmt.Printf("DEBUG:")`** - Use `logger.V(1).Info()` instead  
 - ❌ **No mixed logging libraries** - Only use controller-runtime logr
@@ -234,6 +300,7 @@ helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
 - ❌ **No printf-style formatting** - Use structured key-value pairs
 
 **Example Usage**:
+
 ```go
 // In reconcilers (use context logger)
 logger := ctrl.LoggerFrom(ctx)
@@ -247,6 +314,7 @@ logger.Info("Updated ConfigMap", "domains", len(domains))
 ```
 
 **Future Considerations**:
+
 - Validate that hosts in Ingress resources are owned by the intended team/namespace
 - Add metrics endpoint to the controller
 - Support for multiple ingress classes
@@ -270,17 +338,20 @@ The controller successfully aligns with EKS constraints and enhances internal se
 **Solution**: The controller implements defensive configuration management:
 
 **CoreDNS ConfigMap Watching**:
+
 - Controller watches the CoreDNS ConfigMap for any changes
 - When external tools (like Terraform) update the ConfigMap, the controller immediately detects the change
 - If the import statement is missing, it's automatically re-added
 - This happens reactively within seconds of the external change
 
 **Deployment Protection**:
+
 - Controller also monitors the CoreDNS deployment for volume mount changes
 - If external tools remove the volume mount, it's automatically restored
 - Ensures the import statement can always access the dynamic configuration
 
 **Reconciliation Logic**:
+
 ```go
 // Every ConfigMap change triggers reconciliation
 if err := r.ensureCoreDNSConfiguration(ctx); err != nil {
@@ -290,15 +361,16 @@ if err := r.ensureCoreDNSConfiguration(ctx); err != nil {
 ```
 
 **Benefits**:
+
 - ✅ **Zero downtime**: Configuration drift is corrected automatically
 - ✅ **Terraform compatibility**: Works alongside existing Terraform workflows
 - ✅ **Defensive protection**: Prevents accidental removal of critical configuration
 - ✅ **Reactive response**: Changes are detected and corrected within seconds
 
 **Example Scenario**:
+
 1. Terraform applies changes to CoreDNS ConfigMap, removing import statement
 2. Controller detects ConfigMap change within seconds
 3. Controller automatically re-adds import statement
 4. Internal DNS resolution continues working without interruption
 5. Operations teams don't need to manually intervene
-

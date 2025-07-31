@@ -15,12 +15,14 @@ Thank you for your interest in contributing! This document provides guidelines f
 ### Development Setup
 
 1. **Fork and clone the repository**:
+
    ```bash
    git clone https://github.com/your-username/coredns-ingress-sync.git
    cd coredns-ingress-sync
    ```
 
 2. **Setup development environment**:
+
    ```bash
    # Install git hooks for conventional commits
    ./scripts/setup-git-hooks.sh
@@ -40,7 +42,8 @@ Thank you for your interest in contributing! This document provides guidelines f
 This project follows [Conventional Commits](https://www.conventionalcommits.org/) specification.
 
 ### Format
-```
+
+```text
 <type>[optional scope]: <description>
 
 [optional body]
@@ -49,6 +52,7 @@ This project follows [Conventional Commits](https://www.conventionalcommits.org/
 ```
 
 ### Valid Types
+
 - **feat**: A new feature
 - **fix**: A bug fix
 - **docs**: Documentation only changes
@@ -62,7 +66,8 @@ This project follows [Conventional Commits](https://www.conventionalcommits.org/
 - **revert**: Reverts a previous commit
 
 ### Examples
-```
+
+```text
 feat: add support for custom ingress classes
 fix: resolve ConfigMap update race condition
 docs: update installation instructions
@@ -71,13 +76,16 @@ fix!: change API response format (breaking change)
 ```
 
 ### Validation
+
 Commit messages are automatically validated by:
+
 - **Git hooks**: Local validation when committing
 - **GitHub Actions**: CI validation on pull requests
 
 ## Pull Request Process
 
 ### 1. Create Feature Branch
+
 ```bash
 git checkout -b feat/your-feature-name
 # or
@@ -85,12 +93,14 @@ git checkout -b fix/issue-description
 ```
 
 ### 2. Make Changes
+
 - Write code following our coding standards
 - Add tests for new functionality
 - Update documentation as needed
 - Ensure all tests pass
 
 ### 3. Test Your Changes
+
 ```bash
 # Run full test suite
 ./tests/run_tests.sh
@@ -105,11 +115,13 @@ helm install test-release ./helm/coredns-ingress-sync \
 ```
 
 ### 4. Update Documentation
+
 - Update relevant documentation in `docs/`
 - Add examples if introducing new features
 - Update the README if necessary
 
 ### 5. Commit Changes
+
 ```bash
 # Make sure to follow conventional commits
 git add .
@@ -117,6 +129,7 @@ git commit -m "feat: add your feature description"
 ```
 
 ### 6. Push and Create PR
+
 ```bash
 git push origin feat/your-feature-name
 ```
@@ -126,18 +139,21 @@ Then create a pull request through GitHub.
 ## Code Standards
 
 ### Go Code Guidelines
+
 - Follow [Effective Go](https://golang.org/doc/effective_go.html)
 - Use `gofmt` for formatting
 - Add comments for exported functions and types
 - Write tests for new functionality
 
 ### Helm Chart Guidelines
+
 - Follow [Helm Best Practices](https://helm.sh/docs/chart_best_practices/)
 - Update `Chart.yaml` version for chart changes
 - Test with multiple Kubernetes versions
 - Document new values in `values.yaml` comments
 
 ### Documentation Guidelines
+
 - Write clear, concise documentation
 - Include examples for complex configurations
 - Update the documentation index if adding new guides
@@ -146,12 +162,14 @@ Then create a pull request through GitHub.
 ## Testing
 
 ### Test Types
+
 - **Unit Tests**: `go test -v .`
 - **Integration Tests**: `./tests/integration_test.sh`
 - **End-to-End Tests**: `./tests/e2e_test.sh`
 - **Performance Tests**: `./tests/benchmark_test.sh`
 
 ### Test Requirements
+
 - All new features must include tests
 - Maintain or improve test coverage
 - Tests must pass in CI/CD pipeline
@@ -160,9 +178,11 @@ Then create a pull request through GitHub.
 ## Security
 
 ### Reporting Security Issues
+
 Please report security vulnerabilities by emailing [security contact]. Do not create public GitHub issues for security problems.
 
 ### Security Guidelines
+
 - Follow principle of least privilege for RBAC
 - Validate all user inputs
 - Use secure defaults in configuration
@@ -171,13 +191,17 @@ Please report security vulnerabilities by emailing [security contact]. Do not cr
 ## Release Process
 
 ### Versioning
+
 We use [Semantic Versioning](https://semver.org/):
+
 - **MAJOR**: Incompatible API changes
 - **MINOR**: Backwards-compatible functionality additions
 - **PATCH**: Backwards-compatible bug fixes
 
 ### Release Notes
+
 Release notes are automatically generated from conventional commits:
+
 - `feat:` commits become "Features"
 - `fix:` commits become "Bug Fixes"
 - `perf:` commits become "Performance Improvements"
@@ -186,11 +210,13 @@ Release notes are automatically generated from conventional commits:
 ## Getting Help
 
 ### Questions and Discussions
-- **General questions**: [GitHub Discussions](https://github.com/rl-io/coredns-ingress-sync/discussions)
+
+- **General questions**: [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues) (use the "question" label)
 - **Bug reports**: [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues)
 - **Feature requests**: [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues)
 
 ### Documentation
+
 - **Architecture**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Configuration**: [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 - **Development**: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
@@ -207,6 +233,7 @@ By contributing to this project, you agree that your contributions will be licen
 ## Recognition
 
 Contributors are recognized in:
+
 - Release notes for their contributions
 - The project's contributors list
 - Special recognition for significant contributions

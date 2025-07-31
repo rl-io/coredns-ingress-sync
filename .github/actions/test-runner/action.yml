@@ -1,0 +1,223 @@
+name: 'Run Go Tests with Kubernetes'
+description: 'Runs comprehensive Go tests including integration and E2E tests'
+inputs:
+  go_version:
+    description: 'Go version to use'
+    required: false
+    default: '1.24'
+  run_integration_tests:
+    description: 'Whether to run integration tests'
+    required: false
+    default: 'true'
+  run_e2e_tests:
+    description: 'Whether to run E2E tests'
+    required: false
+    default: 'true'
+  codecov_token:
+    description: 'Codecov token for coverage upload'
+    required: false
+  image_artifact_path:
+    description: 'Path to Docker image artifact'
+    required: false
+    default: '/tmp'
+  cluster_timeout:
+    description: 'Timeout for cluster operations (seconds)'
+    required: false
+    default: '120'
+
+outputs:
+  test_status:
+    description: 'Overall test status (success/failure)'
+    value: ${{ steps.test_summary.outputs.status }}
+  coverage_percentage:
+    description: 'Test coverage percentage'
+    value: ${{ steps.coverage.outputs.percentage }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go_version }}
+        cache: true
+          
+    - name: Set up Go module permissions
+      shell: bash
+      run: |
+        if [ -d ~/go/pkg/mod ]; then
+          chmod -R u+w ~/go/pkg/mod || true
+        fi
+          
+    - name: Download dependencies
+      shell: bash
+      run: |
+        echo "::group::📦 Downloading Go Dependencies"
+        go mod download
+        go mod verify
+        echo "::endgroup::"
+      
+    - name: Run unit tests
+      shell: bash
+      run: |
+        echo "::group::🧪 Running Unit Tests"
+        LOG_LEVEL=debug go test -v -race -coverprofile=coverage.out ./...
+        echo "::endgroup::"
+      
+    - name: Generate coverage report
+      id: coverage
+      shell: bash
+      run: |
+        echo "::group::📊 Generating Coverage Report"
+        go tool cover -html=coverage.out -o coverage.html
+        COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+        echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+        echo "Coverage: $COVERAGE%"
+        echo "::endgroup::"
+      
+    - name: Upload coverage to Codecov
+      if: inputs.codecov_token != ''
+      uses: codecov/codecov-action@v5
+      with:
+        flags: unittests
+        name: codecov-umbrella
+        slug: rl-io/coredns-ingress-sync
+        token: ${{ inputs.codecov_token }}
+        fail_ci_if_error: false
+        
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-reports
+        path: |
+          coverage.out
+          coverage.html
+          
+    - name: Load Docker image for testing
+      if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::🐳 Loading Docker Image"
+        if [ -f "${{ inputs.image_artifact_path }}/image.tar" ]; then
+          echo "Loading Docker image from artifact..."
+          docker load -i "${{ inputs.image_artifact_path }}/image.tar"
+          docker tag coredns-ingress-sync:test coredns-ingress-sync:latest
+        else
+          echo "No image artifact found, building for tests..."
+          docker build -t coredns-ingress-sync:latest .
+        fi
+        echo "::endgroup::"
+          
+    - name: Set up Kind cluster
+      if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::⚙️ Setting up Kind Cluster Configuration"
+        cat > kind-config.yaml << 'EOF'
+        kind: Cluster
+        apiVersion: kind.x-k8s.io/v1alpha4
+        nodes:
+        - role: control-plane
+          kubeadmConfigPatches:
+          - |
+            kind: InitConfiguration
+            nodeRegistration:
+              kubeletExtraArgs:
+                node-labels: "ingress-ready=true"
+          extraPortMappings:
+          - containerPort: 80
+            hostPort: 80
+            protocol: TCP
+          - containerPort: 443
+            hostPort: 443
+            protocol: TCP
+        EOF
+        echo "::endgroup::"
+        
+    - name: Create Kind cluster
+      if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
+      uses: helm/kind-action@v1.12.0
+      with:
+        cluster_name: test-cluster
+        config: kind-config.yaml
+              
+    - name: Load image into Kind cluster
+      if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::📥 Loading Image into Kind Cluster"
+        kind load docker-image coredns-ingress-sync:latest --name test-cluster
+        echo "::endgroup::"
+        
+    - name: Install nginx-ingress
+      if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::🌐 Installing NGINX Ingress Controller"
+        kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+        kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=${{ inputs.cluster_timeout }}s
+        echo "::endgroup::"
+        
+    - name: Install Helm
+      if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
+      uses: azure/setup-helm@v4
+      with:
+        version: v3.12.0
+        
+    - name: Deploy controller for testing
+      if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::🚀 Deploying Controller for Testing"
+        helm upgrade --install coredns-ingress-sync \
+          ./helm/coredns-ingress-sync \
+          --namespace coredns-ingress-sync \
+          --create-namespace \
+          --wait \
+          --timeout 30s \
+          --values ./helm/coredns-ingress-sync/values-dev.yaml \
+          --set image.pullPolicy=Never
+        
+        kubectl wait --for=condition=available --timeout=30s deployment/coredns-ingress-sync -n coredns-ingress-sync
+        echo "::endgroup::"
+        
+    - name: Run integration tests
+      if: inputs.run_integration_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::🔗 Running Integration Tests"
+        export KUBECONFIG=$HOME/.kube/config
+        chmod +x tests/run_tests.sh
+        ./tests/run_tests.sh --integration
+        echo "::endgroup::"
+        
+    - name: Run E2E tests
+      if: inputs.run_e2e_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::🎯 Running E2E Tests"
+        export KUBECONFIG=$HOME/.kube/config
+        ./tests/run_tests.sh --e2e
+        echo "::endgroup::"
+        
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: test_results/
+        
+    - name: Test summary
+      id: test_summary
+      if: always()
+      shell: bash
+      run: |
+        echo "::group::📋 Test Summary"
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✅ All Tests Passed"
+        else
+          echo "status=failure" >> $GITHUB_OUTPUT
+          echo "❌ Some Tests Failed"
+        fi
+        echo "::endgroup::"
