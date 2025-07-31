@@ -39,19 +39,16 @@ jobs:
           echo "PR number: ${{ github.event.client_payload.pr_number }}"
         fi
 
-  # Trigger other workflows based on event type
+  # Trigger repository dispatch for release-please events only
   trigger-build-test:
-    name: Trigger Build and Test
+    name: Trigger Build and Test (Release Please)
     runs-on: ubuntu-latest
     permissions:
       actions: write
       contents: write
-    if: |
-      (github.event_name == 'repository_dispatch' && github.event.action == 'release-please') ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
     steps:
-    - name: Trigger Build and Test Workflow (Repository Dispatch)
-      if: github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+    - name: Trigger Build and Test Workflow
       uses: peter-evans/repository-dispatch@v3
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
@@ -63,14 +60,76 @@ jobs:
             "ref": "${{ github.event.client_payload.ref }}",
             "sha": "${{ github.event.client_payload.sha }}"
           }
-    
-    - name: Trigger Build and Test Workflow (Direct Push)
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      uses: peter-evans/repository-dispatch@v3
+
+  # Direct build and test jobs for push events
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      image-tags: ${{ steps.docker_build.outputs.image_tags }}
+      image-digest: ${{ steps.docker_build.outputs.image_digest }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Build Docker Image
+      id: docker_build
+      uses: ./.github/actions/docker-build
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        repository: ${{ github.repository }}
-        event-type: manual-build-test
+        image_name: coredns-ingress-sync
+        push: false
+        platforms: linux/amd64
+        export_artifact: true
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download image artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-image
+        path: /tmp
+        
+    - name: Run Comprehensive Tests
+      uses: ./.github/actions/test-runner
+      with:
+        go_version: '1.24'
+        run_integration_tests: true
+        run_e2e_tests: true
+        codecov_token: ${{ secrets.CODECOV_TOKEN }}
+        image_artifact_path: /tmp
+        cluster_timeout: 120
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download image artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-image
+        path: /tmp
+        
+    - name: Run Security Scan
+      uses: ./.github/actions/security-scan
+      with:
+        image_name: coredns-ingress-sync:test
+        image_artifact_path: /tmp
+        scan_filesystem: true
+        upload_sarif: true
+        github_token: ${{ secrets.GITHUB_TOKEN }}
 
   release:
     name: Create Release
