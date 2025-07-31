@@ -131,16 +131,16 @@ Welcome to the coredns-ingress-sync documentation! This guide helps you find the
 
 ### Quick Questions
 - Check the [FAQ](FAQ.md) first
-- Search [existing issues](https://github.com/your-org/coredns-ingress-sync/issues)
+- Search [existing issues](https://github.com/rl-io/coredns-ingress-sync/issues)
 
 ### Technical Support
-- [GitHub Issues](https://github.com/your-org/coredns-ingress-sync/issues) for bugs and feature requests
-- [GitHub Discussions](https://github.com/your-org/coredns-ingress-sync/discussions) for questions
+- [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues) for bugs and feature requests
+- [GitHub Repository](https://github.com/rl-io/coredns-ingress-sync) for general inquiries
 
 ### Contributing
 - Read the [Development Guide](DEVELOPMENT.md)
 - Review [contribution guidelines](DEVELOPMENT.md#contributing)
-- Submit [pull requests](https://github.com/your-org/coredns-ingress-sync/pulls)
+- Submit [pull requests](https://github.com/rl-io/coredns-ingress-sync/pulls)
 
 ## Document Maintenance
 

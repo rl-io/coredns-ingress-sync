@@ -2,7 +2,11 @@
 
 [![codecov](https://codecov.io/github/rl-io/coredns-ingress-sync/graph/badge.svg?token=3IW3N6MURN)](https://codecov.io/github/rl-io/coredns-ingress-sync)
 
-A Kubernetes controller that dynamically updates CoreDNS configuration based on Ingress resources, enabling automatic internal DNS resolution for ingress hostnames to the ingress-nginx service.
+A Kubernetes controller that dynamically updates CoreDNS configuratio## Support
+
+- **🐛 Issues**: [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues)
+- **📖 Documentation**: See the `docs/` directory for comprehensive guides
+- **🤝 Contributing**: See the [Development Guide](docs/DEVELOPMENT.md)ed on Ingress resources, enabling automatic internal DNS resolution for ingress hostnames to the ingress-nginx service.
 
 This eliminates the need to create internal ingress resources, manage private DNS zones, or manually update CoreDNS configurations - everything is handled automatically through a simple Helm chart deployment.
 
@@ -249,8 +253,8 @@ We welcome contributions! Please see the [Development Guide](docs/DEVELOPMENT.md
 ## Support
 
 - **🐛 Issues**: [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues)
-- **💬 Discussions**: [GitHub Discussions](https://github.com/rl-io/coredns-ingress-sync/discussions)
-- **📖 Documentation**: See the `docs/` directory for comprehensive guides
+- ** Documentation**: See the `docs/` directory for comprehensive guides
+- **🤝 Contributing**: See the [Development Guide](docs/DEVELOPMENT.md)
 
 ## License
 

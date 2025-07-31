@@ -85,5 +85,5 @@ make ci-test
 ## 📚 Documentation
 - [Dependabot Documentation](https://docs.github.com/en/code-security/dependabot)
 - [Trivy Scanner](https://trivy.dev/)
-- [Cosign Signatures](https://docs.sigstore.dev/cosign/overview/)
+- [Cosign Signatures](https://docs.sigstore.dev/signing/signing_with_containers/)
 - [GitHub Security Features](https://docs.github.com/en/code-security)

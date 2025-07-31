@@ -186,7 +186,7 @@ Release notes are automatically generated from conventional commits:
 ## Getting Help
 
 ### Questions and Discussions
-- **General questions**: [GitHub Discussions](https://github.com/rl-io/coredns-ingress-sync/discussions)
+- **General questions**: [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues) (use the "question" label)
 - **Bug reports**: [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues)
 - **Feature requests**: [GitHub Issues](https://github.com/rl-io/coredns-ingress-sync/issues)
 
