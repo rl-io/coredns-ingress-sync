@@ -38,13 +38,16 @@ jobs:
           echo "PR number: ${{ github.event.client_payload.pr_number }}"
         fi
 
-  # Trigger other workflows via workflow_dispatch
+  # Trigger other workflows based on event type
   trigger-build-test:
     name: Trigger Build and Test
     runs-on: ubuntu-latest
-    if: github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+    if: |
+      (github.event_name == 'repository_dispatch' && github.event.action == 'release-please') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
-    - name: Trigger Build and Test Workflow
+    - name: Trigger Build and Test Workflow (Repository Dispatch)
+      if: github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
       uses: peter-evans/repository-dispatch@v3
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
@@ -56,6 +59,14 @@ jobs:
             "ref": "${{ github.event.client_payload.ref }}",
             "sha": "${{ github.event.client_payload.sha }}"
           }
+    
+    - name: Trigger Build and Test Workflow (Direct Push)
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: peter-evans/repository-dispatch@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        repository: ${{ github.repository }}
+        event-type: manual-build-test
 
   release:
     name: Create Release

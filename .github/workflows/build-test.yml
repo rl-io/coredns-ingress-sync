@@ -1,9 +1,9 @@
 name: Build and Test
 
 on:
-  # Only run for release-please repository_dispatch events
+  # Run for release-please repository_dispatch events and manual triggers
   repository_dispatch:
-    types: [release-please]
+    types: [release-please, manual-build-test]
   workflow_dispatch:
 
 permissions:
@@ -36,9 +36,9 @@ jobs:
         platforms: linux/amd64
         export_artifact: true
 
-    # Update build status using reusable action
+    # Update build status using reusable action (only for release-please events with PR)
     - name: Update Build Status on Success
-      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
       uses: ./.github/actions/update-pr-status
       with:
         context: "Build Docker Image"
@@ -48,7 +48,7 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Update Build Status on Failure
-      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
       uses: ./.github/actions/update-pr-status
       with:
         context: "Build Docker Image"
@@ -83,9 +83,9 @@ jobs:
         image_artifact_path: /tmp
         cluster_timeout: 120
 
-    # Update test status using reusable action
+    # Update test status using reusable action (only for release-please events with PR)
     - name: Update Test Status on Success
-      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
       uses: ./.github/actions/update-pr-status
       with:
         context: "Run Tests"
@@ -95,7 +95,7 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Update Test Status on Failure
-      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
       uses: ./.github/actions/update-pr-status
       with:
         context: "Run Tests"
@@ -129,9 +129,9 @@ jobs:
         upload_sarif: true
         github_token: ${{ secrets.GITHUB_TOKEN }}
 
-    # Update security scan status using reusable action
+    # Update security scan status using reusable action (only for release-please events with PR)
     - name: Update Security Scan Status on Success
-      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+      if: success() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
       uses: ./.github/actions/update-pr-status
       with:
         context: "Security Scan"
@@ -141,7 +141,7 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Update Security Scan Status on Failure
-      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please'
+      if: failure() && github.event_name == 'repository_dispatch' && github.event.action == 'release-please' && github.event.client_payload.pr_number
       uses: ./.github/actions/update-pr-status
       with:
         context: "Security Scan"
