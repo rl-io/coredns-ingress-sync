@@ -1,53 +1,178 @@
 # CI/CD Pipeline Documentation
 
-This document describes the comprehensive CI/CD pipeline setup for the coredns-ingress-sync controller project.
+This document describes the comprehensive, modular CI/CD pipeline setup for the coredns-ingress-sync controller project.
 
 ## Overview
 
-The project uses GitHub Actions for continuous integration and deployment, with multiple workflows handling different aspects of the development lifecycle.
+The project uses GitHub Actions for continuous integration and deployment, with a **modular approach** using reusable actions and multiple specialized workflows for different aspects of the development lifecycle.
+
+## Modular Architecture
+
+### Reusable Actions
+
+The pipeline is built on four core reusable actions located in `.github/actions/`:
+
+#### 1. Docker Build Action (`.github/actions/docker-build/action.yml`)
+**Purpose**: Builds Docker images with consistent tagging, caching, and multi-platform support
+
+**Features**:
+- ✅ Consistent tagging strategy across workflows
+- 📦 Multi-platform builds (AMD64/ARM64)
+- 💾 GitHub Actions cache optimization
+- 🔧 Configurable push/export options
+- 📤 Artifact export for downstream jobs
+
+**Usage**:
+```yaml
+- uses: ./.github/actions/docker-build
+  with:
+    image_name: coredns-ingress-sync
+    push: false
+    platforms: linux/amd64
+    export_artifact: true
+```
+
+#### 2. Security Scan Action (`.github/actions/security-scan/action.yml`)
+**Purpose**: Trivy-based security scanning for containers and filesystem
+
+**Features**:
+- 🔒 Container vulnerability scanning
+- 📁 Filesystem security analysis
+- 📊 SARIF uploads to GitHub Security tab
+- 🎯 Configurable scan targets
+- 📋 Artifact retention for scan results
+
+**Usage**:
+```yaml
+- uses: ./.github/actions/security-scan
+  with:
+    image_name: coredns-ingress-sync:test
+    image_artifact_path: /tmp
+    scan_filesystem: true
+    upload_sarif: true
+```
+
+#### 3. Test Runner Action (`.github/actions/test-runner/action.yml`)
+**Purpose**: Comprehensive Go testing with Kubernetes Kind clusters
+
+**Features**:
+- 🧪 Unit, integration, and E2E tests
+- ☸️ Kind cluster provisioning
+- 📈 Codecov integration
+- 🔄 Configurable test suites
+- 📊 Coverage reporting
+
+**Usage**:
+```yaml
+- uses: ./.github/actions/test-runner
+  with:
+    go_version: '1.24'
+    run_integration_tests: true
+    run_e2e_tests: true
+    codecov_token: ${{ secrets.CODECOV_TOKEN }}
+```
+
+#### 4. PR Status Update Action (`.github/actions/update-pr-status/action.yml`)
+**Purpose**: Updates PR status checks for release-please workflows
+
+**Features**:
+- ✅ Automated status check updates
+- 🔗 PR integration with repository dispatch
+- � Configurable status messages
+- 🎯 Targeted PR status management
+
+**Usage**:
+```yaml
+- uses: ./.github/actions/update-pr-status
+  with:
+    context: "CI/CD Pipeline / build"
+    state: "success"
+    description: "Build completed successfully"
+    pr_number: ${{ github.event.client_payload.pr_number }}
+```
 
 ## Workflows
 
-### 1. Main CI/CD Pipeline (`.github/workflows/ci-cd.yml`)
-
-**Triggers:**
-- Push to `main` or `develop` branches
-- Tags matching `v*` pattern
-- Pull requests to `main`
-
-**Jobs:**
-- **Test**: Runs unit tests, integration tests, and E2E tests
-- **Security Scan**: Vulnerability scanning with Trivy
-- **Build and Push**: Multi-architecture Docker builds and registry push
-- **Release**: Automated releases for tagged versions
-
-**Features:**
-- ✅ Go test coverage reporting
-- 🔒 Security vulnerability scanning
-- 📦 Multi-architecture Docker builds (amd64, arm64)
-- 🔐 Container image signing with Cosign
-- 📋 SBOM (Software Bill of Materials) generation
-- 🚀 Automated releases with artifacts
-
-### 2. Pull Request Tests (`.github/workflows/pr-tests.yml`)
+### 1. Pull Request Tests (`.github/workflows/pr-tests.yml`)
 
 **Triggers:**
 - Pull request events (opened, synchronize, reopened)
 
 **Jobs:**
-- **Changes Detection**: Identifies what files changed
-- **Lint**: Code quality checks with golangci-lint
-- **Test**: Matrix testing across multiple Go versions
-- **Docker Build**: Multi-architecture build testing
-- **Integration Test**: Kind cluster testing
-- **Documentation Check**: Markdown and link validation
+- **Detect Changes**: Smart change detection for targeted testing
+- **Build Docker Image**: Uses reusable docker-build action
+- **Run Tests**: Uses reusable test-runner action
+- **Security Scan**: Uses reusable security-scan action
+- **Documentation Check**: Markdown validation
 
 **Features:**
-- 🔍 Smart change detection (only runs relevant tests)
-- 🧪 Matrix testing across Go versions 1.21-1.24
-- 💬 Automated PR status comments
-- ⚡ Concurrency control (cancels outdated runs)
-- 🔒 Security scanning for pull requests
+- ⚡ Fast feedback loop for PRs
+- 🎯 Only runs tests for changed components
+- 🔄 Parallel execution where possible
+- 📊 Artifact-based workflow (build once, test multiple times)
+
+### 2. Main CI/CD Pipeline (`.github/workflows/ci-cd.yml`)
+
+**Triggers:**
+- Repository dispatch events from release-please
+- Manual workflow dispatch
+
+**Jobs:**
+- **Debug Information**: Workflow context logging
+- **Trigger Build and Test**: Dispatches to build-test workflow
+
+**Features:**
+- 🔗 Integration with release-please
+- 📋 Centralized orchestration
+- 🚀 Event-driven automation
+
+### 3. Build and Test Workflow (`.github/workflows/build-test.yml`)
+
+**Triggers:**
+- Repository dispatch from CI/CD pipeline
+- Manual workflow dispatch
+
+**Jobs:**
+- **Setup PR Status**: Initializes status checks for release-please PRs
+- **Build**: Uses reusable docker-build action
+- **Test**: Uses reusable test-runner action  
+- **Security Scan**: Uses reusable security-scan action
+
+**Features:**
+- � Status check management for release-please
+- 📦 Artifact passing between jobs
+- ✅ Comprehensive validation pipeline
+
+### 4. Build and Push (`.github/workflows/build-push.yml`)
+
+**Triggers:**
+- Push to `main` branch
+- Version tags (`v*`)
+- Manual workflow dispatch
+
+**Jobs:**
+- **Build and Push**: Production Docker builds with registry push
+
+**Features:**
+- 🏗️ Multi-platform production builds
+- 📦 Container registry publishing
+- 🔧 Uses reusable docker-build action
+
+### 5. Security Scanning (`.github/workflows/security.yml`)
+
+**Triggers:**
+- Schedule (daily)
+- Push to main
+- Manual workflow dispatch
+
+**Jobs:**
+- **CodeQL Analysis**: GitHub's semantic code analysis
+- **Dependency Review**: Automated dependency security checks
+
+**Features:**
+- 🔒 Comprehensive security analysis
+- 📊 SARIF integration with GitHub Security tab
+- ⏰ Scheduled security monitoring
 
 ### 3. Security and Maintenance (`.github/workflows/security.yml`)
 

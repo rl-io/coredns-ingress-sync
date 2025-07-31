@@ -31,7 +31,7 @@ Changes should be reactive to Ingress creation, deletion, and updates.
 
 ## Current Implementation Status
 
-**Status**: In progress - The controller is tested and functional, but unit tests require better coverage.
+**Status**: Production-ready - The controller is fully functional with comprehensive testing, namespace filtering capabilities, and modular CI/CD pipeline.
 
 **Architecture**: Kubernetes controller built with controller-runtime that automatically manages CoreDNS configuration for internal DNS resolution of ingress hostnames.
 
@@ -41,6 +41,8 @@ Changes should be reactive to Ingress creation, deletion, and updates.
 - Automated CoreDNS ConfigMap and deployment management
 - Cleanup scripts for proper uninstall procedures
 - Comprehensive test suite with integration tests
+- **Namespace filtering support**: Can monitor specific namespaces or cluster-wide
+- **Modular CI/CD pipeline**: Reusable GitHub Actions for build, test, security scanning, and deployment
 
 **Current Implementation**: Custom Controller with Automated CoreDNS Integration
 
@@ -48,6 +50,7 @@ The deployed controller:
 
 **Watches Multiple Resources**:
 - Ingress resources filtered by `spec.ingressClassName == "nginx"`
+- **Namespace filtering**: Configurable to watch specific namespaces or all namespaces cluster-wide
 - CoreDNS ConfigMap changes for reactive configuration management and defensive protection
 - Automatic reconciliation on resource changes
 
@@ -115,6 +118,9 @@ coreDNS:
 controller:
   ingressClass: nginx
   targetCNAME: ingress-nginx-controller.ingress-nginx.svc.cluster.local.
+  # Namespace filtering configuration
+  watchNamespaces: ""  # Empty = watch all namespaces cluster-wide
+  # watchNamespaces: "production,staging"  # Comma-separated list for specific namespaces
   dynamicConfigMap:
     name: coredns-custom
     key: dynamic.server
@@ -143,6 +149,36 @@ controller:
 - Minimal required permissions for specific resources
 - Cross-namespace access to CoreDNS in kube-system
 - No cluster-wide deployment watching (uses direct client)
+
+## Modular CI/CD Pipeline
+
+**Current Status**: ✅ COMPLETE - Fully automated and modular CI/CD pipeline with reusable GitHub Actions
+
+**Pipeline Architecture**:
+- **Reusable Actions**: Modular, composable GitHub Actions for common tasks
+- **Multi-workflow Strategy**: Separate workflows for different triggers and purposes
+- **Security Integration**: Automated security scanning with SARIF uploads
+- **Quality Gates**: Comprehensive testing before deployment
+
+**Reusable Actions**:
+- **`.github/actions/docker-build`**: Builds Docker images with consistent tagging, caching, and multi-platform support
+- **`.github/actions/security-scan`**: Trivy-based security scanning for containers and filesystem
+- **`.github/actions/test-runner`**: Comprehensive Go testing with Kubernetes Kind clusters and Codecov integration
+- **`.github/actions/update-pr-status`**: Updates PR status checks for release-please workflows
+
+**Workflow Organization**:
+- **`pr-tests.yml`**: Fast feedback on pull requests (build, test, security scan)
+- **`ci-cd.yml`**: Main CI/CD orchestration with release-please integration
+- **`build-test.yml`**: Triggered by repository dispatch for release-please events
+- **`build-push.yml`**: Production builds and pushes to container registry
+- **`security.yml`**: CodeQL and advanced security scanning
+
+**Key Features**:
+- ✅ **Artifact-based workflows**: Docker images built once and reused across jobs
+- ✅ **Parallel execution**: Security scans, tests, and builds run in parallel when possible
+- ✅ **Status check management**: Automated PR status updates for release-please integration
+- ✅ **Multi-platform builds**: AMD64 and ARM64 support for production images
+- ✅ **Caching strategy**: Optimized build times with GitHub Actions cache
 
 ## Deployment Plan
 

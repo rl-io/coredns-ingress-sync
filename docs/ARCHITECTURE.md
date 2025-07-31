@@ -4,13 +4,13 @@ This document explains the technical implementation and architecture of the core
 
 ## Architecture Overview
 
-The coredns-ingress-sync controller follows the Kubernetes controller pattern, using controller-runtime for efficient event-driven reconciliation. It acts as a bridge between Ingress resources and CoreDNS configuration.
+The coredns-ingress-sync controller follows the Kubernetes controller pattern, using controller-runtime for efficient event-driven reconciliation. It acts as a bridge between Ingress resources and CoreDNS configuration, with support for **namespace filtering** and **modular CI/CD automation**.
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │     Ingress     │    │                  │    │     CoreDNS     │
 │   Resources     │───▶│   Controller     │───▶│  Configuration  │
-│                 │    │                  │    │                 │
+│ (All/Filtered)  │    │ (NS-aware)       │    │                 │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
                               │
                               ▼
@@ -19,6 +19,10 @@ The coredns-ingress-sync controller follows the Kubernetes controller pattern, u
                     │ (coredns-custom) │
                     └─────────────────┘
 ```
+
+**Namespace Monitoring**: The controller can operate in two modes:
+- **Cluster-wide**: Monitors ingresses across all namespaces (requires ClusterRole)
+- **Namespace-scoped**: Monitors only specific namespaces (uses per-namespace Roles)
 
 ## Component Breakdown
 
@@ -390,3 +394,33 @@ Future enhancement: Prometheus metrics for:
 - ConfigMap update frequency
 - Error rates
 - Ingress processing latency
+
+## CI/CD Architecture
+
+### Modular Pipeline Design
+
+The project uses a **modular CI/CD approach** with reusable GitHub Actions:
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│  Pull Request   │    │   Reusable       │    │   Production    │
+│   Validation    │───▶│   Actions        │───▶│   Deployment    │
+│                 │    │                  │    │                 │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+        │                       │                       │
+        ▼                       ▼                       ▼
+┌─────────────┐         ┌─────────────┐         ┌─────────────┐
+│ docker-build│         │ test-runner │         │ build-push  │
+│ security-scan│         │ update-pr   │         │ helm-release│
+│ docs-check  │         │ status      │         │ security    │
+└─────────────┘         └─────────────┘         └─────────────┘
+```
+
+**Key Components**:
+
+- **Reusable Actions**: Four modular actions for build, test, security, and status management
+- **Artifact-based Workflows**: Build once, test multiple times pattern
+- **Parallel Execution**: Security scans, tests, and builds run concurrently
+- **Status Management**: Automated PR status updates for release-please integration
+
+See [CI/CD Documentation](CI_CD_DOCS.md) for detailed pipeline architecture.

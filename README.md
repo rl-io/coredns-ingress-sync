@@ -15,11 +15,12 @@ This has been tested to work with [ingress-nginx](https://github.com/kubernetes/
 - **🚀 Zero Configuration**: Works out-of-the-box with automatic CoreDNS setup
 - **🔄 Event-driven**: Real-time response to ingress changes using controller-runtime
 - **🎯 Selective Processing**: Only handles ingresses with specified IngressClass
+- **📍 Namespace Filtering**: Monitor all namespaces or specific namespaces only
 - **⚡ Dynamic DNS**: Auto-generates CoreDNS rewrite rules for ingress hostnames
-- **�️ Defensive Configuration**: Protects against external configuration drift (Terraform-compatible)
+- **🛡️ Defensive Configuration**: Protects against external configuration drift (Terraform-compatible)
 - **♻️ Clean Uninstall**: Automatic cleanup with proper Helm hooks
 - **🔐 Secure**: Minimal RBAC permissions with namespace isolation
-- **� Leader election, health checks, comprehensive testing
+- **📈 Production Ready**: Leader election, health checks, comprehensive testing
 
 ## Quick Start
 
@@ -46,8 +47,9 @@ helm install coredns-ingress-sync \
   --namespace coredns-ingress-sync \
   --create-namespace
 
-# To enable automatic CoreDNS configuration, add:
-#   --set coreDNS.autoConfigure=true
+# Configuration options:
+#   --set coreDNS.autoConfigure=true                      # Enable automatic CoreDNS setup
+#   --set controller.watchNamespaces="production,staging" # Monitor specific namespaces only
 ```
 
 ### Verification

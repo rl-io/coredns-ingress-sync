@@ -270,7 +270,25 @@ For rollbacks, use standard Helm rollback procedures.
 
 ### Q: Can I filter ingresses by namespace or labels?
 
-A: Currently, the controller filters only by `spec.ingressClassName`. For more advanced filtering, you would need to modify the controller code to add additional watch predicates.
+A: **Namespace filtering is fully supported**. You can configure the controller to:
+
+- **Watch all namespaces** (cluster-wide): Set `controller.watchNamespaces: ""` (default)
+- **Watch specific namespaces**: Set `controller.watchNamespaces: "production,staging,default"`
+
+Example configuration:
+
+```yaml
+# Watch only production and staging namespaces
+controller:
+  watchNamespaces: "production,staging"
+```
+
+**RBAC Requirements**:
+
+- Cluster-wide monitoring requires `ClusterRole` permissions
+- Namespace-scoped monitoring uses `Role` permissions in each specified namespace
+
+For label-based filtering beyond namespace and ingress class, you would need to modify the controller's predicate functions.
 
 ### Q: Can I use multiple target CNAMEs for different ingresses?
 
