@@ -22,23 +22,6 @@ permissions:
   actions: write
 
 jobs:
-  debug-info:
-    name: Debug Information
-    runs-on: ubuntu-latest
-    steps:
-    - name: Debug PR info
-      run: |
-        echo "Event: ${{ github.event_name }}"
-        echo "Ref: ${{ github.ref }}"
-        echo "Head ref: ${{ github.head_ref }}"
-        echo "Base ref: ${{ github.base_ref }}"
-        echo "Actor: ${{ github.actor }}"
-        echo "Repository: ${{ github.repository }}"
-        if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-          echo "Dispatch type: ${{ github.event.action }}"
-          echo "PR number: ${{ github.event.client_payload.pr_number }}"
-        fi
-
   # Build and test jobs for both push events and release-please events
   build:
     name: Build Docker Image
