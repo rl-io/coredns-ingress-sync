@@ -34,6 +34,17 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github_token }}
 
+    - name: Get Job ID
+      id: get-job-id
+      shell: bash
+      run: |
+        # Get the job ID for the current job
+        JOB_ID=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[] | select(.name == "${{ github.job }}") | .id')
+        echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
+        echo "Job ID for '${{ github.job }}': $JOB_ID"
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+
     - name: Update Status Check
       if: steps.get-pr-sha.outputs.sha != ''
       uses: guibranco/github-status-action-v2@v1
@@ -45,4 +56,4 @@ runs:
         state: ${{ inputs.state }}
         context: ${{ inputs.context }}
         description: ${{ inputs.description }}
-        target_url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/job/${{ github.job }}"
+        target_url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/job/${{ steps.get-job-id.outputs.job_id }}"
