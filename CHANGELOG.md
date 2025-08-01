@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.4](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.3...coredns-ingress-sync-v0.1.4) (2025-08-01)
+
+
+### Bug Fixes
+
+* **ci:** update version output format and enhance condition for triggering CI in release-please workflow ([7de28f6](https://github.com/rl-io/coredns-ingress-sync/commit/7de28f6b8853ff26e657b331a3b8b47edc77f9c2))
+* **ci:** update version output format and enhance condition for triggering CI in release-please workflow ([4eb20cb](https://github.com/rl-io/coredns-ingress-sync/commit/4eb20cbaed553dc810da09e6f5595407bedf3050))
+
 ## [0.1.3](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.2...coredns-ingress-sync-v0.1.3) (2025-07-31)
 
 
