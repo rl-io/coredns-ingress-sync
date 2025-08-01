@@ -4,8 +4,8 @@ on:
   push:
     tags:
       - 'coredns-ingress-sync-v*'
-    branches:
-      - 'fix/helm_chart_release'  # Temporary: for testing only
+  repository_dispatch:
+    types: [release-published]
   workflow_dispatch:
 
 env:
