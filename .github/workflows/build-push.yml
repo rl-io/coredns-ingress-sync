@@ -6,7 +6,7 @@ on:
     tags: ['coredns-ingress-sync-v*']
   workflow_dispatch:
   repository_dispatch:
-    types: [build-and-push]
+    types: [release-published]
 
 permissions:
   contents: read
@@ -30,10 +30,41 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
         
-    - name: Build and Push Docker Image
-      uses: ./.github/actions/docker-build
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
       with:
-        image_name: ${{ env.REGISTRY }}/${{ github.repository }}
-        push: true
+        images: ${{ env.REGISTRY }}/${{ github.repository }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-,enable={{is_default_branch}}
+          type=sha,prefix=pr-,enable=${{ github.event_name == 'pull_request' }}
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=test,enable=true
+          type=raw,value=${{ github.event.client_payload.version }},enable=${{ github.event_name == 'repository_dispatch' && github.event.client_payload.version != '' }}
+          type=raw,value=${{ github.event.client_payload.tag_name }},enable=${{ github.event_name == 'repository_dispatch' && github.event.client_payload.tag_name != '' }}
+        
+    - name: Build and Push Docker Image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
         platforms: linux/amd64,linux/arm64
-        export_artifact: false
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+    - name: Display build summary
+      run: |
+        echo "🐳 Docker Build Summary"
+        echo "Image tags: ${{ steps.meta.outputs.tags }}"
+        echo "Platforms: linux/amd64,linux/arm64"
+        echo "Push: true"
+        if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+          echo "Release tag: ${{ github.event.client_payload.tag_name }}"
+          echo "Release version: ${{ github.event.client_payload.version }}"
+        fi
