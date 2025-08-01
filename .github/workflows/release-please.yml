@@ -44,4 +44,17 @@ jobs:
               "ref": "${{ fromJSON(env.PRS_OUTPUT)[0].headBranchName }}"
             }
 
+      - name: Trigger Build and Push for release
+        if: steps.release.outputs.release_created == 'true'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: build-and-push
+          client-payload: |
+            {
+              "tag_name": "${{ steps.release.outputs.tag_name }}",
+              "version": "${{ steps.release.outputs.version }}",
+              "sha": "${{ github.sha }}"
+            }
+
 

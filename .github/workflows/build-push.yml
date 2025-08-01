@@ -5,6 +5,8 @@ on:
     branches: [main]
     tags: ['coredns-ingress-sync-v*']
   workflow_dispatch:
+  repository_dispatch:
+    types: [build-and-push]
 
 permissions:
   contents: read
