@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.10](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.9...coredns-ingress-sync-v0.1.10) (2025-08-01)
+
+
+### Bug Fixes
+
+* **helm:** add proper Helm hooks for autoConfigure mode ([a4f14bf](https://github.com/rl-io/coredns-ingress-sync/commit/a4f14bfa5d98f865bfd17309a838bbd8dbe84700))
+* **helm:** add proper Helm hooks for autoConfigure mode ([659ff25](https://github.com/rl-io/coredns-ingress-sync/commit/659ff256fc8e3f10e346e3f9319fb32616b09a6f))
+* **release:** update release configuration for better versioning and changelog management ([#46](https://github.com/rl-io/coredns-ingress-sync/issues/46)) ([bd95864](https://github.com/rl-io/coredns-ingress-sync/commit/bd95864c26516be83db5d2d931a576f4f6881aaf))
+
 ## [0.1.9](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.8...coredns-ingress-sync-v0.1.9) (2025-08-01)
 
 
