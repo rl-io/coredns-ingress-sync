@@ -7,12 +7,10 @@ metadata:
   name: {{ include "coredns-ingress-sync.fullname" . }}-cluster
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
-  {{- if .Values.coreDNS.autoConfigure }}
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 rules:
 - apiGroups: ["networking.k8s.io"]
   resources: ["ingresses"]
@@ -30,12 +28,10 @@ metadata:
   name: {{ include "coredns-ingress-sync.fullname" . }}-cluster
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
-  {{- if .Values.coreDNS.autoConfigure }}
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-4"
     "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -63,12 +59,10 @@ metadata:
   namespace: {{ $namespace }}
   labels:
     {{- include "coredns-ingress-sync.labels" $ | nindent 4 }}
-  {{- if $.Values.coreDNS.autoConfigure }}
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 rules:
 - apiGroups: ["networking.k8s.io"]
   resources: ["ingresses"]
@@ -81,12 +75,10 @@ metadata:
   namespace: {{ $namespace }}
   labels:
     {{- include "coredns-ingress-sync.labels" $ | nindent 4 }}
-  {{- if $.Values.coreDNS.autoConfigure }}
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-4"
     "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -107,12 +99,10 @@ metadata:
   name: {{ include "coredns-ingress-sync.fullname" . }}-coredns
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
-  {{- if .Values.coreDNS.autoConfigure }}
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 rules:
 - apiGroups: [""]
   resources: ["configmaps"]
@@ -132,12 +122,10 @@ metadata:
   name: {{ include "coredns-ingress-sync.fullname" . }}-coredns
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
-  {{- if .Values.coreDNS.autoConfigure }}
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-4"
     "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -156,12 +144,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
-  {{- if .Values.coreDNS.autoConfigure }}
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 rules:
 - apiGroups: ["coordination.k8s.io"]
   resources: ["leases"]
@@ -180,12 +166,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
-  {{- if .Values.coreDNS.autoConfigure }}
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-4"
     "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
