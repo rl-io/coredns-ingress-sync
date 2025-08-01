@@ -200,7 +200,7 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/coredns-ingress-sync-v')
     
     permissions:
       contents: write

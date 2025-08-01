@@ -3,7 +3,7 @@ name: Release Helm Chart
 on:
   push:
     tags:
-      - 'v*'
+      - 'coredns-ingress-sync-v*'
     branches:
       - 'fix/helm_chart_release'  # Temporary: for testing only
   workflow_dispatch:
