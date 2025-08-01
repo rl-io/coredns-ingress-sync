@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.7](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.6...coredns-ingress-sync-v0.1.7) (2025-08-01)
+
+
+### Features
+
+* **ci:** add repository dispatch event for build and push in workflows ([ce0365c](https://github.com/rl-io/coredns-ingress-sync/commit/ce0365c09e5d3f6f9176771236f45a36bfd27838))
+* **ci:** add repository dispatch event for build and push in workflows ([86e7b5c](https://github.com/rl-io/coredns-ingress-sync/commit/86e7b5c70dd34492d754888f644cbe0e5a3ac6b2))
+
+
+### Miscellaneous
+
+* **config:** update release configuration to include changelog sections ([544f9f8](https://github.com/rl-io/coredns-ingress-sync/commit/544f9f844ad4f9aa2afd265f157f4d956cefa24e))
+* **config:** update release configuration to include changelog sections ([a8354a4](https://github.com/rl-io/coredns-ingress-sync/commit/a8354a470dcb68d3ac591744b5396656b906ad7b))
+
 ## [0.1.6](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.5...coredns-ingress-sync-v0.1.6) (2025-08-01)
 
 
