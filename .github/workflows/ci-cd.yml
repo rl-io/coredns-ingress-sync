@@ -3,7 +3,7 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main, develop ]
-    tags: [ 'v*' ]
+    tags: [ 'coredns-ingress-sync-v*' ]
   # Handle release-please events
   repository_dispatch:
     types: [release-please]
