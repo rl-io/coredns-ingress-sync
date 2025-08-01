@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
-      version: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}
+      version: ${{ steps.release.outputs.version }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Release Please
@@ -28,15 +28,20 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Trigger CI for release PR
-        if: steps.release.outputs.prs_created
+        if: |
+          steps.release.outputs.prs_created == 'true' && 
+          steps.release.outputs.prs != '' && 
+          steps.release.outputs.prs != 'null'
+        env:
+          PRS_OUTPUT: ${{ steps.release.outputs.prs }}
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           event-type: release-please
           client-payload: |
             {
-              "pr_number": "${{ fromJSON(steps.release.outputs.prs)[0].number }}",
-              "ref": "${{ fromJSON(steps.release.outputs.prs)[0].headBranchName }}"
+              "pr_number": "${{ fromJSON(env.PRS_OUTPUT)[0].number }}",
+              "ref": "${{ fromJSON(env.PRS_OUTPUT)[0].headBranchName }}"
             }
 
 
