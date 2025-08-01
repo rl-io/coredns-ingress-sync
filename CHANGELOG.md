@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.8...coredns-ingress-sync-v0.1.9) (2025-08-01)
+
+
+### Bug Fixes
+
+* **ci:** add docker buildx setup to resolve cache export error ([#42](https://github.com/rl-io/coredns-ingress-sync/issues/42)) ([946015f](https://github.com/rl-io/coredns-ingress-sync/commit/946015fd63d5bf18a7b0a7591d35361dc289e6bc))
+
 ## [0.1.8](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.7...coredns-ingress-sync-v0.1.8) (2025-08-01)
 
 
