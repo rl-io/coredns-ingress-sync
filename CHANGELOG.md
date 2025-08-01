@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.8](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.7...coredns-ingress-sync-v0.1.8) (2025-08-01)
+
+
+### Miscellaneous
+
+* **workflows:** update event types for build and release workflows ([dbf8c5e](https://github.com/rl-io/coredns-ingress-sync/commit/dbf8c5e174fb457653037c9b1314cb9bed610377))
+* **workflows:** update event types for build and release workflows ([ad27886](https://github.com/rl-io/coredns-ingress-sync/commit/ad278865d885d5c6406d38e8b7551f4d21231bba))
+
 ## [0.1.7](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.6...coredns-ingress-sync-v0.1.7) (2025-08-01)
 
 
