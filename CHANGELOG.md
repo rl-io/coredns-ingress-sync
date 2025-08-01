@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.10...coredns-ingress-sync-v0.1.11) (2025-08-01)
+
+
+### Bug Fixes
+
+* **helm:** streamline annotations in RBAC and ServiceAccount templates ([#47](https://github.com/rl-io/coredns-ingress-sync/issues/47)) ([fa4b2e3](https://github.com/rl-io/coredns-ingress-sync/commit/fa4b2e3d64e9060dac57fa1f26957dd4abcef944))
+
 ## [0.1.10](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.9...coredns-ingress-sync-v0.1.10) (2025-08-01)
 
 
