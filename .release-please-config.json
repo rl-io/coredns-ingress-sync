@@ -8,6 +8,11 @@
       "include-v-in-tag": true,
       "bootstrap-sha": "eeaddc115f5f2a43e7c80a02b55add179cf5ddbe",
       "include-component-in-tag": true,
+      "pull-request-title-pattern": "chore${scope}: release${component} ${version}",
+      "separate-pull-requests": false,
+      "skip-github-release": false,
+      "draft": false,
+      "commit-search-depth": 500,
       "extra-files": [
         {
           "type": "yaml",
@@ -25,6 +30,15 @@
   "changelog-sections": [
     {"type": "feat", "section": "Features"},
     {"type": "fix", "section": "Bug Fixes"},
-    {"type": "chore", "section": "Miscellaneous", "hidden": false}
-  ]
+    {"type": "chore", "section": "Miscellaneous", "hidden": false},
+    {"type": "docs", "section": "Documentation", "hidden": false},
+    {"type": "style", "section": "Miscellaneous", "hidden": true},
+    {"type": "refactor", "section": "Miscellaneous", "hidden": true},
+    {"type": "perf", "section": "Performance Improvements", "hidden": false},
+    {"type": "test", "section": "Miscellaneous", "hidden": true},
+    {"type": "build", "section": "Miscellaneous", "hidden": true},
+    {"type": "ci", "section": "Miscellaneous", "hidden": true}
+  ],
+  "group-pull-request-title-pattern": "chore: release ${version}",
+  "sequential-calls": true
 }
