@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.6](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.5...coredns-ingress-sync-v0.1.6) (2025-08-01)
+
+
+### Bug Fixes
+
+* **ci:** update tag prefix for build and CI/CD workflows to 'coredns-ingress-sync-v*' ([c253f91](https://github.com/rl-io/coredns-ingress-sync/commit/c253f9130676647cfc9e4b8f40fd0412d2e4151d))
+* **ci:** update tag prefix for build and CI/CD workflows to 'coredns-ingress-sync-v*' ([7759083](https://github.com/rl-io/coredns-ingress-sync/commit/7759083c9dc15a238a3e6b0c76bd980d4bba4839))
+
 ## [0.1.5](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.4...coredns-ingress-sync-v0.1.5) (2025-08-01)
 
 
