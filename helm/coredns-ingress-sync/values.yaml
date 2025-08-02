@@ -55,7 +55,7 @@ coreDNS:
   autoConfigure: false
   # Namespace where CoreDNS is deployed
   namespace: kube-system
-  # ConfigMap name
+  # Name of the existing CoreDNS ConfigMap to modify
   configMapName: coredns
 
 # Controller configuration
@@ -70,10 +70,13 @@ controller:
   # Log level: debug, info, warn, error
   logLevel: "info"
   
-  # Dynamic ConfigMap configuration
+  # Dynamic ConfigMap configuration (created by this controller)
   dynamicConfigMap:
-    name: "coredns-custom"
+    name: "coredns-ingress-sync-rewrite-rules"
     key: "dynamic.server"
+  
+  # Volume name for mounting dynamic configuration
+  volumeName: "coredns-ingress-sync-volume"
   
   # Environment variables (for advanced configuration)
   env: {}

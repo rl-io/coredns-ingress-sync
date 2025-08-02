@@ -108,6 +108,7 @@ func runController(logger logr.Logger) {
 		DynamicConfigKey:     cfg.DynamicConfigKey,
 		ImportStatement:      cfg.ImportStatement,
 		TargetCNAME:          cfg.TargetCNAME,
+		VolumeName:           cfg.CoreDNSVolumeName,
 	}
 	coreDNSManager := coredns.NewManager(mgr.GetClient(), coreDNSConfig)
 
