@@ -24,7 +24,7 @@ This has been tested to work with [ingress-nginx](https://github.com/kubernetes/
 - **🛡️ Defensive Configuration**: Protects against external configuration drift (Terraform-compatible)
 - **♻️ Clean Uninstall**: Automatic cleanup with proper Helm hooks
 - **🔐 Secure**: Minimal RBAC permissions with namespace isolation
-- **📈 Production Ready**: Leader election, health checks, comprehensive testing
+- **� Comprehensive Metrics**: Prometheus metrics for monitoring and alerting
 
 ## Quick Start
 
@@ -231,6 +231,43 @@ When `autoConfigure=false`, the controller will:
 - ❌ NOT automatically enable DNS resolution
 
 This allows you to inspect the generated configuration before applying it to CoreDNS.
+
+### Metrics Configuration
+
+Enable Prometheus metrics for monitoring and alerting:
+
+```yaml
+# Enable comprehensive metrics (default: true)
+metrics:
+  enabled: true
+  port: 8080
+  path: /metrics
+  
+  # Prometheus ServiceMonitor (requires Prometheus Operator)
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    labels:
+      prometheus: kube-prometheus
+```
+
+**Available Metrics:**
+
+- `coredns_ingress_sync_reconciliation_total{result}` - Reconciliation attempts
+- `coredns_ingress_sync_reconciliation_duration_seconds{result}` - Reconciliation latency  
+- `coredns_ingress_sync_dns_records_managed_total` - Current DNS records managed
+- `coredns_ingress_sync_coredns_config_updates_total{result}` - CoreDNS config updates
+- `coredns_ingress_sync_leader_election_status` - Leader election status
+- `coredns_ingress_sync_coredns_config_drift_total{drift_type}` - Configuration drift events
+
+**Access Metrics:**
+
+```bash
+# Port-forward to access metrics locally
+kubectl port-forward deployment/coredns-ingress-sync 8080:8080 -n coredns-ingress-sync
+curl http://localhost:8080/metrics
+```
 
 For detailed configuration options and examples, see [📋 Configuration Guide](docs/CONFIGURATION.md).
 

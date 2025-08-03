@@ -15,6 +15,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"github.com/go-logr/logr"
+	
+	"github.com/rl-io/coredns-ingress-sync/internal/metrics"
 )
 
 // Config holds CoreDNS configuration
@@ -62,6 +64,7 @@ func NewManager(client client.Client, config Config) *Manager {
 
 // UpdateDynamicConfigMap creates or updates the dynamic configuration ConfigMap
 func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, hosts []string) error {
+	startTime := time.Now()
 	configMapName := types.NamespacedName{
 		Name:      m.config.DynamicConfigMapName,
 		Namespace: m.config.Namespace,
@@ -94,10 +97,14 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 
 			if err := m.client.Create(ctx, configMap); err != nil {
 				if attempt == 2 {
+					duration := time.Since(startTime).Seconds()
+					metrics.RecordCoreDNSConfigUpdate(duration, false)
 					return fmt.Errorf("failed to create dynamic ConfigMap after retries: %w", err)
 				}
 				continue // Retry
 			}
+			duration := time.Since(startTime).Seconds()
+			metrics.RecordCoreDNSConfigUpdate(duration, true)
 			m.logger.Info("Created dynamic ConfigMap", 
 				"configmap", m.config.DynamicConfigMapName, 
 				"domains", len(domains))
@@ -108,6 +115,8 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 		if existingConfig, exists := configMap.Data[m.config.DynamicConfigKey]; exists && existingConfig == dynamicConfig {
 			m.logger.V(1).Info("Dynamic ConfigMap is already up to date", 
 				"configmap", m.config.DynamicConfigMapName)
+			duration := time.Since(startTime).Seconds()
+			metrics.RecordCoreDNSConfigUpdate(duration, true)
 			return nil
 		}
 
@@ -123,6 +132,8 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 		// Try to update
 		if err := m.client.Update(ctx, configMap); err != nil {
 			if attempt == 2 {
+				duration := time.Since(startTime).Seconds()
+				metrics.RecordCoreDNSConfigUpdate(duration, false)
 				return fmt.Errorf("failed to update dynamic ConfigMap after retries: %w", err)
 			}
 			// Brief delay before retry to reduce contention
@@ -130,12 +141,16 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 			continue // Retry with fresh read
 		}
 
+		duration := time.Since(startTime).Seconds()
+		metrics.RecordCoreDNSConfigUpdate(duration, true)
 		m.logger.Info("Updated dynamic ConfigMap", 
 			"configmap", m.config.DynamicConfigMapName, 
 			"domains", len(domains))
 		return nil
 	}
 
+	duration := time.Since(startTime).Seconds()
+	metrics.RecordCoreDNSConfigUpdate(duration, false)
 	return fmt.Errorf("exhausted retries updating dynamic ConfigMap")
 }
 
@@ -205,6 +220,10 @@ func (m *Manager) ensureImport(ctx context.Context) error {
 		m.logger.V(1).Info("Import statement already exists in CoreDNS Corefile")
 		return nil
 	}
+
+	// Record configuration drift detection
+	metrics.RecordCoreDNSConfigDrift("import_statement")
+	m.logger.Info("Detected missing import statement, adding it back (defensive configuration)")
 
 	// Add import statement after the .:53 { line
 	lines := strings.Split(corefile, "\n")
@@ -314,6 +333,13 @@ func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentCli
 		if hasVolume && hasVolumeMount {
 			m.logger.V(1).Info("CoreDNS deployment already has custom config volume mount")
 			return nil
+		}
+
+		// Record configuration drift if volume or mount is missing
+		if !hasVolume || !hasVolumeMount {
+			metrics.RecordCoreDNSConfigDrift("volume_mount")
+			m.logger.Info("Detected missing volume or volume mount, adding it back (defensive configuration)",
+				"has_volume", hasVolume, "has_volume_mount", hasVolumeMount)
 		}
 
 		// Add volume if missing
