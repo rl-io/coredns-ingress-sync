@@ -29,7 +29,7 @@ func TestNewIngressReconciler(t *testing.T) {
 	coreDNSConfig := coredns.Config{
 		Namespace:            "kube-system",
 		ConfigMapName:        "coredns",
-		DynamicConfigMapName: "coredns-custom",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		ImportStatement:      "import /etc/coredns/custom/*.server",
 		TargetCNAME:          "ingress-nginx.svc.cluster.local.",
@@ -211,7 +211,7 @@ func TestReconcile(t *testing.T) {
 		coreDNSConfig := coredns.Config{
 			Namespace:            "kube-system",
 			ConfigMapName:        "coredns",
-			DynamicConfigMapName: "coredns-custom",
+			DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 			DynamicConfigKey:     "dynamic.server",
 			ImportStatement:      "import /etc/coredns/custom/*.server",
 			TargetCNAME:          "ingress-nginx.svc.cluster.local.",
@@ -246,7 +246,7 @@ func TestReconcile(t *testing.T) {
 		// Verify that dynamic ConfigMap was created
 		var dynamicConfigMap corev1.ConfigMap
 		err = fakeClient.Get(context.Background(), 
-			types.NamespacedName{Name: "coredns-custom", Namespace: "kube-system"}, 
+			types.NamespacedName{Name: "coredns-ingress-sync-rewrite-rules", Namespace: "kube-system"}, 
 			&dynamicConfigMap)
 		if err != nil {
 			t.Errorf("Expected dynamic ConfigMap to be created, got error: %v", err)
@@ -285,7 +285,7 @@ func TestReconcile(t *testing.T) {
 		coreDNSConfig := coredns.Config{
 			Namespace:            "kube-system",
 			ConfigMapName:        "coredns",
-			DynamicConfigMapName: "coredns-custom",
+			DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 			DynamicConfigKey:     "dynamic.server",
 			ImportStatement:      "import /etc/coredns/custom/*.server",
 			TargetCNAME:          "ingress-nginx.svc.cluster.local.",
@@ -331,7 +331,7 @@ func TestReconcile(t *testing.T) {
 		coreDNSConfig := coredns.Config{
 			Namespace:            "kube-system",
 			ConfigMapName:        "coredns",
-			DynamicConfigMapName: "coredns-custom",
+			DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 			DynamicConfigKey:     "dynamic.server",
 			ImportStatement:      "import /etc/coredns/custom/*.server",
 			TargetCNAME:          "ingress-nginx.svc.cluster.local.",
@@ -428,7 +428,7 @@ func TestReconcile(t *testing.T) {
 		coreDNSConfig := coredns.Config{
 			Namespace:            "kube-system",
 			ConfigMapName:        "coredns",
-			DynamicConfigMapName: "coredns-custom",
+			DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 			DynamicConfigKey:     "dynamic.server",
 			ImportStatement:      "import /etc/coredns/custom/*.server",
 			TargetCNAME:          "ingress-nginx.svc.cluster.local.",
@@ -457,7 +457,7 @@ func TestReconcile(t *testing.T) {
 		// Verify that dynamic ConfigMap was created with only watched namespace content
 		var dynamicConfigMap corev1.ConfigMap
 		err = fakeClient.Get(context.Background(), 
-			types.NamespacedName{Name: "coredns-custom", Namespace: "kube-system"}, 
+			types.NamespacedName{Name: "coredns-ingress-sync-rewrite-rules", Namespace: "kube-system"}, 
 			&dynamicConfigMap)
 		
 		if err != nil {

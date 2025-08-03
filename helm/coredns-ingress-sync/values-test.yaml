@@ -16,7 +16,7 @@ controller:
   ingressClass: nginx
   targetCNAME: ingress-nginx-controller.ingress-nginx.svc.cluster.local.
   dynamicConfigMap:
-    name: coredns-custom
+    name: coredns-ingress-sync-rewrite-rules
     key: dynamic.server
 
 # Use single replica for testing

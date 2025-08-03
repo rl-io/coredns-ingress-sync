@@ -25,6 +25,7 @@ type Config struct {
 	DynamicConfigKey    string
 	ImportStatement     string
 	TargetCNAME         string
+	VolumeName          string
 }
 
 // Manager handles CoreDNS configuration management
@@ -285,7 +286,7 @@ func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentCli
 		// Check if volume and volume mount already exist
 		hasVolume := false
 		hasVolumeMount := false
-		volumeName := "coredns-custom-volume"
+		volumeName := m.config.VolumeName
 
 		// Check for existing volume
 		m.logger.V(1).Info("Checking for existing volumes", "volume_count", len(deployment.Spec.Template.Spec.Volumes))

@@ -238,7 +238,7 @@ EOF
     wait_for_controller_sync 10
     
     # Simulate disaster by deleting ConfigMap
-    kubectl delete configmap coredns-custom -n $COREDNS_NAMESPACE
+    kubectl delete configmap $CONFIGMAP_NAME -n $COREDNS_NAMESPACE
     
     # Delete controller pod to trigger recreation
     kubectl delete pod -l app=coredns-ingress-sync -n $NAMESPACE
@@ -247,7 +247,7 @@ EOF
     wait_for_controller_sync 10
     
     # Check if ConfigMap was recreated
-    if ! kubectl get configmap coredns-custom -n $COREDNS_NAMESPACE &>/dev/null; then
+    if ! kubectl get configmap $CONFIGMAP_NAME -n $COREDNS_NAMESPACE &>/dev/null; then
         log_error "ConfigMap was not recreated after disaster"
         return 1
     fi

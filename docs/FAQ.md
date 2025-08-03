@@ -112,7 +112,7 @@ kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' | gr
 And verify the dynamic configuration:
 
 ```bash
-kubectl get configmap coredns-custom -n kube-system -o yaml
+kubectl get configmap coredns-ingress-sync-rewrite-rules -n kube-system -o yaml
 ```
 
 ### Q: Can I customize the CoreDNS import path?
@@ -152,7 +152,7 @@ A: This usually indicates a CoreDNS configuration issue:
 A: Yes, check the dynamic ConfigMap:
 
 ```bash
-kubectl get configmap coredns-custom -n kube-system -o jsonpath='{.data.dynamic\.server}'
+kubectl get configmap coredns-ingress-sync-rewrite-rules -n kube-system -o jsonpath='{.data.dynamic\.server}'
 ```
 
 ## Development and Customization

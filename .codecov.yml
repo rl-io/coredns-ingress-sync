@@ -1,0 +1,23 @@
+coverage:
+  ignore:
+    - "cmd/"                    # Ignore main.go entry points
+    - "**/*_test.go"           # Ignore test files (standard practice)
+    - "tests/"                 # Ignore test directories
+    - "scripts/"               # Ignore shell scripts
+    - "docs/"                  # Ignore documentation
+    
+  status:
+    project:
+      default:
+        target: 80%              # Overall project coverage target
+        threshold: 1%            # Allow 1% fluctuation
+        
+    patch:
+      default:
+        target: 70%              # Patch coverage target (more lenient)
+        threshold: 2%            # Allow 2% fluctuation for patches
+        
+comment:
+  layout: "reach,diff,flags,tree"
+  behavior: default
+  require_changes: false

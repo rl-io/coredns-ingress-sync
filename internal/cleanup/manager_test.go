@@ -70,7 +70,7 @@ func TestRun(t *testing.T) {
 	cfg := &config.Config{
 		CoreDNSNamespace:     "kube-system",
 		CoreDNSConfigMapName: "coredns",
-		DynamicConfigMapName: "coredns-custom",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		ImportStatement:      "import /etc/coredns/custom/*.server",
 	}
 	
@@ -140,7 +140,7 @@ func TestDeleteDynamicConfigMap(t *testing.T) {
 	
 	cfg := &config.Config{
 		CoreDNSNamespace:     "kube-system", 
-		DynamicConfigMapName: "coredns-custom",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 	}
 	
 	t.Run("delete_existing_configmap", func(t *testing.T) {
@@ -371,7 +371,8 @@ func TestRemoveCoreDNSVolumeMount(t *testing.T) {
 	logger := ctrl.Log.WithName("test")
 	
 	cfg := &config.Config{
-		CoreDNSNamespace: "kube-system",
+		CoreDNSNamespace:  "kube-system",
+		CoreDNSVolumeName: "coredns-ingress-sync-volume",
 	}
 	
 	t.Run("remove_existing_volume_mount", func(t *testing.T) {
@@ -400,11 +401,11 @@ func TestRemoveCoreDNSVolumeMount(t *testing.T) {
 								},
 							},
 							{
-								Name: "custom-config-volume",
+								Name: cfg.CoreDNSVolumeName,
 								VolumeSource: corev1.VolumeSource{
 									ConfigMap: &corev1.ConfigMapVolumeSource{
 										LocalObjectReference: corev1.LocalObjectReference{
-											Name: "coredns-custom",
+											Name: "coredns-ingress-sync-rewrite-rules",
 										},
 									},
 								},
@@ -420,7 +421,7 @@ func TestRemoveCoreDNSVolumeMount(t *testing.T) {
 										ReadOnly:  true,
 									},
 									{
-										Name:      "custom-config-volume",
+										Name:      cfg.CoreDNSVolumeName,
 										MountPath: "/etc/coredns/custom",
 										ReadOnly:  true,
 									},
@@ -460,19 +461,19 @@ func TestRemoveCoreDNSVolumeMount(t *testing.T) {
 			t.Fatalf("Failed to get updated deployment: %v", err)
 		}
 		
-		// Check that custom-config-volume was removed
+		// Check that the configurable volume was removed
 		for _, volume := range updatedDeployment.Spec.Template.Spec.Volumes {
-			if volume.Name == "custom-config-volume" {
-				t.Error("Expected custom-config-volume to be removed from deployment")
+			if volume.Name == cfg.CoreDNSVolumeName {
+				t.Errorf("Expected %s to be removed from deployment", cfg.CoreDNSVolumeName)
 			}
 		}
 		
-		// Check that custom-config-volume mount was removed from container
+		// Check that the configurable volume mount was removed from container
 		for _, container := range updatedDeployment.Spec.Template.Spec.Containers {
 			if container.Name == "coredns" {
 				for _, volumeMount := range container.VolumeMounts {
-					if volumeMount.Name == "custom-config-volume" {
-						t.Error("Expected custom-config-volume mount to be removed from coredns container")
+					if volumeMount.Name == cfg.CoreDNSVolumeName {
+						t.Errorf("Expected %s mount to be removed from coredns container", cfg.CoreDNSVolumeName)
 					}
 				}
 			}

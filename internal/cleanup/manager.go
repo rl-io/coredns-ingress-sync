@@ -79,6 +79,7 @@ func (m *Manager) Run(cfg *config.Config) error {
 		DynamicConfigKey:     cfg.DynamicConfigKey,
 		ImportStatement:      cfg.ImportStatement,
 		TargetCNAME:          cfg.TargetCNAME,
+		VolumeName:           cfg.CoreDNSVolumeName,
 	}
 	coreDNSManager := coredns.NewManager(m.client, coreDNSConfig)
 
@@ -166,7 +167,7 @@ func (m *Manager) removeCoreDNSVolumeMount(ctx context.Context, coreDNSManager *
 	// Remove volume if it exists
 	var newVolumes []corev1.Volume
 	for _, volume := range deployment.Spec.Template.Spec.Volumes {
-		if volume.Name != "custom-config-volume" {
+		if volume.Name != cfg.CoreDNSVolumeName {
 			newVolumes = append(newVolumes, volume)
 		} else {
 			modified = true
@@ -179,7 +180,7 @@ func (m *Manager) removeCoreDNSVolumeMount(ctx context.Context, coreDNSManager *
 		if container.Name == "coredns" {
 			var newVolumeMounts []corev1.VolumeMount
 			for _, volumeMount := range container.VolumeMounts {
-				if volumeMount.Name != "custom-config-volume" {
+				if volumeMount.Name != cfg.CoreDNSVolumeName {
 					newVolumeMounts = append(newVolumeMounts, volumeMount)
 				} else {
 					modified = true

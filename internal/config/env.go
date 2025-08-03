@@ -10,6 +10,7 @@ type Config struct {
 	DynamicConfigKey      string
 	CoreDNSNamespace      string
 	CoreDNSConfigMapName  string
+	CoreDNSVolumeName     string
 	LeaderElectionEnabled bool
 	WatchNamespaces       string
 	ImportStatement       string
@@ -21,10 +22,11 @@ func Load() *Config {
 	return &Config{
 		IngressClass:          getEnvOrDefault("INGRESS_CLASS", "nginx"),
 		TargetCNAME:           getEnvOrDefault("TARGET_CNAME", "ingress-nginx-controller.ingress-nginx.svc.cluster.local."),
-		DynamicConfigMapName:  getEnvOrDefault("DYNAMIC_CONFIGMAP_NAME", "coredns-custom"),
+		DynamicConfigMapName:  getEnvOrDefault("DYNAMIC_CONFIGMAP_NAME", "coredns-ingress-sync-rewrite-rules"),
 		DynamicConfigKey:      getEnvOrDefault("DYNAMIC_CONFIG_KEY", "dynamic.server"),
 		CoreDNSNamespace:      getEnvOrDefault("COREDNS_NAMESPACE", "kube-system"),
 		CoreDNSConfigMapName:  getEnvOrDefault("COREDNS_CONFIGMAP_NAME", "coredns"),
+		CoreDNSVolumeName:     getEnvOrDefault("COREDNS_VOLUME_NAME", "coredns-ingress-sync-volume"),
 		LeaderElectionEnabled: getEnvOrDefault("LEADER_ELECTION_ENABLED", "true") == "true",
 		WatchNamespaces:       getEnvOrDefault("WATCH_NAMESPACES", ""), // Comma-separated list, empty = all namespaces
 		ImportStatement:       "import /etc/coredns/custom/*.server",

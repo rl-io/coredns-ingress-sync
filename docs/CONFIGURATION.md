@@ -26,7 +26,7 @@ controller:
   
   # Dynamic ConfigMap configuration
   dynamicConfigMap:
-    name: "coredns-custom"
+    name: "coredns-ingress-sync-rewrite-rules"
     key: "dynamic.server"
   
   # Leader election (for multiple replicas)
@@ -95,7 +95,7 @@ The controller supports configuration through environment variables (set via Hel
 | `WATCH_NAMESPACES` | Namespaces to monitor (empty = all) | `""` |
 | `COREDNS_NAMESPACE` | CoreDNS namespace | `kube-system` |
 | `COREDNS_CONFIGMAP_NAME` | CoreDNS ConfigMap name | `coredns` |
-| `DYNAMIC_CONFIGMAP_NAME` | Dynamic ConfigMap name | `coredns-custom` |
+| `DYNAMIC_CONFIGMAP_NAME` | Dynamic ConfigMap name | `coredns-ingress-sync-rewrite-rules` |
 | `DYNAMIC_CONFIG_KEY` | Key in dynamic ConfigMap | `dynamic.server` |
 | `LEADER_ELECTION_ENABLED` | Enable leader election | `true` |
 | `LOG_LEVEL` | Logging level | `info` |
@@ -244,7 +244,7 @@ kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync
 kubectl get configmap coredns -n kube-system -o yaml | grep -A 5 "import"
 
 # Check dynamic ConfigMap
-kubectl get configmap coredns-custom -n kube-system -o yaml
+kubectl get configmap coredns-ingress-sync-rewrite-rules -n kube-system -o yaml
 
 # Test DNS resolution
 kubectl run test-pod --rm -i --tty --image=busybox -- nslookup your-hostname.example.com
@@ -293,7 +293,7 @@ Verify the complete configuration chain:
 kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync | grep "Successfully updated"
 
 # 2. Check dynamic ConfigMap has content
-kubectl get configmap coredns-custom -n kube-system -o yaml
+kubectl get configmap coredns-ingress-sync-rewrite-rules -n kube-system -o yaml
 
 # 3. Test DNS resolution from within cluster
 kubectl run test-pod --rm -i --tty --image=busybox -- nslookup your-hostname.example.com

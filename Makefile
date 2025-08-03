@@ -252,7 +252,7 @@ k8s-logs: ## Show controller logs
 .PHONY: k8s-status
 k8s-status: ## Show controller status
 	kubectl get pods -n kube-system -l app=$(PROJECT_NAME)
-	kubectl get configmap -n kube-system coredns-custom
+	kubectl get configmap -n kube-system $${CONFIGMAP_NAME:-coredns-ingress-sync-rewrite-rules}
 
 ##@ Kind/Local Development
 .PHONY: kind-create
@@ -399,7 +399,7 @@ dev: build ## Build and run locally for development
 
 .PHONY: debug-config
 debug-config: ## Show current CoreDNS configuration
-	kubectl get configmap coredns-custom -n kube-system -o yaml
+	kubectl get configmap $${CONFIGMAP_NAME:-coredns-ingress-sync-rewrite-rules} -n kube-system -o yaml
 
 .PHONY: debug-logs
 debug-logs: ## Show detailed controller logs

@@ -42,10 +42,11 @@ func TestLoad(t *testing.T) {
 
 		assert.Equal(t, "nginx", config.IngressClass)
 		assert.Equal(t, "ingress-nginx-controller.ingress-nginx.svc.cluster.local.", config.TargetCNAME)
-		assert.Equal(t, "coredns-custom", config.DynamicConfigMapName)
+		assert.Equal(t, "coredns-ingress-sync-rewrite-rules", config.DynamicConfigMapName)
 		assert.Equal(t, "dynamic.server", config.DynamicConfigKey)
 		assert.Equal(t, "kube-system", config.CoreDNSNamespace)
 		assert.Equal(t, "coredns", config.CoreDNSConfigMapName)
+		assert.Equal(t, "coredns-ingress-sync-volume", config.CoreDNSVolumeName)
 		assert.True(t, config.LeaderElectionEnabled)
 		assert.Equal(t, "", config.WatchNamespaces)
 		assert.Equal(t, "import /etc/coredns/custom/*.server", config.ImportStatement)

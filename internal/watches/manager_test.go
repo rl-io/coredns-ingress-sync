@@ -129,7 +129,7 @@ func TestAddDynamicConfigMapWatch(t *testing.T) {
 		// Test the predicate logic for UpdateFunc
 		t.Run("update_func_logic", func(t *testing.T) {
 			namespace := "kube-system"
-			name := "coredns-custom"
+			name := "coredns-ingress-sync-rewrite-rules"
 			
 			testCases := []struct {
 				testName      string
@@ -229,7 +229,7 @@ func TestAddDynamicConfigMapWatch(t *testing.T) {
 		// Test the predicate logic for DeleteFunc
 		t.Run("delete_func_logic", func(t *testing.T) {
 			namespace := "kube-system"
-			name := "coredns-custom"
+			name := "coredns-ingress-sync-rewrite-rules"
 			
 			testCases := []struct {
 				testName      string
@@ -293,7 +293,7 @@ func TestWatchSetupIntegration(t *testing.T) {
 		// Create test ConfigMaps
 		ourConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "coredns-custom",
+				Name:      "coredns-ingress-sync-rewrite-rules",
 				Namespace: "kube-system",
 				Labels: map[string]string{
 					"app.kubernetes.io/managed-by": "coredns-ingress-sync",
@@ -303,7 +303,7 @@ func TestWatchSetupIntegration(t *testing.T) {
 		
 		externalConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "coredns-custom",
+				Name:      "coredns-ingress-sync-rewrite-rules",
 				Namespace: "kube-system",
 				Labels: map[string]string{
 					"managed-by": "terraform",
@@ -351,7 +351,7 @@ func TestWatchSetupIntegration(t *testing.T) {
 				shouldTrigger := true
 				
 				// Check namespace and name filtering
-				if tc.configMap.GetNamespace() != "kube-system" || tc.configMap.GetName() != "coredns-custom" {
+				if tc.configMap.GetNamespace() != "kube-system" || tc.configMap.GetName() != "coredns-ingress-sync-rewrite-rules" {
 					shouldTrigger = false
 				}
 				

@@ -143,7 +143,7 @@ func (cm *ControllerManager) setupWatches(mgr manager.Manager, c ctrlcontroller.
 		return fmt.Errorf("failed to set up CoreDNS ConfigMap watch: %w", err)
 	}
 
-	// Watch for dynamic ConfigMap changes (e.g., coredns-custom) - with smart filtering
+	// Watch for dynamic ConfigMap changes (e.g., coredns-ingress-sync-rewrite-rules) - with smart filtering
 	if err := watchManager.AddDynamicConfigMapWatch(mgr.GetCache(), c, cm.config.CoreDNSNamespace, cm.config.DynamicConfigMapName, "dynamic-configmap-reconcile"); err != nil {
 		return fmt.Errorf("failed to set up dynamic ConfigMap watch: %w", err)
 	}

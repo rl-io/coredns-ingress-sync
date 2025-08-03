@@ -18,7 +18,7 @@ with support for **namespace filtering** and **modular CI/CD automation**.
                               ▼
                     ┌─────────────────┐
                     │ Dynamic ConfigMap│
-                    │ (coredns-custom) │
+                    │ (coredns-ingress-sync-rewrite-rules) │
                     └─────────────────┘
 ```
 
@@ -171,13 +171,13 @@ For environments where automatic configuration is not desired:
 
 ### 5. Dynamic ConfigMap Management
 
-The controller manages a dedicated ConfigMap (`coredns-custom`) containing the dynamic configuration:
+The controller manages a dedicated ConfigMap (`coredns-ingress-sync-rewrite-rules`) containing the dynamic configuration:
 
 ```yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: coredns-custom
+  name: coredns-ingress-sync-rewrite-rules
   namespace: kube-system
   labels:
     app.kubernetes.io/managed-by: coredns-ingress-sync

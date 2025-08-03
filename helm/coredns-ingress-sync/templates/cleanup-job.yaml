@@ -1,5 +1,5 @@
-{{- if .Values.coreDNS.autoConfigure -}}
 # Cleanup job to remove import statement and volume mount from CoreDNS
+# Always runs on uninstall regardless of autoConfigure setting to handle upgrades/downgrades
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -33,6 +33,10 @@ spec:
         # Only the minimal environment variables needed for cleanup
         - name: COREDNS_NAMESPACE
           value: {{ .Values.coreDNS.namespace | quote }}
+        - name: COREDNS_CONFIGMAP_NAME
+          value: {{ .Values.coreDNS.configMapName | quote }}
+        - name: COREDNS_VOLUME_NAME
+          value: {{ .Values.controller.volumeName | quote }}
         - name: DYNAMIC_CONFIGMAP_NAME
           value: {{ .Values.controller.dynamicConfigMap.name | quote }}
         resources:
@@ -48,4 +52,3 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
-{{- end }}
