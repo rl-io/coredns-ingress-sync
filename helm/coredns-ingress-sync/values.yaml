@@ -46,6 +46,11 @@ metrics:
   enabled: true
   port: 8080
   path: /metrics
+  # Service configuration
+  service:
+    annotations: {}
+    labels: {}
+  # ServiceMonitor configuration (for Prometheus Operator)
   serviceMonitor:
     enabled: false
     interval: 30s

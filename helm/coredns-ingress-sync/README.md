@@ -131,6 +131,21 @@ helm install my-dns-controller rl-io/coredns-ingress-sync \
 | `serviceAccount.name` | Service account name | `""` (auto-generated) |
 | `serviceAccount.annotations` | Service account annotations | `{}` |
 
+### Metrics Configuration
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `metrics.enabled` | Enable Prometheus metrics endpoint | `true` |
+| `metrics.port` | Metrics service port | `8080` |
+| `metrics.path` | Metrics endpoint path | `/metrics` |
+| `metrics.service.annotations` | Custom annotations for metrics service | `{}` |
+| `metrics.service.labels` | Custom labels for metrics service | `{}` |
+| `metrics.serviceMonitor.enabled` | Create ServiceMonitor for Prometheus Operator | `false` |
+| `metrics.serviceMonitor.interval` | Scrape interval | `30s` |
+| `metrics.serviceMonitor.scrapeTimeout` | Scrape timeout | `10s` |
+| `metrics.serviceMonitor.labels` | ServiceMonitor labels | `{}` |
+| `metrics.serviceMonitor.annotations` | ServiceMonitor annotations | `{}` |
+
 ## Examples
 
 ### Multiple Ingress Classes
@@ -163,6 +178,26 @@ resources:
 
 controller:
   logLevel: "info"
+```
+
+### Metrics Configuration with Custom Annotations
+
+```yaml
+# values-metrics.yaml
+metrics:
+  enabled: true
+  service:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "8080"
+      prometheus.io/path: "/metrics"
+    labels:
+      monitoring: "enabled"
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    labels:
+      release: prometheus
 ```
 
 ### Development Configuration
