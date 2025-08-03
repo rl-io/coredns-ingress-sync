@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.12](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.11...coredns-ingress-sync-v0.1.12) (2025-08-03)
+
+
+### Bug Fixes
+
+* **cleanup:** update cleanup tasks to correctly target custom volume ([#49](https://github.com/rl-io/coredns-ingress-sync/issues/49)) ([c7f5370](https://github.com/rl-io/coredns-ingress-sync/commit/c7f537066b1c050a7a876ab44c11071a68f3d796))
+
 ## [0.1.11](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.10...coredns-ingress-sync-v0.1.11) (2025-08-01)
 
 
