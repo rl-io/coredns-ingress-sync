@@ -314,11 +314,98 @@ A: The controller currently only handles HTTP/HTTPS ingresses. For TCP/UDP servi
 
 ### Q: Are there metrics available?
 
-A: The controller currently logs reconciliation events. Adding Prometheus metrics is a potential future enhancement. You can monitor:
+A: **Yes!** The controller provides comprehensive Prometheus metrics for monitoring and alerting:
 
-- Controller pod health and logs
-- CoreDNS configuration changes
-- DNS resolution success rates
+**Reconciliation Metrics:**
+- `coredns_ingress_sync_reconciliation_total` - Total reconciliations (success/error)
+- `coredns_ingress_sync_reconciliation_duration_seconds` - Reconciliation latency
+- `coredns_ingress_sync_reconciliation_errors_total` - Reconciliation errors by type
+
+**DNS Management Metrics:**
+- `coredns_ingress_sync_dns_records_managed_total` - Current DNS records count
+- `coredns_ingress_sync_coredns_config_updates_total` - CoreDNS config updates
+- `coredns_ingress_sync_coredns_config_update_duration_seconds` - Config update latency
+
+**Ingress Monitoring Metrics:**
+- `coredns_ingress_sync_ingresses_watched_total` - Watched ingresses per namespace
+- `coredns_ingress_sync_ingresses_processed_total` - Processed ingresses by action
+
+**System Metrics:**
+- `coredns_ingress_sync_leader_election_status` - Leader election status (1=leader, 0=follower)
+- `coredns_ingress_sync_coredns_config_drift_total` - Configuration drift detection/correction
+
+**Metrics Configuration:**
+```yaml
+# Enable metrics (default: true)
+metrics:
+  enabled: true
+  port: 8080
+  path: /metrics
+  
+  # Prometheus ServiceMonitor
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+```
+
+**Accessing Metrics:**
+```bash
+# Port-forward to access metrics
+kubectl port-forward deployment/coredns-ingress-sync 8080:8080 -n coredns-ingress-sync
+
+# View metrics
+curl http://localhost:8080/metrics
+```
+
+### Q: How do I monitor controller health?
+
+A: The controller provides multiple health monitoring approaches:
+
+**Health Endpoints:**
+- `/healthz` (port 8081) - Liveness probe
+- `/readyz` (port 8081) - Readiness probe  
+- `/metrics` (port 8080) - Prometheus metrics
+
+**Key Metrics to Monitor:**
+- `coredns_ingress_sync_reconciliation_errors_total` - Alert on increases
+- `coredns_ingress_sync_reconciliation_duration_seconds` - Monitor latency
+- `coredns_ingress_sync_leader_election_status` - Leader election health
+- `coredns_ingress_sync_coredns_config_drift_total` - Configuration drift incidents
+
+**Example Prometheus Alerts:**
+```yaml
+groups:
+- name: coredns-ingress-sync
+  rules:
+  - alert: CorednsIngressSyncReconciliationErrors
+    expr: increase(coredns_ingress_sync_reconciliation_errors_total[5m]) > 0
+    for: 2m
+    annotations:
+      summary: "CoreDNS ingress sync reconciliation errors detected"
+      
+  - alert: CorednsIngressSyncHighLatency
+    expr: histogram_quantile(0.95, coredns_ingress_sync_reconciliation_duration_seconds) > 5
+    for: 5m
+    annotations:
+      summary: "CoreDNS ingress sync high reconciliation latency"
+```
+
+### Q: What logs are available?
+
+A: The controller provides structured logging at multiple levels:
+
+- `error` - Critical errors requiring attention
+- `info` - Important operational events (default)
+- `debug` - Detailed debugging information  
+
+Configure log level via:
+```yaml
+controller:
+  logLevel: "info"  # debug, info, warn, error
+```
+
+Monitor CoreDNS metrics (enabled by default)
 
 ### Q: How do I monitor DNS resolution performance?
 

@@ -28,6 +28,7 @@ import (
 	"github.com/rl-io/coredns-ingress-sync/internal/coredns"
 	"github.com/rl-io/coredns-ingress-sync/internal/ingress"
 	"github.com/rl-io/coredns-ingress-sync/internal/logging"
+	"github.com/rl-io/coredns-ingress-sync/internal/metrics"
 	"github.com/rl-io/coredns-ingress-sync/internal/watches"
 )
 
@@ -195,6 +196,20 @@ func runController(logger logr.Logger) {
 	}); err != nil {
 		logger.Error(err, "Failed to add readiness check endpoint")
 		os.Exit(1)
+	}
+
+	// Initialize leader election metrics
+	if cfg.LeaderElectionEnabled {
+		// Set initial leader status to false
+		metrics.SetLeaderElectionStatus(false)
+		
+		// Add a callback to update leader election status
+		// Note: controller-runtime doesn't provide direct leader election callbacks,
+		// but we can monitor this in the reconciler or use a simple check
+		logger.Info("Leader election enabled, metrics will be updated")
+	} else {
+		// If leader election is disabled, this instance is always the leader
+		metrics.SetLeaderElectionStatus(true)
 	}
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/rl-io/coredns-ingress-sync/internal/coredns"
 	"github.com/rl-io/coredns-ingress-sync/internal/ingress"
+	"github.com/rl-io/coredns-ingress-sync/internal/metrics"
 )
 
 // IngressReconciler reconciles Ingress objects and updates CoreDNS configuration
@@ -36,6 +37,7 @@ func NewIngressReconciler(client client.Client, scheme *runtime.Scheme, ingressF
 
 // Reconcile handles reconciliation requests for ingress changes
 func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	startTime := time.Now()
 	logger := ctrl.LoggerFrom(ctx)
 	
 	podName := os.Getenv("HOSTNAME")
@@ -55,6 +57,8 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 		// List all ingresses
 		if err := r.List(ctx, &ingressList); err != nil {
 			logger.Error(err, "Failed to list ingresses")
+			duration := time.Since(startTime).Seconds()
+			metrics.RecordReconciliationError(duration, "ingress_list")
 			return reconcile.Result{RequeueAfter: time.Minute}, err
 		}
 	} else {
@@ -80,17 +84,39 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 		"hosts", len(hosts),
 		"domainList", domains)
 
+	// Update metrics for ingresses and DNS records
+	metrics.UpdateDNSRecordsCount(len(hosts))
+	
+	// Count ingresses per namespace
+	namespaceCount := make(map[string]int)
+	for _, ingress := range ingressList.Items {
+		if r.IngressFilter.IsTargetIngress(&ingress) {
+			namespaceCount[ingress.Namespace]++
+		}
+	}
+	for namespace, count := range namespaceCount {
+		metrics.UpdateIngressesWatched(namespace, count)
+	}
+
 	// Update dynamic ConfigMap with discovered domains
 	if err := r.CoreDNSManager.UpdateDynamicConfigMap(ctx, domains, hosts); err != nil {
 		logger.Error(err, "Failed to update dynamic ConfigMap")
+		duration := time.Since(startTime).Seconds()
+		metrics.RecordReconciliationError(duration, "dns_update")
 		return reconcile.Result{RequeueAfter: time.Minute}, err
 	}
 
 	// Ensure CoreDNS ConfigMap has import statement and volume mount
 	if err := r.CoreDNSManager.EnsureConfiguration(ctx); err != nil {
 		logger.Error(err, "Failed to ensure CoreDNS configuration")
+		duration := time.Since(startTime).Seconds()
+		metrics.RecordReconciliationError(duration, "config_update")
 		return reconcile.Result{RequeueAfter: time.Minute}, err
 	}
+
+	// Record successful reconciliation
+	duration := time.Since(startTime).Seconds()
+	metrics.RecordReconciliationSuccess(duration)
 
 	logger.Info("Successfully updated CoreDNS configuration", 
 		"pod", podName,

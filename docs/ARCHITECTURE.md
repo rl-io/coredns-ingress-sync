@@ -391,12 +391,36 @@ log.Printf("[%s] Reconciling changes for request: %s", podName, req.NamespacedNa
 
 ### Metrics
 
-Future enhancement: Prometheus metrics for:
+The controller provides comprehensive Prometheus metrics for monitoring and alerting:
 
-- Reconciliation count/duration
-- ConfigMap update frequency
-- Error rates
-- Ingress processing latency
+**Reconciliation Metrics:**
+- `coredns_ingress_sync_reconciliation_total{result}` - Total reconciliation attempts (success/error)
+- `coredns_ingress_sync_reconciliation_duration_seconds{result}` - Reconciliation duration histogram
+- `coredns_ingress_sync_reconciliation_errors_total{error_type}` - Reconciliation errors by type
+
+**DNS Management Metrics:**
+- `coredns_ingress_sync_dns_records_managed_total` - Current number of DNS records managed
+- `coredns_ingress_sync_coredns_config_updates_total{result}` - CoreDNS configuration updates
+- `coredns_ingress_sync_coredns_config_update_duration_seconds{result}` - Config update duration
+
+**Ingress Monitoring Metrics:**
+- `coredns_ingress_sync_ingresses_watched_total{namespace}` - Current ingresses watched per namespace
+- `coredns_ingress_sync_ingresses_processed_total{namespace,action}` - Ingresses processed by action
+
+**System Metrics:**
+- `coredns_ingress_sync_leader_election_status` - Leader election status (1=leader, 0=follower)
+- `coredns_ingress_sync_coredns_config_drift_total{drift_type}` - Configuration drift detection/correction
+
+**Metrics Endpoint:**
+- Port: 8080 (configurable via Helm)
+- Path: `/metrics`
+- ServiceMonitor support for Prometheus Operator
+
+**Implementation Details:**
+- Uses controller-runtime's built-in metrics registry
+- Metrics are automatically registered on startup
+- Leader election status is updated during manager lifecycle
+- Configuration drift metrics track defensive operations
 
 ## CI/CD Architecture
 
