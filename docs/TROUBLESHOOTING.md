@@ -15,7 +15,7 @@ kubectl get deployment coredns-ingress-sync -n coredns-ingress-sync
 kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync --tail=50
 
 # 3. Check dynamic ConfigMap
-kubectl get configmap coredns-custom -n kube-system -o yaml
+kubectl get configmap coredns-ingress-sync-rewrite-rules -n kube-system -o yaml
 
 # 4. Check CoreDNS status
 kubectl get pods -n kube-system -l k8s-app=kube-dns
@@ -99,7 +99,7 @@ kubectl run test-pod --rm -i --tty --image=busybox -- nslookup your-hostname.exa
 kubectl get configmap coredns -n kube-system -o yaml | grep -A 10 "import"
 
 # Check dynamic ConfigMap content
-kubectl get configmap coredns-custom -n kube-system -o jsonpath='{.data.dynamic\.server}'
+kubectl get configmap coredns-ingress-sync-rewrite-rules -n kube-system -o jsonpath='{.data.dynamic\.server}'
 
 # Check CoreDNS logs for errors
 kubectl logs -n kube-system deployment/coredns | grep -i error
@@ -136,7 +136,7 @@ kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync | grep -i "
 
 ```bash
 # Check ConfigMap content
-kubectl get configmap coredns-custom -n kube-system -o yaml
+kubectl get configmap coredns-ingress-sync-rewrite-rules -n kube-system -o yaml
 
 # If empty or missing, check if ingresses are being processed:
 kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync | grep "Successfully updated"
@@ -240,7 +240,7 @@ kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync | grep -i "
 kubectl auth can-i update configmaps --as=system:serviceaccount:coredns-ingress-sync:coredns-ingress-sync -n kube-system
 
 # Check ConfigMap resource version conflicts
-kubectl get configmap coredns-custom -n kube-system -o yaml | grep resourceVersion
+kubectl get configmap coredns-ingress-sync-rewrite-rules -n kube-system -o yaml | grep resourceVersion
 ```
 
 #### ConfigMap Update Solutions
@@ -379,7 +379,7 @@ helm uninstall coredns-ingress-sync -n coredns-ingress-sync
 
 # 2. Clean up remaining resources
 kubectl delete namespace coredns-ingress-sync
-kubectl delete configmap coredns-custom -n kube-system
+kubectl delete configmap coredns-ingress-sync-rewrite-rules -n kube-system
 
 # 3. Reset CoreDNS configuration (if needed)
 kubectl patch configmap coredns -n kube-system --type merge -p '{"data":{"Corefile":".:53 {\n    errors\n    health {\n       lameduck 5s\n    }\n    ready\n    kubernetes cluster.local in-addr.arpa ip6.arpa {\n       pods insecure\n       fallthrough in-addr.arpa ip6.arpa\n       ttl 30\n    }\n    prometheus :9153\n    forward . /etc/resolv.conf {\n       max_concurrent 1000\n    }\n    cache 30\n    loop\n    reload\n    loadbalance\n}"}}'
@@ -403,11 +403,11 @@ Before making changes, backup important configurations:
 kubectl get configmap coredns -n kube-system -o yaml > coredns-backup.yaml
 
 # Backup dynamic configuration
-kubectl get configmap coredns-custom -n kube-system -o yaml > coredns-custom-backup.yaml
+kubectl get configmap coredns-ingress-sync-rewrite-rules -n kube-system -o yaml > coredns-ingress-sync-rewrite-rules-backup.yaml
 
 # Restore if needed
 kubectl apply -f coredns-backup.yaml
-kubectl apply -f coredns-custom-backup.yaml
+kubectl apply -f coredns-ingress-sync-rewrite-rules-backup.yaml
 ```
 
 ## Getting Help
@@ -428,7 +428,7 @@ kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync --tail=100
 # CoreDNS information
 kubectl get deployment coredns -n kube-system -o yaml
 kubectl get configmap coredns -n kube-system -o yaml
-kubectl get configmap coredns-custom -n kube-system -o yaml
+kubectl get configmap coredns-ingress-sync-rewrite-rules -n kube-system -o yaml
 
 # Ingress information
 kubectl get ingress -A -o yaml

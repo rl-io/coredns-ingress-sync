@@ -57,7 +57,7 @@ services:
       - INGRESS_CLASS=nginx
       - TARGET_CNAME=ingress-nginx-controller.ingress-nginx.svc.cluster.local.
       - COREDNS_NAMESPACE=kube-system
-      - DYNAMIC_CONFIGMAP_NAME=coredns-custom
+      - DYNAMIC_CONFIGMAP_NAME=coredns-ingress-sync-rewrite-rules
       - DYNAMIC_CONFIG_KEY=dynamic.server
     restart: unless-stopped
     

@@ -126,8 +126,8 @@ test_cluster_wide_rbac() {
     create_test_ingress "cluster-test-2" "rbac-test-1" "cluster-test-2.$TEST_DOMAIN"
     create_test_ingress "cluster-test-3" "rbac-test-2" "cluster-test-3.$TEST_DOMAIN"
     
-    # Wait for controller to process
-    wait_for_controller_sync
+    # Wait longer for controller to process - it needs time to start up and reconcile existing ingresses first
+    wait_for_controller_sync 15
     sleep 5
     
     # Check if all hostnames appear in ConfigMap

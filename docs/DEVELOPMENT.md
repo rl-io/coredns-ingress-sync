@@ -287,7 +287,7 @@ spec:
 EOF
 
 # Check if DNS configuration was generated
-kubectl get configmap coredns-custom -n kube-system -o yaml
+kubectl get configmap coredns-ingress-sync-rewrite-rules -n kube-system -o yaml
 
 # Test DNS resolution
 kubectl run test-pod --rm -i --tty --image=busybox -- nslookup test.k8s.example.com
@@ -573,5 +573,5 @@ kubectl get all,configmaps,secrets -n coredns-ingress-sync
 # Reset test environment
 helm uninstall coredns-ingress-sync -n coredns-ingress-sync && \
 kubectl delete namespace coredns-ingress-sync && \
-kubectl delete configmap coredns-custom -n kube-system
+kubectl delete configmap coredns-ingress-sync-rewrite-rules -n kube-system
 ```

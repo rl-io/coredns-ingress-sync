@@ -71,20 +71,20 @@ EOF
     
     # Verify ConfigMap was created and contains our hostname
     log_info "Verifying ConfigMap was created..."
-    if ! kubectl get configmap coredns-custom -n kube-system &>/dev/null; then
-        log_error "ConfigMap coredns-custom was not created"
+    if ! kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
+        log_error "ConfigMap $CONFIGMAP_NAME was not created"
         return 1
     fi
     
     local config_content
-    config_content=$(kubectl get configmap coredns-custom -n kube-system -o jsonpath='{.data.dynamic\.server}' 2>/dev/null || echo "")
+    config_content=$(kubectl get configmap $CONFIGMAP_NAME -n kube-system -o jsonpath='{.data.dynamic\.server}' 2>/dev/null || echo "")
     if [[ "$config_content" != *"cleanup-test.$TEST_DOMAIN"* ]]; then
         log_error "ConfigMap does not contain expected hostname cleanup-test.$TEST_DOMAIN"
         echo "ConfigMap content: $config_content"
         echo "Looking for: cleanup-test.$TEST_DOMAIN"
         # Wait a bit more and try again
         sleep 10
-        config_content=$(kubectl get configmap coredns-custom -n kube-system -o jsonpath='{.data.dynamic\.server}' 2>/dev/null || echo "")
+        config_content=$(kubectl get configmap $CONFIGMAP_NAME -n kube-system -o jsonpath='{.data.dynamic\.server}' 2>/dev/null || echo "")
         if [[ "$config_content" != *"cleanup-test.$TEST_DOMAIN"* ]]; then
             log_error "ConfigMap still does not contain expected hostname after retry"
             return 1
@@ -121,8 +121,8 @@ EOF
     
     # Verify ConfigMap was deleted
     log_info "Verifying ConfigMap was deleted..."
-    if kubectl get configmap coredns-custom -n kube-system &>/dev/null; then
-        log_error "ConfigMap coredns-custom was not deleted during cleanup"
+    if kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
+        log_error "ConfigMap $CONFIGMAP_NAME was not deleted during cleanup"
         return 1
     fi
     
@@ -212,7 +212,7 @@ EOF
         --serviceaccount=$TEST_RELEASE_NAME-coredns-ingress-sync \
         --env="CLEANUP_MODE=true" \
         --env="COREDNS_NAMESPACE=kube-system" \
-        --env="DYNAMIC_CONFIGMAP_NAME=coredns-custom" \
+        --env="DYNAMIC_CONFIGMAP_NAME=$CONFIGMAP_NAME" \
         --command -- /app/coredns-ingress-sync
     
     # Wait for cleanup pod to complete
@@ -265,7 +265,7 @@ test_cleanup_failure_scenarios() {
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: coredns-custom
+  name: $CONFIGMAP_NAME
   namespace: kube-system
 data:
   dynamic.server: |
@@ -276,8 +276,8 @@ EOF
     helm uninstall $TEST_RELEASE_NAME --namespace $TEST_NAMESPACE --wait --timeout=120s
     
     # Verify ConfigMap was deleted
-    if kubectl get configmap coredns-custom -n kube-system &>/dev/null; then
-        log_error "ConfigMap coredns-custom was not deleted during cleanup (autoConfigure=false case)"
+    if kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
+        log_error "ConfigMap $CONFIGMAP_NAME was not deleted during cleanup (autoConfigure=false case)"
         return 1
     fi
     
@@ -338,7 +338,7 @@ cleanup() {
     helm uninstall $TEST_RELEASE_NAME --namespace $TEST_NAMESPACE 2>/dev/null || true
     kubectl delete ingress cleanup-test-ingress rbac-test-ingress -n default 2>/dev/null || true
     kubectl delete namespace $TEST_NAMESPACE 2>/dev/null || true
-    kubectl delete configmap coredns-custom -n kube-system 2>/dev/null || true
+    kubectl delete configmap $CONFIGMAP_NAME -n kube-system 2>/dev/null || true
 }
 
 trap cleanup EXIT

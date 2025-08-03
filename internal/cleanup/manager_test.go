@@ -70,7 +70,7 @@ func TestRun(t *testing.T) {
 	cfg := &config.Config{
 		CoreDNSNamespace:     "kube-system",
 		CoreDNSConfigMapName: "coredns",
-		DynamicConfigMapName: "coredns-custom",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		ImportStatement:      "import /etc/coredns/custom/*.server",
 	}
 	
@@ -140,7 +140,7 @@ func TestDeleteDynamicConfigMap(t *testing.T) {
 	
 	cfg := &config.Config{
 		CoreDNSNamespace:     "kube-system", 
-		DynamicConfigMapName: "coredns-custom",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 	}
 	
 	t.Run("delete_existing_configmap", func(t *testing.T) {
@@ -405,7 +405,7 @@ func TestRemoveCoreDNSVolumeMount(t *testing.T) {
 								VolumeSource: corev1.VolumeSource{
 									ConfigMap: &corev1.ConfigMapVolumeSource{
 										LocalObjectReference: corev1.LocalObjectReference{
-											Name: "coredns-custom",
+											Name: "coredns-ingress-sync-rewrite-rules",
 										},
 									},
 								},

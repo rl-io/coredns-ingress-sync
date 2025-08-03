@@ -11,7 +11,8 @@ NC='\033[0m'
 # Configuration variables
 NAMESPACE=${NAMESPACE:-coredns-ingress-sync}
 CONTROLLER_NAME=${CONTROLLER_NAME:-coredns-ingress-sync}
-CONFIGMAP_NAME=${CONFIGMAP_NAME:-coredns-custom}
+CONFIGMAP_NAME=${CONFIGMAP_NAME:-coredns-ingress-sync-rewrite-rules}
+VOLUME_NAME=${VOLUME_NAME:-coredns-ingress-sync-volume}
 COREDNS_NAMESPACE=${COREDNS_NAMESPACE:-kube-system}
 CONTROLLER_DEPLOYED_BY_TEST=${CONTROLLER_DEPLOYED_BY_TEST:-false}
 
@@ -137,7 +138,7 @@ case "$1 $2" in
         echo "test-ingress   nginx   example.com"
         ;;
     "get configmap")
-        echo "coredns-custom   1      1m"
+        echo "coredns-ingress-sync-rewrite-rules   1      1m"
         ;;
     "apply -f")
         echo "ingress.networking.k8s.io/test-ingress created"

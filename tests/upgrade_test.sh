@@ -3,8 +3,6 @@
 # Upgrade test suite for coredns-ingress-sync controller
 # Tests various upgrade scenarios including autoConfigure changes
 
-set -e
-
 # Get test directory and source helpers
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$TEST_DIR/.." && pwd)"
@@ -72,8 +70,8 @@ EOF
     
     # Verify that with autoConfigure=false, no CoreDNS changes were made
     log_info "Verifying autoConfigure=false behavior..."
-    if kubectl get configmap coredns-custom -n kube-system &>/dev/null; then
-        log_error "ConfigMap coredns-custom should not exist when autoConfigure=false"
+    if kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
+        log_error "ConfigMap $CONFIGMAP_NAME should not exist when autoConfigure=false"
         return 1
     fi
     
@@ -102,7 +100,7 @@ EOF
     # Check that ConfigMap was created
     local retry_count=0
     while [ $retry_count -lt 12 ]; do
-        if kubectl get configmap coredns-custom -n kube-system &>/dev/null; then
+        if kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
             break
         fi
         log_info "Waiting for ConfigMap to be created... (attempt $((retry_count + 1))/12)"
@@ -110,14 +108,14 @@ EOF
         retry_count=$((retry_count + 1))
     done
     
-    if ! kubectl get configmap coredns-custom -n kube-system &>/dev/null; then
-        log_error "ConfigMap coredns-custom was not created after upgrade to autoConfigure=true"
+    if ! kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
+        log_error "ConfigMap $CONFIGMAP_NAME was not created after upgrade to autoConfigure=true"
         return 1
     fi
     
     # Check that ConfigMap contains our hostname
     local config_content
-    config_content=$(kubectl get configmap coredns-custom -n kube-system -o jsonpath='{.data.dynamic\.server}' 2>/dev/null || echo "")
+    config_content=$(kubectl get configmap $CONFIGMAP_NAME -n kube-system -o jsonpath='{.data.dynamic\.server}' 2>/dev/null || echo "")
     if [[ "$config_content" != *"upgrade-test.$TEST_DOMAIN"* ]]; then
         log_error "ConfigMap does not contain expected hostname after upgrade"
         echo "ConfigMap content: $config_content"
@@ -135,8 +133,8 @@ EOF
     # Verify that volume mount was added to CoreDNS deployment
     local coredns_deployment
     coredns_deployment=$(kubectl get deployment coredns -n kube-system -o json 2>/dev/null || echo "{}")
-    if ! echo "$coredns_deployment" | jq -e '.spec.template.spec.volumes[]? | select(.name == "custom-config-volume")' &>/dev/null; then
-        log_error "CoreDNS deployment does not have custom-config-volume after upgrade"
+    if ! echo "$coredns_deployment" | jq -e '.spec.template.spec.volumes[]? | select(.name == "'$VOLUME_NAME'")' &>/dev/null; then
+        log_error "CoreDNS deployment does not have $VOLUME_NAME after upgrade"
         return 1
     fi
     
@@ -145,8 +143,8 @@ EOF
     helm uninstall $TEST_RELEASE_NAME --namespace $TEST_NAMESPACE --wait --timeout=120s
     
     # Verify cleanup worked (ConfigMap deleted, import statement removed)
-    if kubectl get configmap coredns-custom -n kube-system &>/dev/null; then
-        log_error "ConfigMap coredns-custom was not deleted during cleanup after upgrade"
+    if kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
+        log_error "ConfigMap $CONFIGMAP_NAME was not deleted during cleanup"
         return 1
     fi
     
@@ -211,8 +209,8 @@ EOF
     
     # Verify autoConfigure=true setup
     log_info "Verifying autoConfigure=true setup..."
-    if ! kubectl get configmap coredns-custom -n kube-system &>/dev/null; then
-        log_error "ConfigMap coredns-custom should exist when autoConfigure=true"
+    if ! kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
+        log_error "ConfigMap $CONFIGMAP_NAME should exist when autoConfigure=true"
         return 1
     fi
     
@@ -244,8 +242,8 @@ EOF
     helm uninstall $TEST_RELEASE_NAME --namespace $TEST_NAMESPACE --wait --timeout=120s
     
     # Verify cleanup still works even when autoConfigure=false
-    if kubectl get configmap coredns-custom -n kube-system &>/dev/null; then
-        log_error "ConfigMap coredns-custom was not deleted during cleanup (autoConfigure=false)"
+    if kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
+        log_error "ConfigMap $CONFIGMAP_NAME was not deleted during cleanup (autoConfigure=false)"
         return 1
     fi
     
@@ -296,7 +294,7 @@ test_multiple_upgrade_cycles() {
             # Should eventually have ConfigMap and import statement
             local retry_count=0
             while [ $retry_count -lt 6 ]; do
-                if kubectl get configmap coredns-custom -n kube-system &>/dev/null; then
+                if kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
                     break
                 fi
                 sleep 5
@@ -417,7 +415,7 @@ cleanup() {
     helm uninstall $TEST_RELEASE_NAME --namespace $TEST_NAMESPACE 2>/dev/null || true
     kubectl delete ingress upgrade-test-ingress upgrade-test-2-ingress -n default 2>/dev/null || true
     kubectl delete namespace $TEST_NAMESPACE 2>/dev/null || true
-    kubectl delete configmap coredns-custom -n kube-system 2>/dev/null || true
+    kubectl delete configmap $CONFIGMAP_NAME -n kube-system 2>/dev/null || true
 }
 
 trap cleanup EXIT

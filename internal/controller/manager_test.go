@@ -35,7 +35,7 @@ func TestNewControllerManager(t *testing.T) {
 		WatchNamespaces:         "",
 		CoreDNSNamespace:        "kube-system",
 		CoreDNSConfigMapName:    "coredns",
-		DynamicConfigMapName:    "coredns-custom",
+		DynamicConfigMapName:    "coredns-ingress-sync-rewrite-rules",
 		TargetCNAME:             "ingress-nginx.svc.cluster.local.",
 		LeaderElectionEnabled:   false,
 		ControllerNamespace:     "default",
@@ -65,7 +65,7 @@ func TestControllerManager_Setup(t *testing.T) {
 			WatchNamespaces:         "",
 			CoreDNSNamespace:        "kube-system",
 			CoreDNSConfigMapName:    "coredns",
-			DynamicConfigMapName:    "coredns-custom",
+			DynamicConfigMapName:    "coredns-ingress-sync-rewrite-rules",
 			TargetCNAME:             "ingress-nginx.svc.cluster.local.",
 			LeaderElectionEnabled:   false,
 			ControllerNamespace:     "default",
@@ -91,7 +91,7 @@ func TestControllerManager_Setup(t *testing.T) {
 			WatchNamespaces:         "production,staging",
 			CoreDNSNamespace:        "kube-system",
 			CoreDNSConfigMapName:    "coredns",
-			DynamicConfigMapName:    "coredns-custom",
+			DynamicConfigMapName:    "coredns-ingress-sync-rewrite-rules",
 			TargetCNAME:             "ingress-nginx.svc.cluster.local.",
 			LeaderElectionEnabled:   true,
 			ControllerNamespace:     "controller-system",
@@ -117,7 +117,7 @@ func TestControllerManager_setupHealthChecks(t *testing.T) {
 		WatchNamespaces:         "",
 		CoreDNSNamespace:        "kube-system",
 		CoreDNSConfigMapName:    "coredns",
-		DynamicConfigMapName:    "coredns-custom",
+		DynamicConfigMapName:    "coredns-ingress-sync-rewrite-rules",
 		TargetCNAME:             "ingress-nginx.svc.cluster.local.",
 		LeaderElectionEnabled:   false,
 		ControllerNamespace:     "default",
@@ -182,7 +182,7 @@ func TestControllerManager_logStartupInfo(t *testing.T) {
 		WatchNamespaces:         "production,staging",
 		CoreDNSNamespace:        "kube-system",
 		CoreDNSConfigMapName:    "coredns",
-		DynamicConfigMapName:    "coredns-custom",
+		DynamicConfigMapName:    "coredns-ingress-sync-rewrite-rules",
 		TargetCNAME:             "ingress-nginx.svc.cluster.local.",
 		LeaderElectionEnabled:   true,
 		ControllerNamespace:     "default",
@@ -216,7 +216,7 @@ func TestControllerManager_SetupWatches_Components(t *testing.T) {
 		WatchNamespaces:         "",
 		CoreDNSNamespace:        "kube-system",
 		CoreDNSConfigMapName:    "coredns",
-		DynamicConfigMapName:    "coredns-custom",
+		DynamicConfigMapName:    "coredns-ingress-sync-rewrite-rules",
 		TargetCNAME:             "ingress-nginx.svc.cluster.local.",
 		LeaderElectionEnabled:   false,
 		ControllerNamespace:     "default",
@@ -234,8 +234,8 @@ func TestControllerManager_SetupWatches_Components(t *testing.T) {
 		t.Errorf("Expected CoreDNS ConfigMap name 'coredns', got %s", cm.config.CoreDNSConfigMapName)
 	}
 
-	if cm.config.DynamicConfigMapName != "coredns-custom" {
-		t.Errorf("Expected dynamic ConfigMap name 'coredns-custom', got %s", cm.config.DynamicConfigMapName)
+	if cm.config.DynamicConfigMapName != "coredns-ingress-sync-rewrite-rules" {
+		t.Errorf("Expected dynamic ConfigMap name 'coredns-ingress-sync-rewrite-rules', got %s", cm.config.DynamicConfigMapName)
 	}
 }
 
@@ -252,7 +252,7 @@ func TestControllerManager_Configuration_Validation(t *testing.T) {
 				WatchNamespaces:         "",
 				CoreDNSNamespace:        "kube-system",
 				CoreDNSConfigMapName:    "coredns",
-				DynamicConfigMapName:    "coredns-custom",
+				DynamicConfigMapName:    "coredns-ingress-sync-rewrite-rules",
 				TargetCNAME:             "ingress-nginx.svc.cluster.local.",
 				LeaderElectionEnabled:   false,
 				ControllerNamespace:     "default",

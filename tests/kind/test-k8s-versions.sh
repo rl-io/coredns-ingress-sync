@@ -7,6 +7,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+# Configuration
+CONFIGMAP_NAME=${CONFIGMAP_NAME:-coredns-ingress-sync-rewrite-rules}
+VOLUME_NAME=${VOLUME_NAME:-coredns-ingress-sync-volume}
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -205,9 +209,9 @@ ensure_coredns_configuration_for_test() {
             "op": "add",
             "path": "/spec/template/spec/volumes/-",
             "value": {
-                "name": "coredns-custom",
+                "name": "$VOLUME_NAME",
                 "configMap": {
-                    "name": "coredns-custom"
+                    "name": "$CONFIGMAP_NAME"
                 }
             }
         }
@@ -219,7 +223,7 @@ ensure_coredns_configuration_for_test() {
             "op": "add",
             "path": "/spec/template/spec/containers/0/volumeMounts/-",
             "value": {
-                "name": "coredns-custom",
+                "name": "$VOLUME_NAME",
                 "mountPath": "/etc/coredns/custom",
                 "readOnly": true
             }
@@ -327,7 +331,7 @@ run_integration_tests() {
     sleep 30
     
     # Check if dynamic ConfigMap was created
-    if kubectl get configmap coredns-custom -n kube-system &>/dev/null; then
+    if kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
         log_success "Dynamic ConfigMap created successfully"
     else
         log_error "Dynamic ConfigMap not found"
@@ -349,7 +353,7 @@ run_integration_tests() {
     
     # Check if rewrite rule was created
     local dynamic_config
-    dynamic_config=$(kubectl get configmap coredns-custom -n kube-system -o jsonpath='{.data.dynamic\.server}')
+    dynamic_config=$(kubectl get configmap $CONFIGMAP_NAME -n kube-system -o jsonpath='{.data.dynamic\.server}')
     
     if echo "${dynamic_config}" | grep -q "rewrite name exact test.example.com"; then
         log_success "Rewrite rule created successfully"

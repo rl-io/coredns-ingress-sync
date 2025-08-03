@@ -160,7 +160,7 @@ func runController(logger logr.Logger) {
 		os.Exit(1)
 	}
 
-	// Watch for dynamic ConfigMap changes (e.g., coredns-custom) - with smart filtering
+	// Watch for dynamic ConfigMap changes (e.g., coredns-ingress-sync-rewrite-rules) - with smart filtering
 	if err := watchManager.AddDynamicConfigMapWatch(mgr.GetCache(), c, cfg.CoreDNSNamespace, cfg.DynamicConfigMapName, "dynamic-configmap-reconcile"); err != nil {
 		logger.Error(err, "Failed to set up dynamic ConfigMap watch")
 		os.Exit(1)

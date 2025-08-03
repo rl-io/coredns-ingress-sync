@@ -133,7 +133,7 @@ benchmark_configmap_updates() {
     local duration=60  # 1 minute test
     
     # Monitor ConfigMap changes
-    kubectl get configmap coredns-custom -n $NAMESPACE -w -o jsonpath='{.metadata.resourceVersion}' > /tmp/configmap_changes.log &
+    kubectl get configmap $CONFIGMAP_NAME -n $NAMESPACE -w -o jsonpath='{.metadata.resourceVersion}' > /tmp/configmap_changes.log &
     local watch_pid=$!
     
     # Create and delete ingresses rapidly

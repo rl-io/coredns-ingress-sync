@@ -16,7 +16,7 @@ cleanup() {
     echo "Cleaning up..."
     helm uninstall $TEST_RELEASE_NAME --namespace $TEST_NAMESPACE 2>/dev/null || true
     kubectl delete namespace $TEST_NAMESPACE 2>/dev/null || true
-    kubectl delete configmap coredns-custom -n kube-system 2>/dev/null || true
+    kubectl delete configmap $CONFIGMAP_NAME -n kube-system 2>/dev/null || true
 }
 
 trap cleanup EXIT
@@ -42,7 +42,7 @@ kubectl apply -f - <<EOF
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: coredns-custom
+  name: $CONFIGMAP_NAME
   namespace: kube-system
 data:
   dynamic.server: |
@@ -53,7 +53,7 @@ echo "Testing helm uninstall (which should run cleanup job)..."
 helm uninstall $TEST_RELEASE_NAME --namespace $TEST_NAMESPACE --wait --timeout=60s
 
 # Check if ConfigMap was deleted
-if kubectl get configmap coredns-custom -n kube-system &>/dev/null; then
+if kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
     echo "❌ FAILED: ConfigMap was not deleted - RBAC issue likely"
     exit 1
 else

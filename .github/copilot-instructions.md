@@ -100,7 +100,7 @@ The deployed controller:
 **Dynamic ConfigMap Approach**:
 
 ```yaml
-# Controller creates: coredns-custom ConfigMap with dynamic.server
+# Controller creates: coredns-ingress-sync-rewrite-rules ConfigMap with dynamic.server
 rewrite name exact api.app-staging.example.com ingress-nginx-controller.ingress-nginx.svc.cluster.local.
 rewrite name exact web.app-staging.example.com ingress-nginx-controller.ingress-nginx.svc.cluster.local.
 ```
@@ -135,7 +135,7 @@ controller:
   watchNamespaces: ""  # Empty = watch all namespaces cluster-wide
   # watchNamespaces: "production,staging"  # Comma-separated list for specific namespaces
   dynamicConfigMap:
-    name: coredns-custom
+    name: coredns-ingress-sync-rewrite-rules
     key: dynamic.server
 ```
 

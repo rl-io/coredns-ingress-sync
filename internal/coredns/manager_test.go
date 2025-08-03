@@ -23,7 +23,7 @@ func TestNewManager(t *testing.T) {
 	config := Config{
 		Namespace:            "kube-system",
 		ConfigMapName:        "coredns",
-		DynamicConfigMapName: "coredns-custom",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		ImportStatement:      "import /etc/coredns/custom/*.server",
 		TargetCNAME:          "ingress.example.com.",
@@ -64,7 +64,7 @@ func TestUpdateDynamicConfigMap_Create(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	config := Config{
 		Namespace:            "kube-system",
-		DynamicConfigMapName: "coredns-custom",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		TargetCNAME:          "ingress.example.com.",
 	}
@@ -80,13 +80,13 @@ func TestUpdateDynamicConfigMap_Create(t *testing.T) {
 	// Verify ConfigMap was created
 	configMap := &corev1.ConfigMap{}
 	key := types.NamespacedName{
-		Name:      "coredns-custom",
+		Name:      "coredns-ingress-sync-rewrite-rules",
 		Namespace: "kube-system",
 	}
 	err = fakeClient.Get(ctx, key, configMap)
 	require.NoError(t, err)
 
-	assert.Equal(t, "coredns-custom", configMap.Name)
+	assert.Equal(t, "coredns-ingress-sync-rewrite-rules", configMap.Name)
 	assert.Equal(t, "kube-system", configMap.Namespace)
 	assert.Equal(t, "coredns-ingress-sync", configMap.Labels["app.kubernetes.io/managed-by"])
 	
@@ -101,7 +101,7 @@ func TestUpdateDynamicConfigMap_Update(t *testing.T) {
 	// Create existing ConfigMap
 	existingConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "coredns-custom",
+			Name:      "coredns-ingress-sync-rewrite-rules",
 			Namespace: "kube-system",
 		},
 		Data: map[string]string{
@@ -112,7 +112,7 @@ func TestUpdateDynamicConfigMap_Update(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(existingConfigMap).Build()
 	config := Config{
 		Namespace:            "kube-system",
-		DynamicConfigMapName: "coredns-custom",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		TargetCNAME:          "ingress.example.com.",
 	}
@@ -128,7 +128,7 @@ func TestUpdateDynamicConfigMap_Update(t *testing.T) {
 	// Verify ConfigMap was updated
 	configMap := &corev1.ConfigMap{}
 	key := types.NamespacedName{
-		Name:      "coredns-custom",
+		Name:      "coredns-ingress-sync-rewrite-rules",
 		Namespace: "kube-system",
 	}
 	err = fakeClient.Get(ctx, key, configMap)
@@ -146,7 +146,7 @@ func TestUpdateDynamicConfigMap_NoUpdateNeeded(t *testing.T) {
 
 	config := Config{
 		Namespace:            "kube-system",
-		DynamicConfigMapName: "coredns-custom",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		TargetCNAME:          "ingress.example.com.",
 	}
@@ -160,7 +160,7 @@ func TestUpdateDynamicConfigMap_NoUpdateNeeded(t *testing.T) {
 	// Create existing ConfigMap with the same content
 	existingConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "coredns-custom",
+			Name:      "coredns-ingress-sync-rewrite-rules",
 			Namespace: "kube-system",
 		},
 		Data: map[string]string{
@@ -178,7 +178,7 @@ func TestUpdateDynamicConfigMap_NoUpdateNeeded(t *testing.T) {
 	// ConfigMap should remain unchanged
 	configMap := &corev1.ConfigMap{}
 	key := types.NamespacedName{
-		Name:      "coredns-custom",
+		Name:      "coredns-ingress-sync-rewrite-rules",
 		Namespace: "kube-system",
 	}
 	err = fakeClient.Get(ctx, key, configMap)

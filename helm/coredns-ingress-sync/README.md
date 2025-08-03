@@ -82,7 +82,7 @@ helm install my-dns-controller rl-io/coredns-ingress-sync \
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `controller.dynamicConfigMap.name` | Dynamic ConfigMap name | `coredns-custom` |
+| `controller.dynamicConfigMap.name` | Dynamic ConfigMap name | `coredns-ingress-sync-rewrite-rules` |
 | `controller.dynamicConfigMap.key` | Dynamic ConfigMap key | `dynamic.server` |
 
 ### High Availability Configuration
