@@ -2,16 +2,19 @@ package coredns
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -27,6 +30,7 @@ func TestNewManager(t *testing.T) {
 		DynamicConfigKey:     "dynamic.server",
 		ImportStatement:      "import /etc/coredns/custom/*.server",
 		TargetCNAME:          "ingress.example.com.",
+		VolumeName:           "coredns-ingress-sync-volume",
 	}
 
 	manager := NewManager(fakeClient, config)
@@ -41,7 +45,8 @@ func TestGenerateDynamicConfig(t *testing.T) {
 	
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	config := Config{
-		TargetCNAME: "ingress.example.com.",
+		TargetCNAME:  "ingress.example.com.",
+		VolumeName:   "coredns-ingress-sync-volume",
 	}
 	manager := NewManager(fakeClient, config)
 
@@ -67,6 +72,7 @@ func TestUpdateDynamicConfigMap_Create(t *testing.T) {
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		TargetCNAME:          "ingress.example.com.",
+		VolumeName:           "coredns-ingress-sync-volume",
 	}
 	manager := NewManager(fakeClient, config)
 
@@ -94,6 +100,77 @@ func TestUpdateDynamicConfigMap_Create(t *testing.T) {
 	assert.Contains(t, dynamicConfig, "rewrite name exact app1.example.com ingress.example.com.")
 }
 
+func TestEnsureVolumeMount(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+
+	// Create a CoreDNS deployment without volume mounts
+	coreDNSDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "coredns",
+			Namespace: "kube-system",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Volumes: []corev1.Volume{},
+					Containers: []corev1.Container{
+						{
+							Name:         "coredns",
+							Image:        "coredns/coredns:latest",
+							VolumeMounts: []corev1.VolumeMount{},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(coreDNSDeployment).
+		Build()
+
+	config := Config{
+		Namespace:            "kube-system",
+		ConfigMapName:        "coredns",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
+		DynamicConfigKey:     "dynamic.server",
+		ImportStatement:      "import /etc/coredns/custom/*.server",
+		TargetCNAME:          "ingress.example.com.",
+		VolumeName:           "coredns-ingress-sync-volume",
+	}
+	manager := NewManager(fakeClient, config)
+
+	// Test ensuring volume mount
+	err := manager.ensureVolumeMount(ctx)
+	require.NoError(t, err)
+
+	// Verify the deployment was updated with the volume and volume mount
+	updatedDeployment := &appsv1.Deployment{}
+	err = fakeClient.Get(ctx, client.ObjectKey{
+		Namespace: "kube-system",
+		Name:      "coredns",
+	}, updatedDeployment)
+	require.NoError(t, err)
+
+	// Check that volume was added
+	assert.Len(t, updatedDeployment.Spec.Template.Spec.Volumes, 1)
+	volume := updatedDeployment.Spec.Template.Spec.Volumes[0]
+	assert.Equal(t, "coredns-ingress-sync-volume", volume.Name)
+	assert.Equal(t, "coredns-ingress-sync-rewrite-rules", volume.ConfigMap.Name)
+
+	// Check that volume mount was added
+	assert.Len(t, updatedDeployment.Spec.Template.Spec.Containers, 1)
+	container := updatedDeployment.Spec.Template.Spec.Containers[0]
+	assert.Len(t, container.VolumeMounts, 1)
+	volumeMount := container.VolumeMounts[0]
+	assert.Equal(t, "coredns-ingress-sync-volume", volumeMount.Name)
+	assert.Equal(t, "/etc/coredns/custom", volumeMount.MountPath)
+}
+
 func TestUpdateDynamicConfigMap_Update(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
@@ -115,6 +192,7 @@ func TestUpdateDynamicConfigMap_Update(t *testing.T) {
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		TargetCNAME:          "ingress.example.com.",
+		VolumeName:           "coredns-ingress-sync-volume",
 	}
 	manager := NewManager(fakeClient, config)
 
@@ -149,6 +227,7 @@ func TestUpdateDynamicConfigMap_NoUpdateNeeded(t *testing.T) {
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		TargetCNAME:          "ingress.example.com.",
+		VolumeName:           "coredns-ingress-sync-volume",
 	}
 	manager := NewManager(nil, config) // We'll create a fake client with the correct content
 
@@ -293,4 +372,135 @@ func TestEnsureImport_AlreadyExists(t *testing.T) {
 	// Count occurrences - should be exactly 1
 	count := strings.Count(corefile, "import /etc/coredns/custom/*.server")
 	assert.Equal(t, 1, count, "Import statement should appear exactly once")
+}
+
+func TestEnsureConfiguration(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	
+	tests := []struct {
+		name           string
+		envVarValue    string
+		setupObjects   []runtime.Object
+		expectError    bool
+		expectImport   bool
+		expectVolume   bool
+	}{
+		{
+			name:        "Auto-configure disabled",
+			envVarValue: "false",
+			setupObjects: []runtime.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "coredns",
+						Namespace: "kube-system",
+					},
+					Data: map[string]string{
+						"Corefile": ".:53 {\n    errors\n    health\n}\n",
+					},
+				},
+			},
+			expectError:  false,
+			expectImport: false,
+			expectVolume: false,
+		},
+		{
+			name:        "Auto-configure enabled",
+			envVarValue: "true",
+			setupObjects: []runtime.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "coredns",
+						Namespace: "kube-system",
+					},
+					Data: map[string]string{
+						"Corefile": ".:53 {\n    errors\n    health\n}\n",
+					},
+				},
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "coredns",
+						Namespace: "kube-system",
+					},
+					Spec: appsv1.DeploymentSpec{
+						Template: corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{
+										Name:  "coredns",
+										Image: "k8s.gcr.io/coredns/coredns:v1.8.6",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectError:  false,
+			expectImport: true,
+			expectVolume: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variable
+			os.Setenv("COREDNS_AUTO_CONFIGURE", tt.envVarValue)
+			defer os.Unsetenv("COREDNS_AUTO_CONFIGURE")
+
+			// Create fake client with test objects
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tt.setupObjects...).Build()
+			
+			config := Config{
+				Namespace:       "kube-system",
+				ConfigMapName:   "coredns",
+				ImportStatement: "import /etc/coredns/custom/*.server",
+				VolumeName:      "coredns-ingress-sync-volume",
+			}
+			manager := NewManager(fakeClient, config)
+
+			ctx := context.Background()
+			err := manager.EnsureConfiguration(ctx)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			// Check if import statement was added when expected
+			if tt.expectImport {
+				configMap := &corev1.ConfigMap{}
+				key := types.NamespacedName{
+					Name:      "coredns",
+					Namespace: "kube-system",
+				}
+				err = fakeClient.Get(ctx, key, configMap)
+				require.NoError(t, err)
+				assert.Contains(t, configMap.Data["Corefile"], "import /etc/coredns/custom/*.server")
+			}
+
+			// Check if volume was added when expected
+			if tt.expectVolume {
+				deployment := &appsv1.Deployment{}
+				key := types.NamespacedName{
+					Name:      "coredns",
+					Namespace: "kube-system",
+				}
+				err = fakeClient.Get(ctx, key, deployment)
+				require.NoError(t, err)
+				
+				// Check for volume
+				foundVolume := false
+				for _, volume := range deployment.Spec.Template.Spec.Volumes {
+					if volume.Name == "coredns-ingress-sync-volume" {
+						foundVolume = true
+						break
+					}
+				}
+				assert.True(t, foundVolume, "Expected volume to be added to deployment")
+			}
+		})
+	}
 }
