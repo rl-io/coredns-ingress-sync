@@ -175,8 +175,7 @@ runs:
           --create-namespace \
           --wait \
           --timeout 90s \
-          --values ./helm/coredns-ingress-sync/values-dev.yaml \
-          --set image.pullPolicy=Never; then
+          --values ./helm/coredns-ingress-sync/values-test.yaml; then
           
           echo "::group::🔧 Deployment failed, gathering debug information"
           echo "Checking for preflight job logs..."

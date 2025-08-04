@@ -4,7 +4,7 @@ replicaCount: 1
 image:
   repository: coredns-ingress-sync
   pullPolicy: IfNotPresent
-  tag: "metrics-test"
+  tag: "latest"
 
 resources:
   limits:

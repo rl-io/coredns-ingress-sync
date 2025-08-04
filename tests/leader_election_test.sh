@@ -96,14 +96,14 @@ fi
 
 # Install chart with multiple replicas
 log_info "Installing chart with $REPLICAS replicas..."
-log_info "Using image from values-dev.yaml (ensure image is built and available)"
+log_info "Using image from values-test.yaml (ensure image is built and available)"
 
 if ! helm install "$RELEASE_NAME" "$CHART_PATH" \
     --namespace "$NAMESPACE" \
     --set replicaCount="$REPLICAS" \
     --set coreDNS.autoConfigure=false \
     --set image.pullPolicy=IfNotPresent \
-    --values "$CHART_PATH/values-dev.yaml" \
+    --values "$CHART_PATH/values-test.yaml" \
     --timeout="${TIMEOUT_SECONDS}s"; then
     
     log_error "Helm install failed"
