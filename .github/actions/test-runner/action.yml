@@ -174,7 +174,7 @@ runs:
           --namespace coredns-ingress-sync \
           --create-namespace \
           --wait \
-          --timeout 120s \
+          --timeout 90s \
           --values ./helm/coredns-ingress-sync/values-dev.yaml \
           --set image.pullPolicy=Never
         

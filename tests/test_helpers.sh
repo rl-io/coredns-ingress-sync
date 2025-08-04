@@ -576,8 +576,28 @@ hostname_in_configmap() {
 
 wait_for_controller_sync() {
     local timeout=${1:-5}
-    log_info "Waiting ${timeout}s for controller to sync..."
+    local max_wait=30  # Maximum wait time in seconds
+    local wait_interval=2
+    local elapsed=0
+    
+    log_info "Waiting for controller to sync (timeout: ${timeout}s, max: ${max_wait}s)..."
+    
+    # First, do a basic sleep to allow immediate processing
     sleep "$timeout"
+    
+    # Then, wait for the controller to actually be responsive
+    while [ $elapsed -lt $max_wait ]; do
+        # Check if controller is processing by looking for recent log activity
+        if kubectl logs -n "$NAMESPACE" deployment/"$CONTROLLER_NAME" --tail=10 --since=30s 2>/dev/null | grep -q "Successfully updated CoreDNS configuration\|Reconciling changes"; then
+            log_info "Controller is actively processing resources"
+            return 0
+        fi
+        
+        sleep $wait_interval
+        elapsed=$((elapsed + wait_interval))
+    done
+    
+    log_warn "Controller sync wait completed after ${elapsed}s"
 }
 
 # Test prerequisites check
