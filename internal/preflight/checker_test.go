@@ -11,6 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/rl-io/coredns-ingress-sync/internal/config"
 )
 
 func TestChecker_CheckCoreDNSDeployment(t *testing.T) {
@@ -307,4 +309,238 @@ func TestHasErrors(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestChecker_RunChecks(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	tests := []struct {
+		name        string
+		objects     []runtime.Object
+		expectError bool
+		expectPass  bool
+	}{
+		{
+			name: "All checks pass",
+			objects: []runtime.Object{
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "coredns",
+						Namespace: "kube-system",
+					},
+				},
+			},
+			expectError: false,
+			expectPass:  true,
+		},
+		{
+			name:        "CoreDNS deployment missing",
+			objects:     []runtime.Object{},
+			expectError: false,
+			expectPass:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			_ = appsv1.AddToScheme(scheme)
+			_ = corev1.AddToScheme(scheme)
+
+			client := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithRuntimeObjects(tt.objects...).
+				Build()
+
+			config := Config{
+				DeploymentName:       "test-deployment",
+				ReleaseInstance:      "test-instance",
+				MountPath:            "/etc/coredns/custom/test",
+				VolumeName:           "test-volume",
+				DynamicConfigMapName: "test-configmap",
+				CoreDNSNamespace:     "kube-system",
+				IngressClass:         "nginx",
+				TargetCNAME:          "ingress-nginx.ingress-nginx.svc.cluster.local.",
+			}
+
+			checker := NewChecker(client, config, logger)
+			ctx := context.Background()
+
+			results, err := checker.RunChecks(ctx)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.NotEmpty(t, results)
+
+				// Check if first result (CoreDNS deployment check) matches expectation
+				if len(results) > 0 {
+					assert.Equal(t, tt.expectPass, results[0].Passed)
+				}
+			}
+		})
+	}
+}
+
+func TestChecker_CheckCoreDNSDeploymentWithRetry(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	tests := []struct {
+		name         string
+		objects      []runtime.Object
+		expectPassed bool
+	}{
+		{
+			name: "Success on first attempt",
+			objects: []runtime.Object{
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "coredns",
+						Namespace: "kube-system",
+					},
+				},
+			},
+			expectPassed: true,
+		},
+		{
+			name:         "Failure after retries",
+			objects:      []runtime.Object{},
+			expectPassed: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			_ = appsv1.AddToScheme(scheme)
+
+			client := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithRuntimeObjects(tt.objects...).
+				Build()
+
+			config := Config{
+				CoreDNSNamespace: "kube-system",
+			}
+
+			checker := NewChecker(client, config, logger)
+			ctx := context.Background()
+
+			result, err := checker.checkCoreDNSDeploymentWithRetry(ctx)
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectPassed, result.Passed)
+		})
+	}
+}
+
+func TestChecker_CheckDuplicateControllers(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	tests := []struct {
+		name           string
+		objects        []runtime.Object
+		expectPassed   bool
+		expectWarning  bool
+	}{
+		{
+			name:          "No duplicate controllers",
+			objects:       []runtime.Object{},
+			expectPassed:  true,
+			expectWarning: false,
+		},
+		{
+			name: "Duplicate controller exists",
+			objects: []runtime.Object{
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "other-coredns-sync",
+						Namespace: "other-namespace",
+						Labels: map[string]string{
+							"app.kubernetes.io/name": "coredns-ingress-sync",
+						},
+					},
+				},
+			},
+			expectPassed:  true,  // Function returns true with warning, not failure
+			expectWarning: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			_ = appsv1.AddToScheme(scheme)
+
+			client := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithRuntimeObjects(tt.objects...).
+				Build()
+
+			config := Config{
+				DeploymentName:   "test-deployment",
+				ReleaseInstance:  "test-instance",
+				IngressClass:     "nginx",
+				CoreDNSNamespace: "kube-system",
+			}
+
+			checker := NewChecker(client, config, logger)
+			ctx := context.Background()
+
+			result, err := checker.checkDuplicateControllers(ctx)
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectPassed, result.Passed)
+			assert.Equal(t, tt.expectWarning, result.Warning)
+		})
+	}
+}
+
+func TestChecker_PrintResults(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	results := []CheckResult{
+		{
+			Passed:   true,
+			Message:  "All good",
+			Severity: "info",
+		},
+		{
+			Passed:   false,
+			Message:  "Something wrong",
+			Severity: "error",
+		},
+	}
+
+	config := Config{}
+	checker := NewChecker(nil, config, logger)
+
+	// This function doesn't return anything, just ensure it doesn't panic
+	assert.NotPanics(t, func() {
+		checker.PrintResults(results)
+	})
+}
+
+func TestConfigFromEnv(t *testing.T) {
+	// Set test environment variables
+	t.Setenv("COREDNS_NAMESPACE", "test-namespace")
+	t.Setenv("COREDNS_CONFIGMAP_NAME", "test-configmap")
+	t.Setenv("COREDNS_VOLUME_NAME", "test-volume")
+	t.Setenv("DYNAMIC_CONFIGMAP_NAME", "test-dynamic")
+	t.Setenv("MOUNT_PATH", "/test/path")
+
+	// Load config from environment (this will read the env vars we just set)
+	baseConfig := config.Load()
+
+	result := ConfigFromEnv(baseConfig)
+
+	assert.Equal(t, "test-namespace", result.CoreDNSNamespace)
+	assert.Equal(t, "test-volume", result.VolumeName)
+	assert.Equal(t, "test-dynamic", result.DynamicConfigMapName)
+	assert.Equal(t, "/test/path", result.MountPath)
+	
+	// Check that other fields are properly mapped from the loaded config
+	assert.Equal(t, baseConfig.IngressClass, result.IngressClass)
+	assert.Equal(t, baseConfig.TargetCNAME, result.TargetCNAME)
 }
