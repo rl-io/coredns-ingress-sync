@@ -22,6 +22,7 @@ func TestChecker_CheckCoreDNSDeployment(t *testing.T) {
 		name         string
 		deployment   *appsv1.Deployment
 		expectPassed bool
+		expectMessage string
 	}{
 		{
 			name: "CoreDNS deployment exists",
@@ -32,15 +33,17 @@ func TestChecker_CheckCoreDNSDeployment(t *testing.T) {
 				},
 			},
 			expectPassed: true,
+			expectMessage: "✅ CoreDNS deployment found",
 		},
 		{
 			name:         "CoreDNS deployment does not exist",
 			deployment:   nil,
 			expectPassed: false,
+			expectMessage: "❌ CoreDNS deployment not found in namespace kube-system",
 		},
 	}
 
-	for _, tt := range tests {
+		for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			scheme := runtime.NewScheme()
 			_ = appsv1.AddToScheme(scheme)
@@ -64,6 +67,7 @@ func TestChecker_CheckCoreDNSDeployment(t *testing.T) {
 
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectPassed, result.Passed)
+			assert.Contains(t, result.Message, tt.expectMessage)
 		})
 	}
 }
@@ -431,6 +435,63 @@ func TestChecker_CheckCoreDNSDeploymentWithRetry(t *testing.T) {
 
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectPassed, result.Passed)
+		})
+	}
+}
+
+func TestChecker_CheckMountPathConflicts_ErrorCases(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	tests := []struct {
+		name           string
+		deployment     *appsv1.Deployment
+		config         Config
+		expectPassed   bool
+		expectMessage  string
+	}{
+		{
+			name: "CoreDNS deployment has no containers",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "coredns",
+					Namespace: "kube-system",
+				},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{}, // Empty containers
+						},
+					},
+				},
+			},
+			config: Config{
+				CoreDNSNamespace: "kube-system",
+				MountPath:        "/etc/coredns/custom/test",
+				VolumeName:       "test-volume",
+			},
+			expectPassed:  false,
+			expectMessage: "❌ CoreDNS deployment has no containers",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			_ = appsv1.AddToScheme(scheme)
+
+			client := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithRuntimeObjects(tt.deployment).
+				Build()
+
+			checker := NewChecker(client, tt.config, logger)
+			result, err := checker.checkMountPathConflicts(context.Background())
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectPassed, result.Passed)
+			if tt.expectMessage != "" {
+				assert.Contains(t, result.Message, tt.expectMessage)
+			}
 		})
 	}
 }
