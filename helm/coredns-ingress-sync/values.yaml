@@ -101,6 +101,10 @@ controller:
   # Volume name for mounting dynamic configuration
   volumeName: "coredns-ingress-sync-volume"
   
+  # Mount path for dynamic configuration (will be auto-generated if not set)
+  # Default: /etc/coredns/custom/{deployment-name}
+  mountPath: ""
+  
   # Environment variables (for advanced configuration)
   env: {}
 

@@ -19,6 +19,8 @@ func TestLoad(t *testing.T) {
 		"LEADER_ELECTION_ENABLED": os.Getenv("LEADER_ELECTION_ENABLED"),
 		"WATCH_NAMESPACES":        os.Getenv("WATCH_NAMESPACES"),
 		"POD_NAMESPACE":           os.Getenv("POD_NAMESPACE"),
+		"DEPLOYMENT_NAME":         os.Getenv("DEPLOYMENT_NAME"),
+		"MOUNT_PATH":              os.Getenv("MOUNT_PATH"),
 	}
 
 	// Restore original environment after test
@@ -49,8 +51,10 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, "coredns-ingress-sync-volume", config.CoreDNSVolumeName)
 		assert.True(t, config.LeaderElectionEnabled)
 		assert.Equal(t, "", config.WatchNamespaces)
-		assert.Equal(t, "import /etc/coredns/custom/*.server", config.ImportStatement)
+		assert.Equal(t, "import /etc/coredns/custom/coredns-ingress-sync/*.server", config.ImportStatement)
 		assert.Equal(t, "coredns-ingress-sync", config.ControllerNamespace) // Default fallback
+		assert.Equal(t, "/etc/coredns/custom/coredns-ingress-sync", config.MountPath)
+		assert.Equal(t, "coredns-ingress-sync", config.ReleaseInstance)
 	})
 
 	t.Run("environment overrides", func(t *testing.T) {
@@ -64,6 +68,8 @@ func TestLoad(t *testing.T) {
 		os.Setenv("LEADER_ELECTION_ENABLED", "false")
 		os.Setenv("WATCH_NAMESPACES", "production,staging")
 		os.Setenv("POD_NAMESPACE", "custom-namespace")
+		os.Setenv("DEPLOYMENT_NAME", "my-custom-deployment")
+		os.Setenv("MOUNT_PATH", "/custom/mount/path")
 
 		config := Load()
 
@@ -76,6 +82,8 @@ func TestLoad(t *testing.T) {
 		assert.False(t, config.LeaderElectionEnabled)
 		assert.Equal(t, "production,staging", config.WatchNamespaces)
 		assert.Equal(t, "custom-namespace", config.ControllerNamespace)
+		assert.Equal(t, "/custom/mount/path", config.MountPath)
+		assert.Equal(t, "my-custom-deployment", config.ReleaseInstance)
 	})
 }
 

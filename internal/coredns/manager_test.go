@@ -138,9 +138,10 @@ func TestEnsureVolumeMount(t *testing.T) {
 		ConfigMapName:        "coredns",
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
-		ImportStatement:      "import /etc/coredns/custom/*.server",
+		ImportStatement:      "import /etc/coredns/custom/coredns-ingress-sync/*.server",
 		TargetCNAME:          "ingress.example.com.",
 		VolumeName:           "coredns-ingress-sync-volume",
+		MountPath:            "/etc/coredns/custom/coredns-ingress-sync",
 	}
 	manager := NewManager(fakeClient, config)
 
@@ -168,7 +169,7 @@ func TestEnsureVolumeMount(t *testing.T) {
 	assert.Len(t, container.VolumeMounts, 1)
 	volumeMount := container.VolumeMounts[0]
 	assert.Equal(t, "coredns-ingress-sync-volume", volumeMount.Name)
-	assert.Equal(t, "/etc/coredns/custom", volumeMount.MountPath)
+	assert.Equal(t, "/etc/coredns/custom/coredns-ingress-sync", volumeMount.MountPath)
 }
 
 func TestUpdateDynamicConfigMap_Update(t *testing.T) {

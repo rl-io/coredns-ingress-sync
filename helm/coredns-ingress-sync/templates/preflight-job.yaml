@@ -1,36 +1,49 @@
-# Cleanup job to remove import statement and volume mount from CoreDNS
-# Always runs on uninstall regardless of autoConfigure setting to handle upgrades/downgrades
+{{/*
+Preflight check to detect potential conflicts with other CoreDNS ingress sync deployments
+*/}}
+{{- if .Values.coreDNS.autoConfigure }}
+{{- $deploymentName := include "coredns-ingress-sync.fullname" . }}
+{{- $mountPath := .Values.controller.mountPath | default (printf "/etc/coredns/custom/%s" $deploymentName) }}
+{{- $volumeName := .Values.controller.volumeName }}
+{{- $dynamicConfigMapName := .Values.controller.dynamicConfigMap.name }}
+
+# Preflight validation job to check for configuration conflicts
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "coredns-ingress-sync.fullname" . }}-cleanup
+  name: {{ $deploymentName }}-preflight
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
+    app.kubernetes.io/component: preflight
   annotations:
-    "helm.sh/hook": post-delete
-    "helm.sh/hook-weight": "1"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
 spec:
   template:
     metadata:
       labels:
         {{- include "coredns-ingress-sync.labels" . | nindent 8 }}
+        app.kubernetes.io/component: preflight
     spec:
       serviceAccountName: {{ include "coredns-ingress-sync.serviceAccountName" . }}
       restartPolicy: Never
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-      - name: cleanup
+      - name: preflight-check
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command: ["/controller"]
-        args: ["--mode=cleanup"]
+        args: ["--mode=preflight"]
         env:
-        # Only the minimal environment variables needed for cleanup
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         - name: COREDNS_NAMESPACE
           value: {{ .Values.coreDNS.namespace | quote }}
         - name: COREDNS_CONFIGMAP_NAME
@@ -43,6 +56,8 @@ spec:
           value: {{ include "coredns-ingress-sync.fullname" . | quote }}
         - name: MOUNT_PATH
           value: {{ if .Values.controller.mountPath }}{{ .Values.controller.mountPath | quote }}{{ else }}{{ printf "/etc/coredns/custom/%s" (include "coredns-ingress-sync.fullname" .) | quote }}{{ end }}
+        - name: RELEASE_INSTANCE
+          value: {{ include "coredns-ingress-sync.fullname" . | quote }}
         resources:
           limits:
             cpu: 100m
@@ -50,9 +65,4 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-        volumeMounts:
-        - name: tmp
-          mountPath: /tmp
-      volumes:
-      - name: tmp
-        emptyDir: {}
+{{- end }}
