@@ -50,6 +50,12 @@ spec:
           value: {{ .Values.coreDNS.configMapName | quote }}
         - name: COREDNS_VOLUME_NAME
           value: {{ .Values.controller.volumeName | quote }}
+        - name: DEPLOYMENT_NAME
+          value: {{ include "coredns-ingress-sync.fullname" . | quote }}
+        - name: MOUNT_PATH
+          value: {{ if .Values.controller.mountPath }}{{ .Values.controller.mountPath | quote }}{{ else }}{{ printf "/etc/coredns/custom/%s" (include "coredns-ingress-sync.fullname" .) | quote }}{{ end }}
+        - name: RELEASE_INSTANCE
+          value: {{ include "coredns-ingress-sync.fullname" . | quote }}
         - name: COREDNS_AUTO_CONFIGURE
           value: {{ .Values.coreDNS.autoConfigure | quote }}
         - name: LEADER_ELECTION_ENABLED

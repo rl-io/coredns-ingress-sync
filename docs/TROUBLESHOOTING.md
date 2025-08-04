@@ -20,9 +20,75 @@ kubectl get configmap coredns-ingress-sync-rewrite-rules -n kube-system -o yaml
 # 4. Check CoreDNS status
 kubectl get pods -n kube-system -l k8s-app=kube-dns
 kubectl logs -n kube-system deployment/coredns --tail=20
+
+# 5. If Helm install/upgrade failed, check preflight logs
+kubectl logs -n <your-namespace> job/<release-name>-preflight
+# Or use the helper script:
+./scripts/check-preflight-logs.sh <release-name> <namespace>
 ```
 
 ## Common Issues and Solutions
+
+### 0. Helm Install/Upgrade Fails with Preflight Errors
+
+#### Symptoms
+- `helm install` or `helm upgrade` command fails
+- Error message mentions job failures or timeouts
+- Installation stops before the main controller is deployed
+
+#### Diagnosis
+```bash
+# Check preflight job status
+kubectl get jobs -n <your-namespace> | grep preflight
+
+# Check preflight job logs (replace with your release name and namespace)
+kubectl logs -n <your-namespace> job/<release-name>-preflight
+
+# Or use the helper script
+./scripts/check-preflight-logs.sh <release-name> <namespace>
+```
+
+#### Solutions
+
+**RBAC Permission Errors:**
+```
+❌ Permission denied accessing CoreDNS deployment in namespace kube-system
+```
+- **Cause**: RBAC resources haven't been created yet or have insufficient permissions
+- **Solution**: The preflight job will retry automatically. If it persists, check that your cluster has RBAC enabled and the ServiceAccount has proper permissions.
+
+**CoreDNS Not Found:**
+```
+❌ CoreDNS deployment not found in namespace kube-system
+```
+- **Cause**: CoreDNS is not installed or is in a different namespace
+- **Solution**: 
+  - For EKS: CoreDNS should be in `kube-system` namespace by default
+  - For other clusters: Check where CoreDNS is installed: `kubectl get deployment -A | grep coredns`
+  - Update Helm values: `--set coreDNS.namespace=<correct-namespace>`
+
+**Mount Path Conflicts:**
+```
+❌ Mount path conflict detected!
+```
+- **Cause**: Another deployment is already using the same mount path in CoreDNS
+- **Solution**: Set a custom mount path in your Helm values:
+  ```bash
+  helm install my-release ./helm/coredns-ingress-sync \
+    --set coreDNS.autoConfigure=true \
+    --set controller.mountPath="/etc/coredns/custom/my-unique-path"
+  ```
+
+**ConfigMap Conflicts:**
+```
+❌ ConfigMap conflict detected!
+```
+- **Cause**: Another instance is managing the same ConfigMap
+- **Solution**: Use a different release name or set a custom ConfigMap name:
+  ```bash
+  helm install my-release ./helm/coredns-ingress-sync \
+    --set controller.dynamicConfigMap.name="my-unique-configmap"
+  ```
 
 ### 1. Controller Not Starting
 

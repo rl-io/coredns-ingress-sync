@@ -28,6 +28,7 @@ type Config struct {
 	ImportStatement     string
 	TargetCNAME         string
 	VolumeName          string
+	MountPath           string
 }
 
 // Manager handles CoreDNS configuration management
@@ -317,7 +318,7 @@ func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentCli
 			}
 		}
 
-		// Check for existing volume mount
+		// Check for existing volume mount and path conflicts
 		if len(deployment.Spec.Template.Spec.Containers) > 0 {
 			m.logger.V(1).Info("Checking volume mounts", "mount_count", len(deployment.Spec.Template.Spec.Containers[0].VolumeMounts))
 			for _, mount := range deployment.Spec.Template.Spec.Containers[0].VolumeMounts {
@@ -325,6 +326,10 @@ func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentCli
 					hasVolumeMount = true
 					m.logger.V(1).Info("Found existing volume mount", "name", volumeName)
 					break
+				}
+				// Check for mount path conflicts
+				if mount.MountPath == m.config.MountPath && mount.Name != volumeName {
+					return fmt.Errorf("mount path conflict: %s is already used by volume %s", m.config.MountPath, mount.Name)
 				}
 			}
 		}
@@ -369,7 +374,7 @@ func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentCli
 		if !hasVolumeMount && len(deployment.Spec.Template.Spec.Containers) > 0 {
 			newVolumeMount := corev1.VolumeMount{
 				Name:      volumeName,
-				MountPath: "/etc/coredns/custom",
+				MountPath: m.config.MountPath,
 				ReadOnly:  true,
 			}
 			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(
@@ -377,7 +382,7 @@ func (m *Manager) ensureVolumeMountWithClient(ctx context.Context, deploymentCli
 				newVolumeMount,
 			)
 			modified = true
-			m.logger.Info("Added volume mount to CoreDNS container", "volume", volumeName)
+			m.logger.Info("Added volume mount to CoreDNS container", "volume", volumeName, "mountPath", m.config.MountPath)
 		}
 
 		if !modified {

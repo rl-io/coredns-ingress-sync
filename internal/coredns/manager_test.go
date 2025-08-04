@@ -138,9 +138,10 @@ func TestEnsureVolumeMount(t *testing.T) {
 		ConfigMapName:        "coredns",
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
-		ImportStatement:      "import /etc/coredns/custom/*.server",
+		ImportStatement:      "import /etc/coredns/custom/coredns-ingress-sync/*.server",
 		TargetCNAME:          "ingress.example.com.",
 		VolumeName:           "coredns-ingress-sync-volume",
+		MountPath:            "/etc/coredns/custom/coredns-ingress-sync",
 	}
 	manager := NewManager(fakeClient, config)
 
@@ -168,7 +169,7 @@ func TestEnsureVolumeMount(t *testing.T) {
 	assert.Len(t, container.VolumeMounts, 1)
 	volumeMount := container.VolumeMounts[0]
 	assert.Equal(t, "coredns-ingress-sync-volume", volumeMount.Name)
-	assert.Equal(t, "/etc/coredns/custom", volumeMount.MountPath)
+	assert.Equal(t, "/etc/coredns/custom/coredns-ingress-sync", volumeMount.MountPath)
 }
 
 func TestUpdateDynamicConfigMap_Update(t *testing.T) {
@@ -500,6 +501,183 @@ func TestEnsureConfiguration(t *testing.T) {
 					}
 				}
 				assert.True(t, foundVolume, "Expected volume to be added to deployment")
+			}
+		})
+	}
+}
+
+func TestManager_isFakeClient(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	config := Config{}
+	
+	manager := NewManager(fakeClient, config)
+	
+	// This should return true since we're using a fake client
+	assert.True(t, manager.isFakeClient())
+}
+
+func TestEnsureVolumeMount_ErrorPaths(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+
+	tests := []struct {
+		name           string
+		deployment     *appsv1.Deployment
+		config         Config
+		expectError    bool
+		expectErrMsg   string
+	}{
+		{
+			name:       "No deployment exists",
+			deployment: nil, // No deployment in the fake client
+			config: Config{
+				Namespace:            "kube-system",
+				DynamicConfigMapName: "test-configmap",
+				DynamicConfigKey:     "dynamic.server",
+				VolumeName:           "test-volume",
+				MountPath:            "/etc/coredns/custom",
+			},
+			expectError:  true,
+			expectErrMsg: "failed to get CoreDNS deployment",
+		},
+		{
+			name: "Mount path conflict with different volume",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "coredns",
+					Namespace: "kube-system",
+				},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									VolumeMounts: []corev1.VolumeMount{
+										{
+											Name:      "existing-volume",
+											MountPath: "/etc/coredns/custom", // Same path, different volume
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			config: Config{
+				Namespace:            "kube-system",
+				DynamicConfigMapName: "test-configmap",
+				DynamicConfigKey:     "dynamic.server",
+				VolumeName:           "test-volume", // Different volume name
+				MountPath:            "/etc/coredns/custom",
+			},
+			expectError:  true,
+			expectErrMsg: "mount path conflict",
+		},
+		{
+			name: "Only volume missing (volume mount exists)",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "coredns",
+					Namespace: "kube-system",
+				},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									VolumeMounts: []corev1.VolumeMount{
+										{
+											Name:      "test-volume",
+											MountPath: "/etc/coredns/custom",
+										},
+									},
+								},
+							},
+							Volumes: []corev1.Volume{}, // No volumes
+						},
+					},
+				},
+			},
+			config: Config{
+				Namespace:            "kube-system",
+				DynamicConfigMapName: "test-configmap",
+				DynamicConfigKey:     "dynamic.server",
+				VolumeName:           "test-volume",
+				MountPath:            "/etc/coredns/custom",
+			},
+			expectError: false,
+		},
+		{
+			name: "Only volume mount missing (volume exists)",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "coredns",
+					Namespace: "kube-system",
+				},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									VolumeMounts: []corev1.VolumeMount{}, // No volume mounts
+								},
+							},
+							Volumes: []corev1.Volume{
+								{
+									Name: "test-volume",
+									VolumeSource: corev1.VolumeSource{
+										ConfigMap: &corev1.ConfigMapVolumeSource{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "test-configmap",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			config: Config{
+				Namespace:            "kube-system",
+				DynamicConfigMapName: "test-configmap",
+				DynamicConfigKey:     "dynamic.server",
+				VolumeName:           "test-volume",
+				MountPath:            "/etc/coredns/custom",
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var objects []runtime.Object
+			if tt.deployment != nil {
+				objects = append(objects, tt.deployment)
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithRuntimeObjects(objects...).
+				Build()
+
+			manager := NewManager(fakeClient, tt.config)
+			ctx := context.Background()
+
+			err := manager.ensureVolumeMount(ctx)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.expectErrMsg != "" {
+					assert.Contains(t, err.Error(), tt.expectErrMsg)
+				}
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}
