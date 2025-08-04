@@ -23,7 +23,7 @@ metadata:
     "helm.sh/hook-failure-policy": fail
 spec:
   backoffLimit: 0  # No retries - fail fast
-  activeDeadlineSeconds: 60  # Shorter timeout for faster feedback
+  activeDeadlineSeconds: 120  # Extended timeout for CI environments
   {{- if gt (.Values.jobs.failedJobTTL | int) 0 }}
   ttlSecondsAfterFinished: {{ .Values.jobs.failedJobTTL }}  # Keep failed job for debugging
   {{- end }}

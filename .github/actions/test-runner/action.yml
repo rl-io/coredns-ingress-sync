@@ -126,10 +126,10 @@ runs:
                 node-labels: "ingress-ready=true"
           extraPortMappings:
           - containerPort: 80
-            hostPort: 80
+            hostPort: 8080
             protocol: TCP
           - containerPort: 443
-            hostPort: 443
+            hostPort: 8443
             protocol: TCP
         EOF
         echo "::endgroup::"
@@ -169,14 +169,29 @@ runs:
       shell: bash
       run: |
         echo "::group::🚀 Deploying Controller for Testing"
-        helm upgrade --install coredns-ingress-sync \
+        if ! helm upgrade --install coredns-ingress-sync \
           ./helm/coredns-ingress-sync \
           --namespace coredns-ingress-sync \
           --create-namespace \
           --wait \
           --timeout 90s \
           --values ./helm/coredns-ingress-sync/values-dev.yaml \
-          --set image.pullPolicy=Never
+          --set image.pullPolicy=Never; then
+          
+          echo "::group::🔧 Deployment failed, gathering debug information"
+          echo "Checking for preflight job logs..."
+          chmod +x scripts/debug-preflight.sh
+          ./scripts/debug-preflight.sh || echo "Could not get preflight logs"
+          
+          echo "Checking namespace status..."
+          kubectl get all -n coredns-ingress-sync || echo "Could not get namespace status"
+          
+          echo "Checking cluster events..."
+          kubectl get events -n coredns-ingress-sync --sort-by='.lastTimestamp' || echo "Could not get events"
+          echo "::endgroup::"
+          
+          exit 1
+        fi
         
         kubectl wait --for=condition=available --timeout=60s deployment/coredns-ingress-sync -n coredns-ingress-sync
         echo "::endgroup::"

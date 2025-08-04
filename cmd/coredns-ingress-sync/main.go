@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
@@ -287,7 +288,10 @@ func runPreflight(logger logr.Logger) {
 	checker := preflight.NewChecker(k8sClient, preflightConfig, logger)
 
 	// Run preflight checks
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	
+	logger.Info("Starting preflight checks with timeout", "timeout", "90s")
 	results, err := checker.RunChecks(ctx)
 	if err != nil {
 		logger.Error(err, "Failed to run preflight checks")

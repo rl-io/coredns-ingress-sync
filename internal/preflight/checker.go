@@ -55,6 +55,7 @@ type CheckResult struct {
 // RunChecks performs all preflight checks and returns results
 func (c *Checker) RunChecks(ctx context.Context) ([]CheckResult, error) {
 	var results []CheckResult
+	start := time.Now()
 
 	c.logger.Info("🔍 Running preflight checks for CoreDNS ingress sync deployment",
 		"deployment", c.config.DeploymentName,
@@ -62,36 +63,46 @@ func (c *Checker) RunChecks(ctx context.Context) ([]CheckResult, error) {
 		"volumeName", c.config.VolumeName)
 
 	// Check 1: CoreDNS deployment exists (with retry for RBAC issues)
+	checkStart := time.Now()
 	result, err := c.checkCoreDNSDeploymentWithRetry(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check CoreDNS deployment: %w", err)
+		return nil, fmt.Errorf("failed to check CoreDNS deployment after %v: %w", time.Since(checkStart), err)
 	}
+	c.logger.Info("✓ CoreDNS deployment check completed", "duration", time.Since(checkStart), "passed", result.Passed)
 	results = append(results, result)
 	if !result.Passed {
+		c.logger.Info("🏃 Early exit due to CoreDNS deployment check failure", "totalDuration", time.Since(start))
 		return results, nil // Early exit if CoreDNS doesn't exist
 	}
 
 	// Check 2: Mount path conflicts
+	checkStart = time.Now()
 	result, err = c.checkMountPathConflicts(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check mount path conflicts: %w", err)
+		return nil, fmt.Errorf("failed to check mount path conflicts after %v: %w", time.Since(checkStart), err)
 	}
+	c.logger.Info("✓ Mount path check completed", "duration", time.Since(checkStart), "passed", result.Passed)
 	results = append(results, result)
 
 	// Check 3: ConfigMap conflicts
+	checkStart = time.Now()
 	result, err = c.checkConfigMapConflicts(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check ConfigMap conflicts: %w", err)
+		return nil, fmt.Errorf("failed to check ConfigMap conflicts after %v: %w", time.Since(checkStart), err)
 	}
+	c.logger.Info("✓ ConfigMap check completed", "duration", time.Since(checkStart), "passed", result.Passed)
 	results = append(results, result)
 
 	// Check 4: Duplicate controllers
+	checkStart = time.Now()
 	result, err = c.checkDuplicateControllers(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check duplicate controllers: %w", err)
+		return nil, fmt.Errorf("failed to check duplicate controllers after %v: %w", time.Since(checkStart), err)
 	}
+	c.logger.Info("✓ Duplicate controllers check completed", "duration", time.Since(checkStart), "passed", result.Passed)
 	results = append(results, result)
 
+	c.logger.Info("🎉 All preflight checks completed", "totalDuration", time.Since(start))
 	return results, nil
 }
 
@@ -142,21 +153,35 @@ func (c *Checker) checkCoreDNSDeploymentWithRetry(ctx context.Context) (CheckRes
 	const retryDelay = 1 * time.Second  // Reduced from 2 seconds
 	
 	for attempt := 1; attempt <= maxRetries; attempt++ {
+		attemptStart := time.Now()
+		c.logger.Info("Attempting CoreDNS deployment check", "attempt", attempt, "maxRetries", maxRetries)
+		
 		result, err := c.checkCoreDNSDeployment(ctx)
+		duration := time.Since(attemptStart)
 		
 		// If no error or not a permission error, return immediately
 		if err != nil || result.Passed || !strings.Contains(result.Message, "Permission denied") {
+			c.logger.Info("CoreDNS deployment check completed", 
+				"attempt", attempt, 
+				"duration", duration, 
+				"passed", result.Passed, 
+				"error", err != nil)
 			return result, err
 		}
 		
 		// If it's a permission error and we have retries left, wait and retry
 		if attempt < maxRetries {
-			c.logger.Info("RBAC permissions not ready, retrying...", "attempt", attempt, "maxRetries", maxRetries)
+			c.logger.Info("RBAC permissions not ready, retrying...", 
+				"attempt", attempt, 
+				"maxRetries", maxRetries,
+				"duration", duration,
+				"retryDelay", retryDelay)
 			time.Sleep(retryDelay)
 			continue
 		}
 		
 		// Final attempt failed
+		c.logger.Info("All retry attempts exhausted", "totalAttempts", maxRetries, "finalDuration", duration)
 		return result, err
 	}
 	
