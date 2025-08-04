@@ -174,11 +174,11 @@ runs:
           --namespace coredns-ingress-sync \
           --create-namespace \
           --wait \
-          --timeout 30s \
+          --timeout 120s \
           --values ./helm/coredns-ingress-sync/values-dev.yaml \
           --set image.pullPolicy=Never
         
-        kubectl wait --for=condition=available --timeout=30s deployment/coredns-ingress-sync -n coredns-ingress-sync
+        kubectl wait --for=condition=available --timeout=60s deployment/coredns-ingress-sync -n coredns-ingress-sync
         echo "::endgroup::"
         
     - name: Run integration tests
