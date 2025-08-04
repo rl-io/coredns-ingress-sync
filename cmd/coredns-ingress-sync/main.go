@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
@@ -14,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -29,17 +31,18 @@ import (
 	"github.com/rl-io/coredns-ingress-sync/internal/ingress"
 	"github.com/rl-io/coredns-ingress-sync/internal/logging"
 	"github.com/rl-io/coredns-ingress-sync/internal/metrics"
+	"github.com/rl-io/coredns-ingress-sync/internal/preflight"
 	"github.com/rl-io/coredns-ingress-sync/internal/watches"
 )
 
 func main() {
 	// Parse command line arguments
-	var mode = flag.String("mode", "controller", "Mode to run: 'controller' or 'cleanup'")
+	var mode = flag.String("mode", "controller", "Mode to run: 'controller', 'cleanup', or 'preflight'")
 	flag.Parse()
 
 	// Setup logging with configurable level
 	logging.Setup()
-	
+
 	// Get structured logger
 	logger := ctrl.Log.WithName("main")
 
@@ -48,12 +51,16 @@ func main() {
 		logger.Info("Starting cleanup mode")
 		runCleanup(logger)
 		return
+	case "preflight":
+		logger.Info("Starting preflight check mode")
+		runPreflight(logger)
+		return
 	case "controller":
 		logger.Info("Starting controller mode")
 		runController(logger)
 		return
 	default:
-		logger.Error(fmt.Errorf("invalid mode: %s", *mode), "Invalid mode specified. Use 'controller' or 'cleanup'", "mode", *mode)
+		logger.Error(fmt.Errorf("invalid mode: %s", *mode), "Invalid mode specified. Use 'controller', 'cleanup', or 'preflight'", "mode", *mode)
 		os.Exit(1)
 	}
 }
@@ -61,10 +68,10 @@ func main() {
 func runController(logger logr.Logger) {
 	// Load configuration
 	cfg := config.Load()
-	
+
 	// Parse watch namespaces
 	watchNamespaces := cache.ParseNamespaces(cfg.WatchNamespaces)
-	
+
 	// Build cache options
 	cacheBuilder := cache.NewConfigBuilder(watchNamespaces, cfg.CoreDNSNamespace)
 	cacheOptions := cacheBuilder.BuildCacheOptions()
@@ -110,6 +117,7 @@ func runController(logger logr.Logger) {
 		ImportStatement:      cfg.ImportStatement,
 		TargetCNAME:          cfg.TargetCNAME,
 		VolumeName:           cfg.CoreDNSVolumeName,
+		MountPath:            cfg.MountPath,
 	}
 	coreDNSManager := coredns.NewManager(mgr.GetClient(), coreDNSConfig)
 
@@ -173,7 +181,7 @@ func runController(logger logr.Logger) {
 		"target_cname", cfg.TargetCNAME,
 		"dynamic_configmap", cfg.DynamicConfigMapName,
 		"coredns_configmap", fmt.Sprintf("%s/%s", cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName))
-	
+
 	if len(watchNamespaces) > 0 {
 		logger.Info("Watching specific namespaces", "namespaces", watchNamespaces)
 	} else {
@@ -202,7 +210,7 @@ func runController(logger logr.Logger) {
 	if cfg.LeaderElectionEnabled {
 		// Set initial leader status to false
 		metrics.SetLeaderElectionStatus(false)
-		
+
 		// Add a callback to update leader election status
 		// Note: controller-runtime doesn't provide direct leader election callbacks,
 		// but we can monitor this in the reconciler or use a simple check
@@ -221,7 +229,7 @@ func runController(logger logr.Logger) {
 func runCleanup(logger logr.Logger) {
 	// Load configuration
 	cfg := config.Load()
-	logger.Info("Starting cleanup mode", 
+	logger.Info("Starting cleanup mode",
 		"coredns_namespace", cfg.CoreDNSNamespace,
 		"dynamic_configmap", cfg.DynamicConfigMapName)
 
@@ -235,6 +243,66 @@ func runCleanup(logger logr.Logger) {
 	// Run cleanup operations
 	if err := cleanupManager.Run(cfg); err != nil {
 		logger.Error(err, "Cleanup failed")
+		os.Exit(1)
+	}
+}
+
+func runPreflight(logger logr.Logger) {
+	// Load configuration
+	cfg := config.Load()
+	logger.Info("Starting preflight checks")
+
+	// Create scheme for Kubernetes client
+	scheme := runtime.NewScheme()
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "Failed to add apps/v1 to scheme")
+		os.Exit(1)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "Failed to add core/v1 to scheme")
+		os.Exit(1)
+	}
+
+	// Create direct Kubernetes client (not using manager/cache for one-shot operation)
+	kubeConfig := ctrl.GetConfigOrDie()
+	k8sClient, err := client.New(kubeConfig, client.Options{
+		Scheme: scheme,
+	})
+	if err != nil {
+		logger.Error(err, "Failed to create Kubernetes client for preflight checks")
+		os.Exit(1)
+	}
+
+	// Create preflight config from environment
+	preflightConfig := preflight.ConfigFromEnv(cfg)
+
+	// Override with environment variables specific to preflight
+	if deploymentName := os.Getenv("DEPLOYMENT_NAME"); deploymentName != "" {
+		preflightConfig.DeploymentName = deploymentName
+	}
+	if releaseInstance := os.Getenv("RELEASE_INSTANCE"); releaseInstance != "" {
+		preflightConfig.ReleaseInstance = releaseInstance
+	}
+
+	// Create preflight checker with direct client
+	checker := preflight.NewChecker(k8sClient, preflightConfig, logger)
+
+	// Run preflight checks
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	
+	logger.Info("Starting preflight checks with timeout", "timeout", "90s")
+	results, err := checker.RunChecks(ctx)
+	if err != nil {
+		logger.Error(err, "Failed to run preflight checks")
+		os.Exit(1)
+	}
+
+	// Print results
+	checker.PrintResults(results)
+
+	// Exit with error code if any checks failed
+	if preflight.HasErrors(results) {
 		os.Exit(1)
 	}
 }

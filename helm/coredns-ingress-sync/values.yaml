@@ -101,6 +101,10 @@ controller:
   # Volume name for mounting dynamic configuration
   volumeName: "coredns-ingress-sync-volume"
   
+  # Mount path for dynamic configuration (will be auto-generated if not set)
+  # Default: /etc/coredns/custom/{deployment-name}
+  mountPath: ""
+  
   # Environment variables (for advanced configuration)
   env: {}
 
@@ -108,6 +112,12 @@ controller:
 rbac:
   # Specifies whether RBAC resources should be created
   create: true
+
+# Job configuration
+jobs:
+  # How long to keep failed preflight jobs for debugging (in seconds)
+  # Set to 0 to delete immediately, or increase for longer debugging time
+  failedJobTTL: 300  # 5 minutes
 
 # Leader election configuration
 leaderElection:

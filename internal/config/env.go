@@ -15,10 +15,23 @@ type Config struct {
 	WatchNamespaces       string
 	ImportStatement       string
 	ControllerNamespace   string // Namespace where the controller is deployed
+	MountPath             string // Configurable mount path for the volume
+	ReleaseInstance       string // Helm release instance name
 }
 
 // Load creates a new Config instance with values loaded from environment variables
 func Load() *Config {
+	// Get mount path or create from deployment name
+	mountPath := getEnvOrDefault("MOUNT_PATH", "")
+	if mountPath == "" {
+		// Create unique mount path based on deployment name
+		deploymentName := getEnvOrDefault("DEPLOYMENT_NAME", "coredns-ingress-sync")
+		mountPath = "/etc/coredns/custom/" + deploymentName
+	}
+
+	// Create import statement based on mount path
+	importStatement := "import " + mountPath + "/*.server"
+
 	return &Config{
 		IngressClass:          getEnvOrDefault("INGRESS_CLASS", "nginx"),
 		TargetCNAME:           getEnvOrDefault("TARGET_CNAME", "ingress-nginx-controller.ingress-nginx.svc.cluster.local."),
@@ -29,8 +42,10 @@ func Load() *Config {
 		CoreDNSVolumeName:     getEnvOrDefault("COREDNS_VOLUME_NAME", "coredns-ingress-sync-volume"),
 		LeaderElectionEnabled: getEnvOrDefault("LEADER_ELECTION_ENABLED", "true") == "true",
 		WatchNamespaces:       getEnvOrDefault("WATCH_NAMESPACES", ""), // Comma-separated list, empty = all namespaces
-		ImportStatement:       "import /etc/coredns/custom/*.server",
+		ImportStatement:       importStatement,
 		ControllerNamespace:   getEnvOrDefault("POD_NAMESPACE", "coredns-ingress-sync"), // Default fallback
+		MountPath:             mountPath,
+		ReleaseInstance:       getEnvOrDefault("RELEASE_INSTANCE", getEnvOrDefault("DEPLOYMENT_NAME", "coredns-ingress-sync")),
 	}
 }
 
