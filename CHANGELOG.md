@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.13](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.12...coredns-ingress-sync-v0.1.13) (2025-08-03)
+
+
+### Features
+
+* **metrics:** add prometheus metrics ([#51](https://github.com/rl-io/coredns-ingress-sync/issues/51)) ([1665444](https://github.com/rl-io/coredns-ingress-sync/commit/16654446ce6f437ae6b8e93b13c4cb51b70025bd))
+
 ## [0.1.12](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.11...coredns-ingress-sync-v0.1.12) (2025-08-03)
 
 
