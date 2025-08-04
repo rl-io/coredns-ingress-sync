@@ -106,9 +106,10 @@ func TestMetricsIntegration(t *testing.T) {
 		ConfigMapName:        "coredns",
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
-		ImportStatement:      "import /etc/coredns/custom/*.server",
+		ImportStatement:      "import /etc/coredns/custom/coredns-ingress-sync/*.server",
 		TargetCNAME:          "ingress-nginx.svc.cluster.local.",
 		VolumeName:           "coredns-ingress-sync-volume",
+		MountPath:            "/etc/coredns/custom/coredns-ingress-sync",
 	}
 	coreDNSManager := coredns.NewManager(fakeClient, coreDNSConfig)
 

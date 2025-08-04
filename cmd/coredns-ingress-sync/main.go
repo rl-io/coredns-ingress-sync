@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -261,13 +262,13 @@ func runPreflight(logger logr.Logger) {
 		os.Exit(1)
 	}
 
-	// Create Kubernetes client
+	// Create direct Kubernetes client (not using manager/cache for one-shot operation)
 	kubeConfig := ctrl.GetConfigOrDie()
-	mgr, err := manager.New(kubeConfig, manager.Options{
+	k8sClient, err := client.New(kubeConfig, client.Options{
 		Scheme: scheme,
 	})
 	if err != nil {
-		logger.Error(err, "Failed to create manager for preflight checks")
+		logger.Error(err, "Failed to create Kubernetes client for preflight checks")
 		os.Exit(1)
 	}
 
@@ -282,8 +283,8 @@ func runPreflight(logger logr.Logger) {
 		preflightConfig.ReleaseInstance = releaseInstance
 	}
 
-	// Create preflight checker
-	checker := preflight.NewChecker(mgr.GetClient(), preflightConfig, logger)
+	// Create preflight checker with direct client
+	checker := preflight.NewChecker(k8sClient, preflightConfig, logger)
 
 	// Run preflight checks
 	ctx := context.Background()

@@ -16,6 +16,13 @@ VOLUME_NAME=${VOLUME_NAME:-coredns-ingress-sync-volume}
 COREDNS_NAMESPACE=${COREDNS_NAMESPACE:-kube-system}
 CONTROLLER_DEPLOYED_BY_TEST=${CONTROLLER_DEPLOYED_BY_TEST:-false}
 
+# Derived configuration variables
+HELM_CHART_PATH=${HELM_CHART_PATH:-"$PROJECT_DIR/helm/coredns-ingress-sync"}
+DEPLOYMENT_FULL_NAME="${CONTROLLER_NAME}"
+CLUSTER_ROLE_NAME="${CONTROLLER_NAME}-coredns"
+EXPECTED_IMPORT_STATEMENT="import /etc/coredns/custom/${CONTROLLER_NAME}/*.server"
+EXPECTED_MOUNT_PATH="/etc/coredns/custom/${CONTROLLER_NAME}"
+
 # Logging functions
 log_info() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -671,5 +678,109 @@ export -f hostname_in_configmap
 
 # Export test utility functions
 export -f wait_for_controller_sync
+
+# Helper functions for common test operations
+
+# Check if CoreDNS contains the expected import statement
+check_coredns_import_exists() {
+    local corefile_content
+    corefile_content=$(kubectl get configmap coredns -n "$COREDNS_NAMESPACE" -o jsonpath='{.data.Corefile}' 2>/dev/null || echo "")
+    [[ "$corefile_content" == *"$EXPECTED_IMPORT_STATEMENT"* ]]
+}
+
+# Check if CoreDNS does NOT contain the import statement
+check_coredns_import_missing() {
+    local corefile_content
+    corefile_content=$(kubectl get configmap coredns -n "$COREDNS_NAMESPACE" -o jsonpath='{.data.Corefile}' 2>/dev/null || echo "")
+    [[ "$corefile_content" != *"$EXPECTED_IMPORT_STATEMENT"* ]]
+}
+
+# Get the full deployment name for a release
+get_deployment_name() {
+    local release_name="${1:-$CONTROLLER_NAME}"
+    echo "${release_name}-${CONTROLLER_NAME}"
+}
+
+# Get the full cluster role name for a release
+get_cluster_role_name() {
+    local release_name="${1:-$CONTROLLER_NAME}"
+    echo "${release_name}-${CONTROLLER_NAME}-coredns"
+}
+
+# Wait for deployment to be ready
+wait_for_deployment() {
+    local deployment_name="$1"
+    local namespace="$2"
+    local timeout="${3:-60s}"
+    
+    kubectl wait --for=condition=available --timeout="$timeout" "deployment/$deployment_name" -n "$namespace"
+}
+
+# Helm install wrapper with common parameters
+helm_install_controller() {
+    local release_name="$1"
+    local namespace="$2"
+    local auto_configure="$3"
+    local additional_args="${4:-}"
+    
+    helm install "$release_name" "$HELM_CHART_PATH" \
+        --namespace "$namespace" \
+        --set "coreDNS.autoConfigure=$auto_configure" \
+        --set "controller.targetCNAME=test-target.cluster.local" \
+        $additional_args \
+        --wait --timeout=120s
+}
+
+# Helm upgrade wrapper with common parameters
+helm_upgrade_controller() {
+    local release_name="$1"
+    local namespace="$2"
+    local auto_configure="$3"
+    local additional_args="${4:-}"
+    
+    helm upgrade "$release_name" "$HELM_CHART_PATH" \
+        --namespace "$namespace" \
+        --set "coreDNS.autoConfigure=$auto_configure" \
+        --set "controller.targetCNAME=test-target.cluster.local" \
+        $additional_args \
+        --wait --timeout=120s
+}
+
+# Check if volume exists in CoreDNS deployment
+# Check if CoreDNS deployment has the expected volume mount
+check_coredns_mount_exists() {
+    local volume_name="${1:-$VOLUME_NAME}"
+    local mount_path="${2:-$EXPECTED_MOUNT_PATH}"
+    local deployment_json
+    deployment_json=$(kubectl get deployment coredns -n "$COREDNS_NAMESPACE" -o json 2>/dev/null || echo "{}")
+    
+    # Check if volume mount exists with the expected path
+    echo "$deployment_json" | jq -e ".spec.template.spec.containers[].volumeMounts[]? | select(.name == \"$volume_name\" and .mountPath == \"$mount_path\")" &>/dev/null
+}
+
+# Check if CoreDNS deployment is missing the volume mount
+check_coredns_mount_missing() {
+    ! check_coredns_mount_exists "$@"
+}
+
+# Check if CoreDNS deployment has the expected volume
+check_coredns_volume_exists() {
+    local volume_name="${1:-$VOLUME_NAME}"
+    local deployment_json
+    deployment_json=$(kubectl get deployment coredns -n "$COREDNS_NAMESPACE" -o json 2>/dev/null || echo "{}")
+    echo "$deployment_json" | jq -e ".spec.template.spec.volumes[]? | select(.name == \"$volume_name\")" &>/dev/null
+}
+
+# Export the new helper functions
+export -f check_coredns_import_exists
+export -f check_coredns_import_missing
+export -f get_deployment_name
+export -f get_cluster_role_name
+export -f wait_for_deployment
+export -f helm_install_controller
+export -f helm_upgrade_controller
+export -f check_coredns_mount_exists
+export -f check_coredns_mount_missing
+export -f check_coredns_volume_exists
 export -f check_test_prerequisites
 export -f run_test

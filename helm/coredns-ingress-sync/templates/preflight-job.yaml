@@ -19,8 +19,14 @@ metadata:
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-10"
-    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+    "helm.sh/hook-delete-policy": before-hook-creation
+    "helm.sh/hook-failure-policy": fail
 spec:
+  backoffLimit: 0  # No retries - fail fast
+  activeDeadlineSeconds: 60  # Shorter timeout for faster feedback
+  {{- if gt (.Values.jobs.failedJobTTL | int) 0 }}
+  ttlSecondsAfterFinished: {{ .Values.jobs.failedJobTTL }}  # Keep failed job for debugging
+  {{- end }}
   template:
     metadata:
       labels:

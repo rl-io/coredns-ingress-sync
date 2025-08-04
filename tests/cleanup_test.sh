@@ -6,7 +6,6 @@ set -e
 
 # Get test directory and source helpers
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$TEST_DIR/.." && pwd)"
 source "$TEST_DIR/test_helpers.sh"
 
 # Safety check - verify we're not running against a live cluster
@@ -33,14 +32,10 @@ test_basic_cleanup() {
     
     # Deploy controller with autoConfigure=true
     log_info "Deploying controller with autoConfigure=true..."
-    helm install $TEST_RELEASE_NAME $PROJECT_DIR/helm/coredns-ingress-sync \
-        --namespace $TEST_NAMESPACE \
-        --set coreDNS.autoConfigure=true \
-        --set controller.targetCNAME=test-target.cluster.local \
-        --wait --timeout=120s
+    helm_install_controller "$TEST_RELEASE_NAME" "$TEST_NAMESPACE" "true"
     
     # Wait for controller to be ready
-    kubectl wait --for=condition=available --timeout=60s deployment/$TEST_RELEASE_NAME-coredns-ingress-sync -n $TEST_NAMESPACE
+    wait_for_deployment "$TEST_RELEASE_NAME" "$TEST_NAMESPACE"
     
     # Create a test ingress to populate ConfigMap
     kubectl apply -f - <<EOF
@@ -93,13 +88,10 @@ EOF
     
     # Verify CoreDNS import statement was added
     log_info "Verifying CoreDNS import statement..."
-    local corefile_content
-    corefile_content=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' 2>/dev/null || echo "")
-    if [[ "$corefile_content" != *"import /etc/coredns/custom/*.server"* ]]; then
-        log_error "CoreDNS Corefile does not contain import statement"
-        echo "Corefile content: $corefile_content"
+    check_coredns_import_exists || {
+        log_error "CoreDNS import statement not found"
         return 1
-    fi
+    }
     
     # Test the actual cleanup process
     log_info "Testing helm uninstall with cleanup..."
@@ -128,12 +120,10 @@ EOF
     
     # Verify CoreDNS import statement was removed
     log_info "Verifying CoreDNS import statement was removed..."
-    corefile_content=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' 2>/dev/null || echo "")
-    if [[ "$corefile_content" == *"import /etc/coredns/custom/*.server"* ]]; then
-        log_error "CoreDNS Corefile still contains import statement after cleanup"
-        echo "Corefile content: $corefile_content"
+    check_coredns_import_missing || {
+        log_error "CoreDNS import statement still present after cleanup"
         return 1
-    fi
+    }
     
     # Cleanup test resources
     kubectl delete ingress cleanup-test-ingress -n default --ignore-not-found=true
@@ -152,14 +142,10 @@ test_cleanup_rbac_permissions() {
     
     # Deploy controller with autoConfigure=true
     log_info "Deploying controller for RBAC test..."
-    helm install $TEST_RELEASE_NAME $PROJECT_DIR/helm/coredns-ingress-sync \
-        --namespace $TEST_NAMESPACE \
-        --set coreDNS.autoConfigure=true \
-        --set controller.targetCNAME=test-target.cluster.local \
-        --wait --timeout=120s
+    helm_install_controller "$TEST_RELEASE_NAME" "$TEST_NAMESPACE" "true"
     
     # Wait for controller to be ready
-    kubectl wait --for=condition=available --timeout=60s deployment/$TEST_RELEASE_NAME-coredns-ingress-sync -n $TEST_NAMESPACE
+    wait_for_deployment "$TEST_RELEASE_NAME" "$TEST_NAMESPACE"
     
     # Create test ingress to ensure ConfigMap is created
     kubectl apply -f - <<EOF
@@ -254,11 +240,7 @@ test_cleanup_failure_scenarios() {
     
     # Deploy controller without autoConfigure (should still have RBAC for cleanup)
     log_info "Deploying controller without autoConfigure..."
-    helm install $TEST_RELEASE_NAME $PROJECT_DIR/helm/coredns-ingress-sync \
-        --namespace $TEST_NAMESPACE \
-        --set coreDNS.autoConfigure=false \
-        --set controller.targetCNAME=test-target.cluster.local \
-        --wait --timeout=120s
+    helm_install_controller "$TEST_RELEASE_NAME" "$TEST_NAMESPACE" "false"
     
     # Manually create the ConfigMap that cleanup should delete
     kubectl apply -f - <<EOF
@@ -273,10 +255,10 @@ data:
 EOF
     
     # Test that cleanup can still delete ConfigMap even when autoConfigure=false
-    helm uninstall $TEST_RELEASE_NAME --namespace $TEST_NAMESPACE --wait --timeout=120s
+    helm uninstall "$TEST_RELEASE_NAME" --namespace "$TEST_NAMESPACE" --wait --timeout=120s
     
     # Verify ConfigMap was deleted
-    if kubectl get configmap $CONFIGMAP_NAME -n kube-system &>/dev/null; then
+    if kubectl get configmap "$CONFIGMAP_NAME" -n kube-system &>/dev/null; then
         log_error "ConfigMap $CONFIGMAP_NAME was not deleted during cleanup (autoConfigure=false case)"
         return 1
     fi

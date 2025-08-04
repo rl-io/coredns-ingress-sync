@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -59,8 +61,8 @@ func (c *Checker) RunChecks(ctx context.Context) ([]CheckResult, error) {
 		"mountPath", c.config.MountPath,
 		"volumeName", c.config.VolumeName)
 
-	// Check 1: CoreDNS deployment exists
-	result, err := c.checkCoreDNSDeployment(ctx)
+	// Check 1: CoreDNS deployment exists (with retry for RBAC issues)
+	result, err := c.checkCoreDNSDeploymentWithRetry(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check CoreDNS deployment: %w", err)
 	}
@@ -102,9 +104,27 @@ func (c *Checker) checkCoreDNSDeployment(ctx context.Context) (CheckResult, erro
 	}, deployment)
 
 	if err != nil {
+		// Check if this is a permission/RBAC error
+		if errors.IsForbidden(err) {
+			return CheckResult{
+				Passed:   false,
+				Message:  fmt.Sprintf("❌ Permission denied accessing CoreDNS deployment in namespace %s. This usually means RBAC resources are not yet created. Try again in a few seconds.", c.config.CoreDNSNamespace),
+				Severity: "error",
+			}, nil
+		}
+		
+		if errors.IsNotFound(err) {
+			return CheckResult{
+				Passed:   false,
+				Message:  fmt.Sprintf("❌ CoreDNS deployment not found in namespace %s", c.config.CoreDNSNamespace),
+				Severity: "error",
+			}, nil
+		}
+		
+		// Other errors
 		return CheckResult{
 			Passed:   false,
-			Message:  fmt.Sprintf("❌ CoreDNS deployment not found in namespace %s", c.config.CoreDNSNamespace),
+			Message:  fmt.Sprintf("❌ Error accessing CoreDNS deployment: %v", err),
 			Severity: "error",
 		}, nil
 	}
@@ -116,6 +136,34 @@ func (c *Checker) checkCoreDNSDeployment(ctx context.Context) (CheckResult, erro
 	}, nil
 }
 
+// checkCoreDNSDeploymentWithRetry performs the CoreDNS deployment check with retry for RBAC propagation
+func (c *Checker) checkCoreDNSDeploymentWithRetry(ctx context.Context) (CheckResult, error) {
+	const maxRetries = 2  // Reduced from 3 for faster failure
+	const retryDelay = 1 * time.Second  // Reduced from 2 seconds
+	
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		result, err := c.checkCoreDNSDeployment(ctx)
+		
+		// If no error or not a permission error, return immediately
+		if err != nil || result.Passed || !strings.Contains(result.Message, "Permission denied") {
+			return result, err
+		}
+		
+		// If it's a permission error and we have retries left, wait and retry
+		if attempt < maxRetries {
+			c.logger.Info("RBAC permissions not ready, retrying...", "attempt", attempt, "maxRetries", maxRetries)
+			time.Sleep(retryDelay)
+			continue
+		}
+		
+		// Final attempt failed
+		return result, err
+	}
+	
+	// Should never reach here, but satisfy compiler
+	return CheckResult{Passed: false, Message: "Unexpected error in retry logic", Severity: "error"}, nil
+}
+
 // checkMountPathConflicts checks for mount path conflicts
 func (c *Checker) checkMountPathConflicts(ctx context.Context) (CheckResult, error) {
 	deployment := &appsv1.Deployment{}
@@ -125,9 +173,18 @@ func (c *Checker) checkMountPathConflicts(ctx context.Context) (CheckResult, err
 	}, deployment)
 
 	if err != nil {
+		// Check if this is a permission/RBAC error
+		if errors.IsForbidden(err) {
+			return CheckResult{
+				Passed:   false,
+				Message:  "❌ Permission denied accessing CoreDNS deployment for mount path check. RBAC resources may not be ready yet.",
+				Severity: "error",
+			}, nil
+		}
+		
 		return CheckResult{
 			Passed:   false,
-			Message:  "❌ Could not retrieve CoreDNS deployment for mount path check",
+			Message:  fmt.Sprintf("❌ Could not retrieve CoreDNS deployment for mount path check: %v", err),
 			Severity: "error",
 		}, nil
 	}
@@ -292,6 +349,10 @@ func (c *Checker) PrintResults(results []CheckResult) {
 	if errors == 0 {
 		c.logger.Info("")
 		c.logger.Info("🎉 All critical checks passed! Deployment can proceed safely.")
+	} else {
+		c.logger.Info("")
+		c.logger.Info("❌ PREFLIGHT CHECKS FAILED - Deployment cannot proceed")
+		c.logger.Info("Please resolve the above errors before installing/upgrading.")
 	}
 }
 

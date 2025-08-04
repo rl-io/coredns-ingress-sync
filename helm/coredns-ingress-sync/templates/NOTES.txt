@@ -1,0 +1,61 @@
+{{- if .Values.coreDNS.autoConfigure }}
+CoreDNS Ingress Sync has been installed successfully!
+
+🔍 Preflight checks have passed - your configuration is safe.
+
+{{- if .Values.metrics.enabled }}
+📊 Metrics are available at:
+  http://{{ include "coredns-ingress-sync.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.metrics.port }}/metrics
+{{- end }}
+
+📋 Configuration Summary:
+  • Target CNAME: {{ .Values.controller.targetCNAME }}
+  • Ingress Class: {{ .Values.controller.ingressClass }}
+  • Mount Path: {{ if .Values.controller.mountPath }}{{ .Values.controller.mountPath }}{{ else }}/etc/coredns/custom/{{ include "coredns-ingress-sync.fullname" . }}{{ end }}
+  {{- if .Values.controller.watchNamespaces }}
+  • Watching Namespaces: {{ .Values.controller.watchNamespaces }}
+  {{- else }}
+  • Watching: All namespaces (cluster-wide)
+  {{- end }}
+
+🎯 The controller will now automatically:
+  1. Watch for Ingress resources with ingressClassName="{{ .Values.controller.ingressClass }}"
+  2. Create DNS rewrite rules mapping hostnames to {{ .Values.controller.targetCNAME }}
+  3. Configure CoreDNS to resolve these hostnames internally
+
+{{- else }}
+CoreDNS Ingress Sync has been installed in monitoring mode.
+
+⚠️  Auto-configuration is DISABLED (coreDNS.autoConfigure=false)
+The controller is running but will not modify CoreDNS configuration.
+
+To enable automatic CoreDNS management:
+  helm upgrade {{ .Release.Name }} {{ .Chart.Name }} \
+    --set coreDNS.autoConfigure=true \
+    --reuse-values
+{{- end }}
+
+📚 For troubleshooting and configuration options, see:
+  https://github.com/rl-io/coredns-ingress-sync/blob/main/docs/
+
+{{- if or (not .Values.coreDNS.autoConfigure) (eq .Values.environment "development") }}
+
+🔧 Debug Commands:
+  # Check controller logs:
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "coredns-ingress-sync.name" . }}
+
+  # Check controller status:
+  kubectl get deployment -n {{ .Release.Namespace }} {{ include "coredns-ingress-sync.fullname" . }}
+
+  # Check CoreDNS configuration (if autoConfigure=true):
+  kubectl get configmap coredns -n {{ .Values.coreDNS.namespace }} -o yaml
+
+  # If preflight checks failed during install, check logs:
+  kubectl logs -n {{ .Release.Namespace }} job/{{ include "coredns-ingress-sync.fullname" . }}-preflight
+
+  # Or use the helper script (from the project repository):
+  ./scripts/check-preflight-logs.sh {{ .Release.Name }} {{ .Release.Namespace }}
+
+  # To prevent failed jobs from accumulating, set jobs.failedJobTTL=0:
+  helm upgrade {{ .Release.Name }} {{ .Chart.Name }} --set jobs.failedJobTTL=0 --reuse-values
+{{- end }}

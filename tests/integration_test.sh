@@ -223,7 +223,7 @@ test_coredns_health() {
     local coredns_config
     coredns_config=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' 2>/dev/null || echo "")
     
-    if echo "$coredns_config" | grep -qF "import /etc/coredns/custom/*.server"; then
+    if echo "$coredns_config" | grep -qF "import /etc/coredns/custom/coredns-ingress-sync/*.server"; then
         log_info "CoreDNS is configured to use dynamic ConfigMap"
     else
         log_warn "CoreDNS configuration may not include dynamic ConfigMap reference"

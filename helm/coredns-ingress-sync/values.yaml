@@ -113,6 +113,12 @@ rbac:
   # Specifies whether RBAC resources should be created
   create: true
 
+# Job configuration
+jobs:
+  # How long to keep failed preflight jobs for debugging (in seconds)
+  # Set to 0 to delete immediately, or increase for longer debugging time
+  failedJobTTL: 300  # 5 minutes
+
 # Leader election configuration
 leaderElection:
   # Enable leader election for high availability
