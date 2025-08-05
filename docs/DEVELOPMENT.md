@@ -28,7 +28,7 @@ asdf install
 make setup-dev
 
 # Or setup manually:
-go mod download         # Install Go dependencies  
+go mod download         # Install Go dependencies
 npm install            # Install commit tools (optional but recommended)
 
 # Verify setup
@@ -375,7 +375,7 @@ kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync -f
 For detailed solutions to common issues including:
 
 - Controller startup problems
-- DNS resolution issues  
+- DNS resolution issues
 - ConfigMap update failures
 - Performance problems
 

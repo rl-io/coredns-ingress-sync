@@ -31,12 +31,14 @@ kubectl logs -n <your-namespace> job/<release-name>-preflight
 
 ### 0. Helm Install/Upgrade Fails with Preflight Errors
 
-#### Symptoms
+#### Preflight Check Symptoms
+
 - `helm install` or `helm upgrade` command fails
 - Error message mentions job failures or timeouts
 - Installation stops before the main controller is deployed
 
 #### Diagnosis
+
 ```bash
 # Check preflight job status
 kubectl get jobs -n <your-namespace> | grep preflight
@@ -51,28 +53,37 @@ kubectl logs -n <your-namespace> job/<release-name>-preflight
 #### Solutions
 
 **RBAC Permission Errors:**
-```
+
+```bash
 ❌ Permission denied accessing CoreDNS deployment in namespace kube-system
 ```
+
 - **Cause**: RBAC resources haven't been created yet or have insufficient permissions
 - **Solution**: The preflight job will retry automatically. If it persists, check that your cluster has RBAC enabled and the ServiceAccount has proper permissions.
 
 **CoreDNS Not Found:**
-```
+
+```bash
 ❌ CoreDNS deployment not found in namespace kube-system
 ```
+
 - **Cause**: CoreDNS is not installed or is in a different namespace
-- **Solution**: 
+
+- **Solution**:
   - For EKS: CoreDNS should be in `kube-system` namespace by default
   - For other clusters: Check where CoreDNS is installed: `kubectl get deployment -A | grep coredns`
   - Update Helm values: `--set coreDNS.namespace=<correct-namespace>`
 
 **Mount Path Conflicts:**
-```
+
+```bash
 ❌ Mount path conflict detected!
 ```
+
 - **Cause**: Another deployment is already using the same mount path in CoreDNS
+
 - **Solution**: Set a custom mount path in your Helm values:
+
   ```bash
   helm install my-release ./helm/coredns-ingress-sync \
     --set coreDNS.autoConfigure=true \
@@ -80,11 +91,15 @@ kubectl logs -n <your-namespace> job/<release-name>-preflight
   ```
 
 **ConfigMap Conflicts:**
-```
+
+```bash
 ❌ ConfigMap conflict detected!
 ```
+
 - **Cause**: Another instance is managing the same ConfigMap
+
 - **Solution**: Use a different release name or set a custom ConfigMap name:
+
   ```bash
   helm install my-release ./helm/coredns-ingress-sync \
     --set controller.dynamicConfigMap.name="my-unique-configmap"
@@ -92,7 +107,7 @@ kubectl logs -n <your-namespace> job/<release-name>-preflight
 
 ### 1. Controller Not Starting
 
-#### Symptoms
+#### Controller Startup Symptoms
 
 - Pod in `CrashLoopBackOff` or `Pending` state
 - Container fails to start
@@ -183,7 +198,36 @@ kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' | gr
 kubectl logs -n coredns-ingress-sync deployment/coredns-ingress-sync | grep -i "import"
 
 # Manual fix if auto-configuration is disabled:
-kubectl patch configmap coredns -n kube-system --type merge -p '{"data":{"Corefile":".:53 {\n    import /etc/coredns/custom/*.server\n    errors\n    health {\n       lameduck 5s\n    }\n    ready\n    kubernetes cluster.local in-addr.arpa ip6.arpa {\n       pods insecure\n       fallthrough in-addr.arpa ip6.arpa\n       ttl 30\n    }\n    prometheus :9153\n    forward . /etc/resolv.conf {\n       max_concurrent 1000\n    }\n    cache 30\n    loop\n    reload\n    loadbalance\n}"}}'
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |
+    .:53 {
+        import /etc/coredns/custom/*.server
+        errors
+        health {
+           lameduck 5s
+        }
+        ready
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+           pods insecure
+           fallthrough in-addr.arpa ip6.arpa
+           ttl 30
+        }
+        prometheus :9153
+        forward . /etc/resolv.conf {
+           max_concurrent 1000
+        }
+        cache 30
+        loop
+        reload
+        loadbalance
+    }
+EOF
 ```
 
 ##### Missing Volume Mount in CoreDNS
@@ -448,7 +492,35 @@ kubectl delete namespace coredns-ingress-sync
 kubectl delete configmap coredns-ingress-sync-rewrite-rules -n kube-system
 
 # 3. Reset CoreDNS configuration (if needed)
-kubectl patch configmap coredns -n kube-system --type merge -p '{"data":{"Corefile":".:53 {\n    errors\n    health {\n       lameduck 5s\n    }\n    ready\n    kubernetes cluster.local in-addr.arpa ip6.arpa {\n       pods insecure\n       fallthrough in-addr.arpa ip6.arpa\n       ttl 30\n    }\n    prometheus :9153\n    forward . /etc/resolv.conf {\n       max_concurrent 1000\n    }\n    cache 30\n    loop\n    reload\n    loadbalance\n}"}}'
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |
+    .:53 {
+        errors
+        health {
+           lameduck 5s
+        }
+        ready
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+           pods insecure
+           fallthrough in-addr.arpa ip6.arpa
+           ttl 30
+        }
+        prometheus :9153
+        forward . /etc/resolv.conf {
+           max_concurrent 1000
+        }
+        cache 30
+        loop
+        reload
+        loadbalance
+    }
+EOF
 
 # 4. Restart CoreDNS
 kubectl rollout restart deployment/coredns -n kube-system

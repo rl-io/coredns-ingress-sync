@@ -26,7 +26,7 @@ Use this format for your commit messages:
 ### Commit Types
 
 - **`feat:`** New feature → **Minor version bump** (0.1.0 → 0.2.0)
-- **`fix:`** Bug fix → **Patch version bump** (0.1.0 → 0.1.1)  
+- **`fix:`** Bug fix → **Patch version bump** (0.1.0 → 0.1.1)
 - **`docs:`** Documentation only → **Patch version bump**
 - **`style:`** Code style changes → **Patch version bump**
 - **`refactor:`** Code refactoring → **Patch version bump**
@@ -49,7 +49,7 @@ BREAKING CHANGE: The configuration format has changed from environment variables
 # Patch release (0.1.0 → 0.1.1)
 git commit -m "fix: resolve CoreDNS volume mount race condition"
 
-# Minor release (0.1.0 → 0.2.0)  
+# Minor release (0.1.0 → 0.2.0)
 git commit -m "feat: add support for multiple ingress classes"
 
 # Major release (0.1.0 → 1.0.0)

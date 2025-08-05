@@ -72,12 +72,12 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 
 ## Security Compliance
 
-✅ **Non-root execution**: Runs as UID 65534  
-✅ **Minimal attack surface**: No shell, no package manager  
-✅ **No known vulnerabilities**: No base OS packages  
-✅ **Static binary**: No dynamic library dependencies  
-✅ **Stripped binary**: Debug symbols removed  
-✅ **Minimal context**: Only necessary files included  
+✅ **Non-root execution**: Runs as UID 65534
+✅ **Minimal attack surface**: No shell, no package manager
+✅ **No known vulnerabilities**: No base OS packages
+✅ **Static binary**: No dynamic library dependencies
+✅ **Stripped binary**: Debug symbols removed
+✅ **Minimal context**: Only necessary files included
 
 ## Testing
 

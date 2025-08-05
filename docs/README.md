@@ -9,7 +9,7 @@ Welcome to the coredns-ingress-sync documentation! This guide helps you find the
 - **[README](../README.md)** - Project overview, quick start, and installation
 - **[Configuration Guide](CONFIGURATION.md)** - Detailed configuration options and examples
 
-### 🛠️ Technical Details  
+### 🛠️ Technical Details
 
 - **[Architecture Guide](ARCHITECTURE.md)** - Technical implementation and design
 - **[Development Guide](DEVELOPMENT.md)** - Local development and testing
@@ -134,7 +134,7 @@ Welcome to the coredns-ingress-sync documentation! This guide helps you find the
 - [CoreDNS](https://kubernetes.io/docs/tasks/administer-cluster/dns-custom-nameservers/)
 - [ConfigMaps](https://kubernetes.io/docs/concepts/configuration/configmap/)
 
-### CoreDNS Documentation  
+### CoreDNS Documentation
 
 - [CoreDNS Manual](https://coredns.io/manual/toc/)
 - [Rewrite Plugin](https://coredns.io/plugins/rewrite/)

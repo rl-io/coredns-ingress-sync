@@ -157,7 +157,7 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 
 - **Setup PR Status**: Initializes status checks for release-please PRs
 - **Build**: Uses reusable docker-build action
-- **Test**: Uses reusable test-runner action  
+- **Test**: Uses reusable test-runner action
 - **Security Scan**: Uses reusable security-scan action
 
 **Features:**
@@ -238,7 +238,7 @@ Settings > Actions > General:
 
 Settings > Security > Code security and analysis:
   - Dependency graph: ✅
-  - Dependabot alerts: ✅  
+  - Dependabot alerts: ✅
   - Dependabot security updates: ✅
   - Code scanning: ✅
 ```

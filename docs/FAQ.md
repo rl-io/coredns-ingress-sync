@@ -4,7 +4,10 @@
 
 ### Q: What is coredns-ingress-sync?
 
-A: coredns-ingress-sync is a Kubernetes controller that automatically configures CoreDNS to resolve ingress hostnames to internal cluster services. This enables secure, efficient internal service-to-service communication without relying on external DNS resolution.
+A: coredns-ingress-sync is a Kubernetes controller that automatically configures
+CoreDNS to resolve ingress hostnames to internal cluster services. This enables
+secure, efficient internal service-to-service communication without relying on
+external DNS resolution.
 
 ### Q: Why would I need this instead of just using external DNS?
 
@@ -18,9 +21,7 @@ A: Yes, completely compatible. This controller only affects internal DNS resolut
 
 A: The controller is built using controller-runtime and supports Kubernetes 1.19+. It has been tested with:
 
-- EKS 1.21-1.28
-- GKE 1.21-1.28  
-- AKS 1.21-1.28
+- EKS 1.21-1.33
 - Kind/Minikube for development
 
 ## Installation and Configuration
@@ -336,7 +337,7 @@ A: Each deployment gets a unique mount path to prevent conflicts when running mu
 Example with two deployments:
 
 ```bash
-# nginx controller: /etc/coredns/custom/my-nginx-controller  
+# nginx controller: /etc/coredns/custom/my-nginx-controller
 # traefik controller: /etc/coredns/custom/my-traefik-controller
 ```
 
@@ -390,7 +391,7 @@ metrics:
   enabled: true
   port: 8080
   path: /metrics
-  
+
   # Prometheus ServiceMonitor
   serviceMonitor:
     enabled: true
@@ -415,7 +416,7 @@ A: The controller provides multiple health monitoring approaches:
 **Health Endpoints:**
 
 - `/healthz` (port 8081) - Liveness probe
-- `/readyz` (port 8081) - Readiness probe  
+- `/readyz` (port 8081) - Readiness probe
 - `/metrics` (port 8080) - Prometheus metrics
 
 **Key Metrics to Monitor:**
@@ -436,7 +437,7 @@ groups:
     for: 2m
     annotations:
       summary: "CoreDNS ingress sync reconciliation errors detected"
-      
+
   - alert: CorednsIngressSyncHighLatency
     expr: histogram_quantile(0.95, coredns_ingress_sync_reconciliation_duration_seconds) > 5
     for: 5m
@@ -450,9 +451,10 @@ A: The controller provides structured logging at multiple levels:
 
 - `error` - Critical errors requiring attention
 - `info` - Important operational events (default)
-- `debug` - Detailed debugging information  
+- `debug` - Detailed debugging information
 
 Configure log level via:
+
 ```yaml
 controller:
   logLevel: "info"  # debug, info, warn, error

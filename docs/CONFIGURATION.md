@@ -12,10 +12,10 @@ The controller is configured through Helm values. All configuration options are 
 controller:
   # Ingress class to watch for changes
   ingressClass: "nginx"
-  
+
   # Target service for DNS resolution (where ingress hostnames should resolve)
   targetCNAME: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
-  
+
   # Namespace filtering - controls which namespaces to monitor for ingresses
   # Empty string = watch all namespaces cluster-wide (default)
   # Comma-separated list = watch only specific namespaces
@@ -23,16 +23,16 @@ controller:
   # Examples:
   # watchNamespaces: "production,staging"  # Watch only production and staging
   # watchNamespaces: "default"             # Watch only default namespace
-  
+
   # Dynamic ConfigMap configuration
   dynamicConfigMap:
     name: "coredns-ingress-sync-rewrite-rules"
     key: "dynamic.server"
-  
+
   # Leader election (for multiple replicas)
   leaderElection:
     enabled: true
-    
+
   # Logging configuration
   logLevel: "info"
 ```
@@ -44,10 +44,10 @@ coreDNS:
   # Automatically configure CoreDNS
   # IMPORTANT: Default is false for safety - set to true to enable
   autoConfigure: false
-  
+
   # CoreDNS namespace
   namespace: "kube-system"
-  
+
   # CoreDNS ConfigMap name
   configMapName: "coredns"
 ```
@@ -63,12 +63,12 @@ metrics:
   enabled: true
   port: 8080
   path: /metrics
-  
+
   # Service configuration for metrics endpoint
   service:
     annotations: {}
     labels: {}
-  
+
   # ServiceMonitor configuration (requires Prometheus Operator)
   serviceMonitor:
     enabled: false
@@ -81,7 +81,7 @@ metrics:
 **Available Metrics:**
 
 - `coredns_ingress_sync_reconciliation_total{result}` - Reconciliation attempts
-- `coredns_ingress_sync_reconciliation_duration_seconds{result}` - Reconciliation latency  
+- `coredns_ingress_sync_reconciliation_duration_seconds{result}` - Reconciliation latency
 - `coredns_ingress_sync_dns_records_managed_total` - Current DNS records managed
 - `coredns_ingress_sync_coredns_config_updates_total{result}` - CoreDNS config updates
 - `coredns_ingress_sync_leader_election_status` - Leader election status
@@ -93,12 +93,12 @@ metrics:
 controller:
   # Custom volume name for mounting dynamic configuration
   volumeName: "coredns-ingress-sync-volume"
-  
-  # Custom mount path for dynamic configuration  
+
+  # Custom mount path for dynamic configuration
   # If empty, defaults to: /etc/coredns/custom/{deployment-name}
   # This allows multiple deployments with unique mount paths
   mountPath: ""
-  
+
   # Dynamic ConfigMap configuration
   dynamicConfigMap:
     name: "coredns-ingress-sync-rewrite-rules"
@@ -192,7 +192,7 @@ helm install coredns-ingress-sync-nginx ./helm/coredns-ingress-sync \
   --namespace coredns-ingress-sync \
   --create-namespace
 
-# Second deployment: mount path = /etc/coredns/custom/coredns-ingress-sync-traefik  
+# Second deployment: mount path = /etc/coredns/custom/coredns-ingress-sync-traefik
 helm install coredns-ingress-sync-traefik ./helm/coredns-ingress-sync \
   --set coreDNS.autoConfigure=true \
   --set controller.ingressClass=traefik \

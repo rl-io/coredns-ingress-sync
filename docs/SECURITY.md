@@ -14,7 +14,7 @@ This project uses several automated tools to maintain security and keep dependen
 ### Trivy Security Scanning
 
 - **Container image scanning** for vulnerabilities
-- **Filesystem scanning** for secrets and misconfigurations  
+- **Filesystem scanning** for secrets and misconfigurations
 - **SARIF reporting** integrated with GitHub Security tab
 - **Automated scanning** on every push and PR
 
@@ -42,7 +42,7 @@ This project uses several automated tools to maintain security and keep dependen
 ### Update Schedule
 
 - **Go modules**: Weekly on Monday 09:00 UTC
-- **Node.js packages**: Weekly on Monday 09:30 UTC  
+- **Node.js packages**: Weekly on Monday 09:30 UTC
 - **Docker images**: Weekly on Tuesday 09:00 UTC
 - **GitHub Actions**: Weekly on Tuesday 09:30 UTC
 
@@ -65,7 +65,7 @@ All Dependabot PRs follow conventional commit standards:
 ### Viewing Security Reports
 
 1. Go to repository → Security tab
-2. View vulnerability alerts and advisories  
+2. View vulnerability alerts and advisories
 3. Check code scanning results from Trivy
 4. Review dependency updates from Dependabot
 
@@ -86,7 +86,7 @@ trivy image ghcr.io/rl-io/coredns-ingress-sync:latest
 go get -u ./...
 go mod tidy
 
-# Update Node.js dependencies  
+# Update Node.js dependencies
 npm audit fix
 npm update
 
