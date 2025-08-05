@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.14](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.13...coredns-ingress-sync-v0.1.14) (2025-08-05)
+
+
+### Features
+
+* add coredns volume mountpath based on release name ([#53](https://github.com/rl-io/coredns-ingress-sync/issues/53)) ([9e4674f](https://github.com/rl-io/coredns-ingress-sync/commit/9e4674f50506c35926c1646774eb085e91046e4f))
+
+
+### Documentation
+
+* update docs for latest version and metrics examples ([85f6c64](https://github.com/rl-io/coredns-ingress-sync/commit/85f6c64c0523a147aa6286ac5ba816696f87ed50))
+* update markdown lint warnings ([4a67844](https://github.com/rl-io/coredns-ingress-sync/commit/4a6784422340e5fff3895c86b348fb10cb64186b))
+
 ## [0.1.13](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.12...coredns-ingress-sync-v0.1.13) (2025-08-03)
 
 
