@@ -310,6 +310,50 @@ A: The controller works alongside service mesh solutions. Configure the target C
 
 A: The controller currently only handles HTTP/HTTPS ingresses. For TCP/UDP services, you would need custom CoreDNS configuration or a different approach.
 
+### Q: What are preflight checks and when do they run?
+
+A: Preflight checks are validation tests that run before the main controller starts, ensuring the environment is properly configured:
+
+- **When**: Automatically during Helm install/upgrade as a pre-install hook
+- **What they check**: CoreDNS deployment existence, mount path conflicts, ConfigMap conflicts, duplicate controllers
+- **Fast-fail**: Jobs are configured with `backoffLimit: 0` to fail quickly and provide immediate feedback
+- **Debugging**: Failed jobs are kept for 5 minutes (configurable via `jobs.failedJobTTL`) for log inspection
+
+```bash
+# View preflight job logs if installation fails
+kubectl logs job/<release-name>-preflight -n <namespace>
+```
+
+### Q: How does the unique mount path feature work?
+
+A: Each deployment gets a unique mount path to prevent conflicts when running multiple instances:
+
+- **Default pattern**: `/etc/coredns/custom/{deployment-name}`
+- **Automatic**: No configuration needed - paths are auto-generated
+- **Custom**: Override with `controller.mountPath` if needed
+- **Benefits**: Allows multiple controllers (different ingress classes) in the same cluster
+
+Example with two deployments:
+
+```bash
+# nginx controller: /etc/coredns/custom/my-nginx-controller  
+# traefik controller: /etc/coredns/custom/my-traefik-controller
+```
+
+### Q: How long are failed preflight jobs kept?
+
+A: Failed preflight jobs are kept for debugging purposes:
+
+- **Default**: 5 minutes (300 seconds)
+- **Configurable**: Set `jobs.failedJobTTL` in Helm values
+- **Immediate cleanup**: Set to `0` to delete failed jobs immediately
+- **Extended debugging**: Increase value for longer troubleshooting time
+
+```yaml
+jobs:
+  failedJobTTL: 600  # 10 minutes
+```
+
 ## Monitoring and Observability
 
 ### Q: Are there metrics available?
@@ -317,24 +361,29 @@ A: The controller currently only handles HTTP/HTTPS ingresses. For TCP/UDP servi
 A: **Yes!** The controller provides comprehensive Prometheus metrics for monitoring and alerting:
 
 **Reconciliation Metrics:**
+
 - `coredns_ingress_sync_reconciliation_total` - Total reconciliations (success/error)
 - `coredns_ingress_sync_reconciliation_duration_seconds` - Reconciliation latency
 - `coredns_ingress_sync_reconciliation_errors_total` - Reconciliation errors by type
 
 **DNS Management Metrics:**
+
 - `coredns_ingress_sync_dns_records_managed_total` - Current DNS records count
 - `coredns_ingress_sync_coredns_config_updates_total` - CoreDNS config updates
 - `coredns_ingress_sync_coredns_config_update_duration_seconds` - Config update latency
 
 **Ingress Monitoring Metrics:**
+
 - `coredns_ingress_sync_ingresses_watched_total` - Watched ingresses per namespace
 - `coredns_ingress_sync_ingresses_processed_total` - Processed ingresses by action
 
 **System Metrics:**
+
 - `coredns_ingress_sync_leader_election_status` - Leader election status (1=leader, 0=follower)
 - `coredns_ingress_sync_coredns_config_drift_total` - Configuration drift detection/correction
 
 **Metrics Configuration:**
+
 ```yaml
 # Enable metrics (default: true)
 metrics:
@@ -350,6 +399,7 @@ metrics:
 ```
 
 **Accessing Metrics:**
+
 ```bash
 # Port-forward to access metrics
 kubectl port-forward deployment/coredns-ingress-sync 8080:8080 -n coredns-ingress-sync
@@ -363,17 +413,20 @@ curl http://localhost:8080/metrics
 A: The controller provides multiple health monitoring approaches:
 
 **Health Endpoints:**
+
 - `/healthz` (port 8081) - Liveness probe
 - `/readyz` (port 8081) - Readiness probe  
 - `/metrics` (port 8080) - Prometheus metrics
 
 **Key Metrics to Monitor:**
+
 - `coredns_ingress_sync_reconciliation_errors_total` - Alert on increases
 - `coredns_ingress_sync_reconciliation_duration_seconds` - Monitor latency
 - `coredns_ingress_sync_leader_election_status` - Leader election health
 - `coredns_ingress_sync_coredns_config_drift_total` - Configuration drift incidents
 
 **Example Prometheus Alerts:**
+
 ```yaml
 groups:
 - name: coredns-ingress-sync

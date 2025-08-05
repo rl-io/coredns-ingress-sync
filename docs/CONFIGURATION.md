@@ -54,6 +54,76 @@ coreDNS:
 
 **⚠️ Safety First**: By default, `autoConfigure` is `false` to prevent unexpected changes to your CoreDNS configuration. You must explicitly enable it.
 
+### Metrics Configuration
+
+```yaml
+# Metrics and monitoring configuration
+metrics:
+  # Enable Prometheus metrics endpoint (default: true)
+  enabled: true
+  port: 8080
+  path: /metrics
+  
+  # Service configuration for metrics endpoint
+  service:
+    annotations: {}
+    labels: {}
+  
+  # ServiceMonitor configuration (requires Prometheus Operator)
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    annotations: {}
+```
+
+**Available Metrics:**
+
+- `coredns_ingress_sync_reconciliation_total{result}` - Reconciliation attempts
+- `coredns_ingress_sync_reconciliation_duration_seconds{result}` - Reconciliation latency  
+- `coredns_ingress_sync_dns_records_managed_total` - Current DNS records managed
+- `coredns_ingress_sync_coredns_config_updates_total{result}` - CoreDNS config updates
+- `coredns_ingress_sync_leader_election_status` - Leader election status
+- `coredns_ingress_sync_coredns_config_drift_total{drift_type}` - Configuration drift events
+
+### Volume Mount Configuration
+
+```yaml
+controller:
+  # Custom volume name for mounting dynamic configuration
+  volumeName: "coredns-ingress-sync-volume"
+  
+  # Custom mount path for dynamic configuration  
+  # If empty, defaults to: /etc/coredns/custom/{deployment-name}
+  # This allows multiple deployments with unique mount paths
+  mountPath: ""
+  
+  # Dynamic ConfigMap configuration
+  dynamicConfigMap:
+    name: "coredns-ingress-sync-rewrite-rules"
+    key: "dynamic.server"
+```
+
+### Job Configuration
+
+```yaml
+jobs:
+  # How long to keep failed preflight jobs for debugging (in seconds)
+  # Set to 0 to delete immediately, or increase for longer debugging time
+  failedJobTTL: 300  # 5 minutes (default)
+```
+
+### Health Check Configuration
+
+```yaml
+# Health check configuration
+healthCheck:
+  enabled: true
+  port: 8081
+  path: /healthz
+```
+
 ### Resource Configuration
 
 ```yaml
@@ -95,20 +165,26 @@ The controller supports configuration through environment variables (set via Hel
 | `WATCH_NAMESPACES` | Namespaces to monitor (empty = all) | `""` |
 | `COREDNS_NAMESPACE` | CoreDNS namespace | `kube-system` |
 | `COREDNS_CONFIGMAP_NAME` | CoreDNS ConfigMap name | `coredns` |
+| `COREDNS_VOLUME_NAME` | CoreDNS volume name | `coredns-ingress-sync-volume` |
+| `MOUNT_PATH` | Custom mount path for dynamic config | `""` (auto-generated) |
 | `DYNAMIC_CONFIGMAP_NAME` | Dynamic ConfigMap name | `coredns-ingress-sync-rewrite-rules` |
 | `DYNAMIC_CONFIG_KEY` | Key in dynamic ConfigMap | `dynamic.server` |
 | `LEADER_ELECTION_ENABLED` | Enable leader election | `true` |
 | `LOG_LEVEL` | Logging level | `info` |
-| `COREDNS_AUTO_CONFIGURE` | Auto-configure CoreDNS | `true` |
+| `COREDNS_AUTO_CONFIGURE` | Auto-configure CoreDNS | `false` |
+| `METRICS_ENABLED` | Enable metrics endpoint | `true` |
+| `METRICS_PORT` | Metrics endpoint port | `8080` |
+| `HEALTH_CHECK_ENABLED` | Enable health check endpoint | `true` |
+| `HEALTH_CHECK_PORT` | Health check endpoint port | `8081` |
 
 ## Custom Configuration Examples
 
-### Multiple Ingress Classes
+### Multiple Deployments with Unique Mount Paths
 
-To watch multiple ingress classes, deploy multiple instances:
+When deploying multiple instances, each gets a unique mount path to prevent conflicts:
 
 ```bash
-# Install for nginx ingress class
+# First deployment: mount path = /etc/coredns/custom/coredns-ingress-sync-nginx
 helm install coredns-ingress-sync-nginx ./helm/coredns-ingress-sync \
   --set coreDNS.autoConfigure=true \
   --set controller.ingressClass=nginx \
@@ -116,12 +192,33 @@ helm install coredns-ingress-sync-nginx ./helm/coredns-ingress-sync \
   --namespace coredns-ingress-sync \
   --create-namespace
 
-# Install for traefik ingress class
+# Second deployment: mount path = /etc/coredns/custom/coredns-ingress-sync-traefik  
 helm install coredns-ingress-sync-traefik ./helm/coredns-ingress-sync \
   --set coreDNS.autoConfigure=true \
   --set controller.ingressClass=traefik \
   --set controller.dynamicConfigMap.name=coredns-traefik \
   --set controller.targetCNAME=traefik.traefik.svc.cluster.local. \
+  --namespace coredns-ingress-sync
+```
+
+**Mount Path Generation**:
+
+- Default: `/etc/coredns/custom/{deployment-name}`
+- Custom: Set `controller.mountPath` explicitly
+- Prevents mount path conflicts between multiple deployments
+
+### Preflight Checks
+
+The Helm chart includes preflight checks that validate the environment before deployment:
+
+```bash
+# View preflight job logs if installation fails
+kubectl logs job/coredns-ingress-sync-preflight -n coredns-ingress-sync
+
+# Manual preflight check (during development)
+helm install test ./helm/coredns-ingress-sync \
+  --dry-run --debug \
+  --set coreDNS.autoConfigure=true \
   --namespace coredns-ingress-sync
 ```
 

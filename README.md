@@ -47,7 +47,7 @@ helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
 # Or install from GitHub Packages  
 helm install coredns-ingress-sync \
   oci://ghcr.io/rl-io/charts/coredns-ingress-sync \
-  --version 0.1.0 \
+  --version 0.1.14 \
   --namespace coredns-ingress-sync \
   --create-namespace
 

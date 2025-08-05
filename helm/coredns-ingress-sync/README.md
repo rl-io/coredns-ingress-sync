@@ -28,7 +28,7 @@ This Helm chart deploys the CoreDNS Dynamic Internal Ingress Controller, which a
 # Install directly from GitHub Packages (OCI registry)
 helm install my-dns-controller \
   oci://ghcr.io/rl-io/charts/coredns-ingress-sync \
-  --version 0.1.0 \
+  --version 0.1.14 \
   --set coreDNS.autoConfigure=true \
   --set controller.targetCname="ingress-nginx-controller.ingress-nginx.svc.cluster.local."
 ```

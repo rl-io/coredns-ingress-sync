@@ -175,5 +175,5 @@ This documentation is maintained alongside the codebase. When making changes:
 ### Last Updated
 
 - Documentation restructured: 2025-01-16
-- All guides: Current with v0.1.0
+- All guides: Current with v0.1.14
 - Examples tested: 2025-01-16
