@@ -31,7 +31,7 @@ jobs:
       image-digest: ${{ steps.docker_build.outputs.image_digest }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         ref: ${{ github.event.client_payload.ref || github.ref }}
       
@@ -85,7 +85,7 @@ jobs:
     needs: build
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         ref: ${{ github.event.client_payload.ref || github.ref }}
       
@@ -146,7 +146,7 @@ jobs:
     needs: build
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         ref: ${{ github.event.client_payload.ref || github.ref }}
       
@@ -207,7 +207,7 @@ jobs:
       
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Download artifacts
       uses: actions/download-artifact@v4
