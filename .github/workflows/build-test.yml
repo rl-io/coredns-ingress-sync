@@ -21,7 +21,7 @@ jobs:
       image-digest: ${{ steps.docker_build.outputs.image_digest }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Build Docker Image
       id: docker_build
@@ -38,7 +38,7 @@ jobs:
     needs: build
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Download image artifact
       uses: actions/download-artifact@v4
@@ -62,7 +62,7 @@ jobs:
     needs: build
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Download image artifact
       uses: actions/download-artifact@v4

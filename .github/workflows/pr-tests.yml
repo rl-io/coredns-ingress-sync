@@ -28,7 +28,7 @@ jobs:
       cicd-changes: ${{ steps.changes.outputs.cicd }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Detect changes
       uses: dorny/paths-filter@v3
@@ -65,7 +65,7 @@ jobs:
       image-digest: ${{ steps.docker_build.outputs.image_digest }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Build Docker Image
       id: docker_build
@@ -84,7 +84,7 @@ jobs:
     if: always() && needs.build.result == 'success'
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Download image artifact
       uses: actions/download-artifact@v4
@@ -110,7 +110,7 @@ jobs:
     if: always() && needs.build.result == 'success'
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Download image artifact
       uses: actions/download-artifact@v4
@@ -134,7 +134,7 @@ jobs:
     if: needs.changes.outputs.docs-changes == 'true'
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Check markdown links
       uses: tcort/github-action-markdown-link-check@v1
