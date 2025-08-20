@@ -56,7 +56,7 @@ func TestIsTargetIngressFunction(t *testing.T) {
 			}
 
 			// Create ingress filter and test IsTargetIngress
-			filter := ingressfilter.NewFilter("nginx", "")
+			filter := ingressfilter.NewFilter("nginx", "", "", "", "")
 			result := filter.IsTargetIngress(ingress)
 			assert.Equal(t, tt.expected, result, "IsTargetIngress for class '%s' should be %v", tt.ingressClass, tt.expected)
 		})
@@ -115,7 +115,7 @@ func TestExtractHostnamesFunction(t *testing.T) {
 			}
 
 			// Create ingress filter and test ExtractHostnames
-			filter := ingressfilter.NewFilter("nginx", "")
+			filter := ingressfilter.NewFilter("nginx", "", "", "", "")
 			hostnames := filter.ExtractHostnames(ingresses)
 			
 			// Convert to map for easy comparison since order doesn't matter

@@ -18,9 +18,12 @@ func TestLoad(t *testing.T) {
 		"COREDNS_CONFIGMAP_NAME":  os.Getenv("COREDNS_CONFIGMAP_NAME"),
 		"LEADER_ELECTION_ENABLED": os.Getenv("LEADER_ELECTION_ENABLED"),
 		"WATCH_NAMESPACES":        os.Getenv("WATCH_NAMESPACES"),
+		"EXCLUDE_NAMESPACES":      os.Getenv("EXCLUDE_NAMESPACES"),
+		"EXCLUDE_INGRESSES":       os.Getenv("EXCLUDE_INGRESSES"),
 		"POD_NAMESPACE":           os.Getenv("POD_NAMESPACE"),
 		"DEPLOYMENT_NAME":         os.Getenv("DEPLOYMENT_NAME"),
 		"MOUNT_PATH":              os.Getenv("MOUNT_PATH"),
+		"ANNOTATION_ENABLED_KEY":  os.Getenv("ANNOTATION_ENABLED_KEY"),
 	}
 
 	// Restore original environment after test
@@ -51,10 +54,13 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, "coredns-ingress-sync-volume", config.CoreDNSVolumeName)
 		assert.True(t, config.LeaderElectionEnabled)
 		assert.Equal(t, "", config.WatchNamespaces)
+		assert.Equal(t, "", config.ExcludeNamespaces)
+		assert.Equal(t, "", config.ExcludeIngresses)
 		assert.Equal(t, "import /etc/coredns/custom/coredns-ingress-sync/*.server", config.ImportStatement)
 		assert.Equal(t, "coredns-ingress-sync", config.ControllerNamespace) // Default fallback
 		assert.Equal(t, "/etc/coredns/custom/coredns-ingress-sync", config.MountPath)
 		assert.Equal(t, "coredns-ingress-sync", config.ReleaseInstance)
+		assert.Equal(t, "coredns-ingress-sync-enabled", config.AnnotationEnabledKey)
 	})
 
 	t.Run("environment overrides", func(t *testing.T) {
@@ -67,9 +73,12 @@ func TestLoad(t *testing.T) {
 		os.Setenv("COREDNS_CONFIGMAP_NAME", "custom-coredns")
 		os.Setenv("LEADER_ELECTION_ENABLED", "false")
 		os.Setenv("WATCH_NAMESPACES", "production,staging")
+		os.Setenv("EXCLUDE_NAMESPACES", "dev,staging")
+		os.Setenv("EXCLUDE_INGRESSES", "foo,bar/ns1,baz/qux")
 		os.Setenv("POD_NAMESPACE", "custom-namespace")
 		os.Setenv("DEPLOYMENT_NAME", "my-custom-deployment")
 		os.Setenv("MOUNT_PATH", "/custom/mount/path")
+		os.Setenv("ANNOTATION_ENABLED_KEY", "my-company.io/dns-sync-enabled")
 
 		config := Load()
 
@@ -81,9 +90,12 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, "custom-coredns", config.CoreDNSConfigMapName)
 		assert.False(t, config.LeaderElectionEnabled)
 		assert.Equal(t, "production,staging", config.WatchNamespaces)
+		assert.Equal(t, "dev,staging", config.ExcludeNamespaces)
+		assert.Equal(t, "foo,bar/ns1,baz/qux", config.ExcludeIngresses)
 		assert.Equal(t, "custom-namespace", config.ControllerNamespace)
 		assert.Equal(t, "/custom/mount/path", config.MountPath)
 		assert.Equal(t, "my-custom-deployment", config.ReleaseInstance)
+		assert.Equal(t, "my-company.io/dns-sync-enabled", config.AnnotationEnabledKey)
 	})
 }
 

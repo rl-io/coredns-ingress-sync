@@ -40,6 +40,12 @@ spec:
           value: {{ .Values.controller.targetCNAME | quote }}
         - name: WATCH_NAMESPACES
           value: {{ if .Values.controller.watchNamespaces }}{{ if kindIs "slice" .Values.controller.watchNamespaces }}{{ join "," .Values.controller.watchNamespaces | quote }}{{ else }}{{ .Values.controller.watchNamespaces | quote }}{{ end }}{{ else }}""{{ end }}
+        - name: EXCLUDE_NAMESPACES
+          value: {{ if .Values.controller.excludeNamespaces }}{{ if kindIs "slice" .Values.controller.excludeNamespaces }}{{ join "," .Values.controller.excludeNamespaces | quote }}{{ else }}{{ .Values.controller.excludeNamespaces | quote }}{{ end }}{{ else }}""{{ end }}
+        - name: EXCLUDE_INGRESSES
+          value: {{ if .Values.controller.excludeIngresses }}{{ if kindIs "slice" .Values.controller.excludeIngresses }}{{ join "," .Values.controller.excludeIngresses | quote }}{{ else }}{{ .Values.controller.excludeIngresses | quote }}{{ end }}{{ else }}""{{ end }}
+        - name: ANNOTATION_ENABLED_KEY
+          value: {{ .Values.controller.annotationEnabledKey | quote }}
         - name: DYNAMIC_CONFIGMAP_NAME
           value: {{ .Values.controller.dynamicConfigMap.name | quote }}
         - name: DYNAMIC_CONFIG_KEY

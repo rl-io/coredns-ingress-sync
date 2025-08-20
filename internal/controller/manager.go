@@ -86,7 +86,7 @@ func (cm *ControllerManager) Setup() (manager.Manager, error) {
 	}
 
 	// Create ingress filter for watches
-	ingressFilter := ingress.NewFilter(cm.config.IngressClass, cm.config.WatchNamespaces)
+	ingressFilter := ingress.NewFilter(cm.config.IngressClass, cm.config.WatchNamespaces, cm.config.ExcludeNamespaces, cm.config.ExcludeIngresses, cm.config.AnnotationEnabledKey)
 
 	// Set up the controller using the provided reconciler
 	c, err := ctrlcontroller.New("coredns-ingress-sync", mgr, ctrlcontroller.Options{
@@ -127,12 +127,8 @@ func (cm *ControllerManager) setupWatches(mgr manager.Manager, c ctrlcontroller.
 				}}
 			}),
 			predicate.NewTypedPredicateFuncs(func(obj *networkingv1.Ingress) bool {
-				// Check if ingress matches our class and namespace filtering
-				if !ingressFilter.IsTargetIngress(obj) {
-					return false
-				}
-				// If specific namespaces are configured, check if this ingress is in one of them
-				return ingressFilter.ShouldWatchNamespace(obj.GetNamespace())
+				// Use comprehensive filter: class, namespace, and exclusion lists
+				return ingressFilter.ShouldProcessIngress(obj)
 			}))); err != nil {
 		return fmt.Errorf("failed to set up ingress watch: %w", err)
 	}
