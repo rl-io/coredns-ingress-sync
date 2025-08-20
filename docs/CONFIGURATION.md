@@ -261,6 +261,50 @@ controller:
   excludeIngresses: "legacy,production/no-sync"
 ```
 
+### Annotation-based exclusions
+
+Exclude a specific Ingress from internal DNS syncing by setting the configured
+annotation key to a false-like value.
+
+- Default key: `coredns-ingress-sync-enabled`
+- False-like values (case-insensitive, trimmed): `false`, `0`, `no`, `off`, `disabled`
+- Configure a custom key via Helm: `controller.annotationEnabledKey`
+
+Example (using the default key):
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: production
+  annotations:
+    coredns-ingress-sync-enabled: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: web.example.com
+      http:
+        paths: []
+```
+
+To use a custom key, set it in values and annotate with that key:
+
+```yaml
+# values.yaml
+controller:
+  annotationEnabledKey: "example.com/dns-sync-enabled"
+```
+
+```yaml
+# Ingress
+metadata:
+  annotations:
+    example.com/dns-sync-enabled: "false"
+```
+
+Note: This only controls internal CoreDNS rewrite generation and does not affect any external-dns records.
+
 **RBAC Requirements by Configuration**:
 
 - **Cluster-wide** (`watchNamespaces: ""`): Requires `ClusterRole` with ingress read permissions

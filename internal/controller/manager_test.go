@@ -11,6 +11,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/rl-io/coredns-ingress-sync/internal/config"
@@ -347,6 +348,58 @@ func TestControllerManager_Configuration_Validation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBuildIngressPredicate_AnnotationFlipTriggersUpdate(t *testing.T) {
+	// Setup filter and predicate
+	filt := ingfilter.NewFilter("nginx", "", "", "", "coredns-ingress-sync-enabled")
+	pred := buildIngressPredicate(filt)
+
+	cls := "nginx"
+	// Old included, new excluded via annotation => should trigger
+	oldIng := &networkingv1.Ingress{Spec: networkingv1.IngressSpec{IngressClassName: &cls}}
+	oldIng.Namespace = "default"
+	oldIng.Name = "app"
+	newIng := oldIng.DeepCopy()
+	newIng.Annotations = map[string]string{"coredns-ingress-sync-enabled": "false"}
+	upd := event.TypedUpdateEvent[*networkingv1.Ingress]{ObjectOld: oldIng, ObjectNew: newIng}
+	if !pred.Update(upd) {
+		t.Error("expected update to trigger when inclusion flips to excluded")
+	}
+
+	// Old excluded, new included => should also trigger
+	oldIng2 := oldIng.DeepCopy()
+	oldIng2.Annotations = map[string]string{"coredns-ingress-sync-enabled": "false"}
+	newIng2 := oldIng.DeepCopy()
+	upd2 := event.TypedUpdateEvent[*networkingv1.Ingress]{ObjectOld: oldIng2, ObjectNew: newIng2}
+	if !pred.Update(upd2) {
+		t.Error("expected update to trigger when inclusion flips to included")
+	}
+
+	// Both excluded (wrong class) => should not trigger
+	other := "traefik"
+	oldIng3 := &networkingv1.Ingress{Spec: networkingv1.IngressSpec{IngressClassName: &other}}
+	newIng3 := oldIng3.DeepCopy()
+	upd3 := event.TypedUpdateEvent[*networkingv1.Ingress]{ObjectOld: oldIng3, ObjectNew: newIng3}
+	if pred.Update(upd3) {
+		t.Error("did not expect update to trigger when both old and new are excluded")
+	}
+
+	// Create: only trigger when ingress should be processed
+	crt := event.TypedCreateEvent[*networkingv1.Ingress]{Object: oldIng}
+	if !pred.Create(crt) {
+		t.Error("expected create to trigger for included ingress")
+	}
+	crtExcluded := event.TypedCreateEvent[*networkingv1.Ingress]{Object: oldIng3}
+	if pred.Create(crtExcluded) {
+		t.Error("did not expect create to trigger for excluded ingress")
+	}
+
+	// Delete: always trigger to prune rules
+	del := event.TypedDeleteEvent[*networkingv1.Ingress]{Object: oldIng}
+	if !pred.Delete(del) {
+		t.Error("expected delete to trigger always")
 	}
 }
 
