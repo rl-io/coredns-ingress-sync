@@ -106,7 +106,7 @@ func runController(logger logr.Logger) {
 	}
 
 	// Create ingress filter
-	ingressFilter := ingress.NewFilter(cfg.IngressClass, cfg.WatchNamespaces)
+	ingressFilter := ingress.NewFilter(cfg.IngressClass, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeIngresses, cfg.AnnotationEnabledKey)
 
 	// Create CoreDNS manager
 	coreDNSConfig := coredns.Config{
@@ -151,12 +151,8 @@ func runController(logger logr.Logger) {
 				}}
 			}),
 			predicate.NewTypedPredicateFuncs(func(obj *networkingv1.Ingress) bool {
-				// Check if ingress matches our class and namespace filtering
-				if !ingressFilter.IsTargetIngress(obj) {
-					return false
-				}
-				// If specific namespaces are configured, check if this ingress is in one of them
-				return ingressFilter.ShouldWatchNamespace(obj.GetNamespace())
+				// Comprehensive check including exclusions
+				return ingressFilter.ShouldProcessIngress(obj)
 			}))); err != nil {
 		logger.Error(err, "Failed to set up ingress watch")
 		os.Exit(1)

@@ -13,6 +13,11 @@ type Config struct {
 	CoreDNSVolumeName     string
 	LeaderElectionEnabled bool
 	WatchNamespaces       string
+	ExcludeNamespaces     string // Comma-separated list of namespaces to exclude
+	ExcludeIngresses      string // Comma-separated list of ingress names or namespace/name
+	AnnotationEnabledKey  string // Annotation key to enable/disable processing (false disables)
+	ExcludeAnnotationKey  string // Annotation key to trigger exclusion when present
+	ExcludeAnnotationValue string // Optional value to require for exclusion; empty means any value
 	ImportStatement       string
 	ControllerNamespace   string // Namespace where the controller is deployed
 	MountPath             string // Configurable mount path for the volume
@@ -42,6 +47,11 @@ func Load() *Config {
 		CoreDNSVolumeName:     getEnvOrDefault("COREDNS_VOLUME_NAME", "coredns-ingress-sync-volume"),
 		LeaderElectionEnabled: getEnvOrDefault("LEADER_ELECTION_ENABLED", "true") == "true",
 		WatchNamespaces:       getEnvOrDefault("WATCH_NAMESPACES", ""), // Comma-separated list, empty = all namespaces
+	ExcludeNamespaces:     getEnvOrDefault("EXCLUDE_NAMESPACES", ""),
+	ExcludeIngresses:      getEnvOrDefault("EXCLUDE_INGRESSES", ""),
+		AnnotationEnabledKey:  getEnvOrDefault("ANNOTATION_ENABLED_KEY", "coredns-ingress-sync-enabled"),
+	ExcludeAnnotationKey:  getEnvOrDefault("EXCLUDE_ANNOTATION_KEY", ""),
+	ExcludeAnnotationValue: getEnvOrDefault("EXCLUDE_ANNOTATION_VALUE", ""),
 		ImportStatement:       importStatement,
 		ControllerNamespace:   getEnvOrDefault("POD_NAMESPACE", "coredns-ingress-sync"), // Default fallback
 		MountPath:             mountPath,

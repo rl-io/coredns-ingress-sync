@@ -76,6 +76,9 @@ helm install my-dns-controller rl-io/coredns-ingress-sync \
 | `controller.ingressClass` | Ingress class to watch | `nginx` |
 | `controller.targetCname` | Target service for DNS resolution | `ingress-nginx-controller.ingress-nginx.svc.cluster.local.` |
 | `controller.watchNamespaces` | Namespaces to monitor (empty = all) | `""` |
+| `controller.excludeNamespaces` | Namespaces to exclude | `""` |
+| `controller.excludeIngresses` | Ingresses to exclude (name or namespace/name) | `""` |
+| `controller.annotationEnabledKey` | Annotation key treated as boolean to enable/disable syncing | `coredns-ingress-sync-enabled` |
 | `controller.logLevel` | Controller log level | `info` |
 
 ### Advanced Configuration

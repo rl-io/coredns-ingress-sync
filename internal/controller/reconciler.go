@@ -90,7 +90,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 	// Count ingresses per namespace
 	namespaceCount := make(map[string]int)
 	for _, ingress := range ingressList.Items {
-		if r.IngressFilter.IsTargetIngress(&ingress) {
+		if r.IngressFilter.ShouldProcessIngress(&ingress) {
 			namespaceCount[ingress.Namespace]++
 		}
 	}

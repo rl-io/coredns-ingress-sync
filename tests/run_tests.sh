@@ -164,15 +164,13 @@ preflight_checks() {
         fi
     fi
     
-    # Check if controller image exists (for integration tests)
+    # Ensure controller image is up to date for E2E/integration tests
     if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_E2E" = true ]; then
-        if ! docker images | grep -q "coredns-ingress-sync"; then
-            log_warn "Controller image not found - building it now..."
-            cd "$PROJECT_DIR"
-            if ! docker build -t coredns-ingress-sync:latest .; then
-                log_error "Failed to build controller image"
-                exit 1
-            fi
+        cd "$PROJECT_DIR"
+        log_info "Building controller image (coredns-ingress-sync:latest) for tests..."
+        if ! docker build -t coredns-ingress-sync:latest .; then
+            log_error "Failed to build controller image"
+            exit 1
         fi
     fi
     
@@ -270,6 +268,18 @@ run_e2e_tests() {
         log_info "✅ Core end-to-end tests passed"
     else
         log_error "❌ Core end-to-end tests failed"
+        E2E_RESULT=1
+        return
+    fi
+    
+    # Run exclusions E2E tests
+    log_section "Exclusions End-to-End Tests"
+    chmod +x e2e_exclusions_test.sh
+    
+    if ./e2e_exclusions_test.sh; then
+        log_info "✅ Exclusions end-to-end tests passed"
+    else
+        log_error "❌ Exclusions end-to-end tests failed"
         E2E_RESULT=1
         return
     fi

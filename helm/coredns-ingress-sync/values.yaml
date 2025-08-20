@@ -90,6 +90,13 @@ controller:
   # Namespace filtering - empty means watch all namespaces
   # Set to comma-separated list to watch specific namespaces: "default,production,staging"
   watchNamespaces: ""
+  # Exclusion filters
+  # Namespaces to exclude (comma-separated). Applied after watchNamespaces.
+  excludeNamespaces: ""
+  # Ingresses to exclude (comma-separated). Supports name or namespace/name.
+  excludeIngresses: ""
+  # Annotation key to enable syncing (set to false to disable on a given ingress)
+  annotationEnabledKey: "coredns-ingress-sync-enabled"
   # Log level: debug, info, warn, error
   logLevel: "info"
   

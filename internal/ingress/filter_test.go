@@ -56,7 +56,7 @@ func TestNewFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filter := NewFilter(tt.ingressClass, tt.watchNamespacesEnv)
+			filter := NewFilter(tt.ingressClass, tt.watchNamespacesEnv, "", "", "")
 			
 			assert.Equal(t, tt.expectedWatchAll, filter.WatchesAllNamespaces())
 			assert.Equal(t, tt.expectedNamespaces, filter.GetWatchNamespaces())
@@ -93,7 +93,7 @@ func TestShouldWatchNamespace(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filter := NewFilter("nginx", tt.watchNamespacesEnv)
+			filter := NewFilter("nginx", tt.watchNamespacesEnv, "", "", "")
 			result := filter.ShouldWatchNamespace(tt.testNamespace)
 			assert.Equal(t, tt.shouldWatch, result)
 		})
@@ -101,7 +101,7 @@ func TestShouldWatchNamespace(t *testing.T) {
 }
 
 func TestIsTargetIngress(t *testing.T) {
-	filter := NewFilter("nginx", "")
+	filter := NewFilter("nginx", "", "", "", "")
 	
 	tests := []struct {
 		name           string
@@ -156,7 +156,7 @@ func TestIsTargetIngress(t *testing.T) {
 }
 
 func TestExtractHostnames(t *testing.T) {
-	filter := NewFilter("nginx", "production,staging")
+	filter := NewFilter("nginx", "production,staging", "", "", "")
 	
 	ingresses := []networkingv1.Ingress{
 		{
@@ -233,7 +233,7 @@ func TestExtractHostnames(t *testing.T) {
 }
 
 func TestExtractHostnamesWatchAll(t *testing.T) {
-	filter := NewFilter("nginx", "") // Watch all namespaces
+	filter := NewFilter("nginx", "", "", "", "") // Watch all namespaces
 	
 	ingresses := []networkingv1.Ingress{
 		{
@@ -269,7 +269,157 @@ func TestExtractHostnamesWatchAll(t *testing.T) {
 	assert.ElementsMatch(t, expectedHosts, hostnames)
 }
 
+func TestExcludeNamespacesAndIngresses(t *testing.T) {
+	// Exclude staging namespace and specific ingresses
+	filter := NewFilter("nginx", "production,staging", "staging", "bad-ingress,production/skip-me", "")
+
+	ingresses := []networkingv1.Ingress{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ok",
+				Namespace: "production",
+			},
+			Spec: networkingv1.IngressSpec{ IngressClassName: stringPtr("nginx"),
+				Rules: []networkingv1.IngressRule{{Host: "good.example.com"}},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{ Name: "bad-ingress", Namespace: "production" },
+			Spec: networkingv1.IngressSpec{ IngressClassName: stringPtr("nginx"),
+				Rules: []networkingv1.IngressRule{{Host: "bad.example.com"}},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{ Name: "skip-me", Namespace: "production" },
+			Spec: networkingv1.IngressSpec{ IngressClassName: stringPtr("nginx"),
+				Rules: []networkingv1.IngressRule{{Host: "skip.example.com"}},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{ Name: "in-staging", Namespace: "staging" },
+			Spec: networkingv1.IngressSpec{ IngressClassName: stringPtr("nginx"),
+				Rules: []networkingv1.IngressRule{{Host: "staging.example.com"}},
+			},
+		},
+	}
+
+	hosts := filter.ExtractHostnames(ingresses)
+	// Only 'good.example.com' should remain
+	assert.ElementsMatch(t, []string{"good.example.com"}, hosts)
+}
+
 // Helper function to create string pointer
 func stringPtr(s string) *string {
 	return &s
+}
+
+func TestAnnotationBasedExclusion(t *testing.T) {
+	filter := NewFilter("nginx", "", "", "", "coredns-ingress-sync-enabled")
+
+	// ingress with annotation set to false should be excluded
+	ing := networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ann-ing",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"coredns-ingress-sync-enabled": "false",
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: stringPtr("nginx"),
+			Rules: []networkingv1.IngressRule{{Host: "ann.example.com"}},
+		},
+	}
+	hosts := filter.ExtractHostnames([]networkingv1.Ingress{ing})
+	assert.Len(t, hosts, 0)
+}
+
+func TestShouldWatchNamespace_WithExclude_WhenWatchAll(t *testing.T) {
+	// When watching all namespaces, exclude list should still be honored
+	filter := NewFilter("nginx", "", "blocked,otherblocked", "", "")
+
+	assert.False(t, filter.ShouldWatchNamespace("blocked"))
+	assert.False(t, filter.ShouldWatchNamespace("otherblocked"))
+	assert.True(t, filter.ShouldWatchNamespace("allowed"))
+}
+
+func TestExcludeIngressesParsingAndMatching(t *testing.T) {
+	// Mix of global name and namespace/name with spaces and invalid entries that should be ignored
+	filter := NewFilter("nginx", "", "", "  name-only , ns1/ing1 , ns1/ , /bad ,  , ns2/ing2  ", "")
+
+	mk := func(ns, name string) *networkingv1.Ingress {
+		return &networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns}}
+	}
+
+	// Global name exclusion applies in any namespace
+	assert.True(t, filter.IsExcludedIngress(mk("default", "name-only")))
+	assert.True(t, filter.IsExcludedIngress(mk("ns1", "name-only")))
+
+	// Namespace/name exclusion only in matching namespace
+	assert.True(t, filter.IsExcludedIngress(mk("ns1", "ing1")))
+	assert.False(t, filter.IsExcludedIngress(mk("ns2", "ing1")))
+
+	assert.True(t, filter.IsExcludedIngress(mk("ns2", "ing2")))
+	assert.False(t, filter.IsExcludedIngress(mk("ns1", "ing2")))
+
+	// Non-listed ingress should not be excluded
+	assert.False(t, filter.IsExcludedIngress(mk("default", "ok")))
+}
+
+func TestAnnotationFalseLikeVariants(t *testing.T) {
+	vals := []string{"false", "0", "no", "off", "disabled", "FALSE", "No "}
+	for _, v := range vals {
+		filter := NewFilter("nginx", "", "", "", "coredns-ingress-sync-enabled")
+		ing := networkingv1.Ingress{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ann-" + v,
+				Namespace: "default",
+				Annotations: map[string]string{
+					"coredns-ingress-sync-enabled": v,
+				},
+			},
+			Spec: networkingv1.IngressSpec{
+				IngressClassName: stringPtr("nginx"),
+				Rules:            []networkingv1.IngressRule{{Host: "x.example.com"}},
+			},
+		}
+		// ShouldProcessIngress must return false for all false-like variants
+		assert.False(t, filter.ShouldProcessIngress(&ing))
+	}
+
+	// True-like or missing annotation should allow processing
+	filter := NewFilter("nginx", "", "", "", "coredns-ingress-sync-enabled")
+	ingTrue := networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ann-true",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"coredns-ingress-sync-enabled": "true",
+			},
+		},
+		Spec: networkingv1.IngressSpec{IngressClassName: stringPtr("nginx")},
+	}
+	assert.True(t, filter.ShouldProcessIngress(&ingTrue))
+
+	ingMissing := networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{Name: "ann-missing", Namespace: "default"},
+		Spec:       networkingv1.IngressSpec{IngressClassName: stringPtr("nginx")},
+	}
+	assert.True(t, filter.ShouldProcessIngress(&ingMissing))
+}
+
+func TestIsFalseLike_Direct(t *testing.T) {
+	falseVals := []string{"false", "0", "no", "off", "disabled", " FALSE ", "No"}
+	for _, v := range falseVals {
+		if !isFalseLike(v) {
+			t.Errorf("expected %q to be false-like", v)
+		}
+	}
+
+	trueVals := []string{"true", "1", "yes", "on", "enabled", " yEs ", ""}
+	for _, v := range trueVals {
+		if isFalseLike(v) {
+			t.Errorf("did not expect %q to be false-like", v)
+		}
+	}
 }

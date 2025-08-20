@@ -100,7 +100,7 @@ func TestMetricsIntegration(t *testing.T) {
 		Build()
 
 	// Create dependencies
-	ingressFilter := ingress.NewFilter("nginx", "")
+	ingressFilter := ingress.NewFilter("nginx", "", "", "", "")
 	coreDNSConfig := coredns.Config{
 		Namespace:            "kube-system",
 		ConfigMapName:        "coredns",

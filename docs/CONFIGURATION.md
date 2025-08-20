@@ -20,6 +20,14 @@ controller:
   # Empty string = watch all namespaces cluster-wide (default)
   # Comma-separated list = watch only specific namespaces
   watchNamespaces: ""
+  # Exclusions (applied after watchNamespaces)
+  # Exclude specific namespaces entirely
+  excludeNamespaces: ""
+  # Exclude specific ingresses by name or namespace/name
+  excludeIngresses: ""
+  # Annotation-based exclusion: when set to a false-like value on an Ingress, it will be ignored
+  # Examples of false-like values: "false", "0", "no", "off", "disabled"
+  annotationEnabledKey: "coredns-ingress-sync-enabled"
   # Examples:
   # watchNamespaces: "production,staging"  # Watch only production and staging
   # watchNamespaces: "default"             # Watch only default namespace
@@ -163,6 +171,9 @@ The controller supports configuration through environment variables (set via Hel
 | `INGRESS_CLASS` | IngressClass to watch | `nginx` |
 | `TARGET_CNAME` | Target service for DNS resolution | `ingress-nginx-controller.ingress-nginx.svc.cluster.local.` |
 | `WATCH_NAMESPACES` | Namespaces to monitor (empty = all) | `""` |
+| `EXCLUDE_NAMESPACES` | Namespaces to exclude (comma-separated) | `""` |
+| `EXCLUDE_INGRESSES` | Ingresses to exclude (name or namespace/name, comma-separated) | `""` |
+| `ANNOTATION_ENABLED_KEY` | Annotation key to control inclusion; false-like value disables | `coredns-ingress-sync-enabled` |
 | `COREDNS_NAMESPACE` | CoreDNS namespace | `kube-system` |
 | `COREDNS_CONFIGMAP_NAME` | CoreDNS ConfigMap name | `coredns` |
 | `COREDNS_VOLUME_NAME` | CoreDNS volume name | `coredns-ingress-sync-volume` |
@@ -238,6 +249,16 @@ controller:
 # Watch only the default namespace
 controller:
   watchNamespaces: "default"
+
+# Disable syncing for a specific ingress using an annotation (default key)
+# metadata:
+#   annotations:
+#     coredns-ingress-sync-enabled: "false"
+
+# Exclude certain namespaces and ingresses
+controller:
+  excludeNamespaces: "dev,qa"
+  excludeIngresses: "legacy,production/no-sync"
 ```
 
 **RBAC Requirements by Configuration**:

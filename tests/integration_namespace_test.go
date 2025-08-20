@@ -191,7 +191,7 @@ func TestNamespaceFilteringWithIngress(t *testing.T) {
 			}
 
 			// Create ingress filter for testing
-			filter := ingressfilter.NewFilter("nginx", tt.watchNamespaces)
+			filter := ingressfilter.NewFilter("nginx", tt.watchNamespaces, "", "", "")
 
 			// Test IsTargetIngress function
 			isTarget := filter.IsTargetIngress(ingress)

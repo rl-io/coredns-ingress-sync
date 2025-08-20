@@ -25,7 +25,7 @@ func TestNewIngressReconciler(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	
 	// Create dependencies
-	ingressFilter := ingress.NewFilter("nginx", "")
+	ingressFilter := ingress.NewFilter("nginx", "", "", "", "")
 	coreDNSConfig := coredns.Config{
 		Namespace:            "kube-system",
 		ConfigMapName:        "coredns",
@@ -207,7 +207,7 @@ func TestReconcile(t *testing.T) {
 			Build()
 		
 		// Create dependencies
-		ingressFilter := ingress.NewFilter("nginx", "")
+	ingressFilter := ingress.NewFilter("nginx", "", "", "", "")
 		coreDNSConfig := coredns.Config{
 			Namespace:            "kube-system",
 			ConfigMapName:        "coredns",
@@ -281,7 +281,7 @@ func TestReconcile(t *testing.T) {
 			Build()
 		
 		// Create dependencies
-		ingressFilter := ingress.NewFilter("nginx", "") // Looking for nginx, not traefik
+	ingressFilter := ingress.NewFilter("nginx", "", "", "", "") // Looking for nginx, not traefik
 		coreDNSConfig := coredns.Config{
 			Namespace:            "kube-system",
 			ConfigMapName:        "coredns",
@@ -327,7 +327,7 @@ func TestReconcile(t *testing.T) {
 		_ = corev1.AddToScheme(scheme)
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 		
-		ingressFilter := ingress.NewFilter("nginx", "")
+	ingressFilter := ingress.NewFilter("nginx", "", "", "", "")
 		coreDNSConfig := coredns.Config{
 			Namespace:            "kube-system",
 			ConfigMapName:        "coredns",
@@ -424,7 +424,7 @@ func TestReconcile(t *testing.T) {
 			Build()
 		
 		// Create filter that only watches production namespace
-		ingressFilter := ingress.NewFilter("nginx", "production")
+	ingressFilter := ingress.NewFilter("nginx", "production", "", "", "")
 		coreDNSConfig := coredns.Config{
 			Namespace:            "kube-system",
 			ConfigMapName:        "coredns",
