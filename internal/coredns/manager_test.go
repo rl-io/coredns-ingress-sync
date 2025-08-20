@@ -172,6 +172,108 @@ func TestEnsureVolumeMount(t *testing.T) {
 	assert.Equal(t, "/etc/coredns/custom/coredns-ingress-sync", volumeMount.MountPath)
 }
 
+func TestEnsureVolumeMount_NoContainers(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+
+	// CoreDNS deployment with no containers
+	coreDNSDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "coredns",
+			Namespace: "kube-system",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Volumes:    []corev1.Volume{},
+					Containers:  []corev1.Container{},
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(coreDNSDeployment).
+		Build()
+
+	config := Config{
+		Namespace:            "kube-system",
+		ConfigMapName:        "coredns",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
+		DynamicConfigKey:     "dynamic.server",
+		VolumeName:           "coredns-ingress-sync-volume",
+		MountPath:            "/etc/coredns/custom/coredns-ingress-sync",
+	}
+	manager := NewManager(fakeClient, config)
+
+	// Should not panic; will add the volume but cannot add a mount (no containers)
+	err := manager.ensureVolumeMount(ctx)
+	require.NoError(t, err)
+
+	updated := &appsv1.Deployment{}
+	err = fakeClient.Get(ctx, client.ObjectKey{Namespace: "kube-system", Name: "coredns"}, updated)
+	require.NoError(t, err)
+	// Volume should be present
+	require.Len(t, updated.Spec.Template.Spec.Volumes, 1)
+	// No containers to mount into
+	require.Len(t, updated.Spec.Template.Spec.Containers, 0)
+}
+
+func TestEnsureVolumeMount_AlreadyConfigured(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+
+	// Deployment already has volume and mount
+	coreDNSDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "coredns",
+			Namespace: "kube-system",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Volumes: []corev1.Volume{
+						{Name: "coredns-ingress-sync-volume", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "coredns-ingress-sync-rewrite-rules"}}}},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:  "coredns",
+							Image: "coredns/coredns:latest",
+							VolumeMounts: []corev1.VolumeMount{
+								{Name: "coredns-ingress-sync-volume", MountPath: "/etc/coredns/custom/coredns-ingress-sync"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(coreDNSDeployment).
+		Build()
+
+	config := Config{
+		Namespace:            "kube-system",
+		ConfigMapName:        "coredns",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
+		DynamicConfigKey:     "dynamic.server",
+		VolumeName:           "coredns-ingress-sync-volume",
+		MountPath:            "/etc/coredns/custom/coredns-ingress-sync",
+	}
+	manager := NewManager(fakeClient, config)
+
+	// Should detect no changes needed and return nil quickly
+	err := manager.ensureVolumeMount(ctx)
+	require.NoError(t, err)
+}
+
 func TestUpdateDynamicConfigMap_Update(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))

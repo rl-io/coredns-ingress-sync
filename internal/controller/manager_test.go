@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/rl-io/coredns-ingress-sync/internal/config"
+	ingfilter "github.com/rl-io/coredns-ingress-sync/internal/ingress"
 )
 
 // Mock reconciler for testing
@@ -30,6 +31,7 @@ func (m *mockReconciler) Reconcile(ctx context.Context, req reconcile.Request) (
 
 func TestNewControllerManager(t *testing.T) {
 	logger := logr.Discard()
+	// Use a minimal configuration; no logger needed beyond construction
 	cfg := &config.Config{
 		IngressClass:            "nginx",
 		WatchNamespaces:         "",
@@ -236,6 +238,52 @@ func TestControllerManager_SetupWatches_Components(t *testing.T) {
 
 	if cm.config.DynamicConfigMapName != "coredns-ingress-sync-rewrite-rules" {
 		t.Errorf("Expected dynamic ConfigMap name 'coredns-ingress-sync-rewrite-rules', got %s", cm.config.DynamicConfigMapName)
+	}
+}
+
+func TestControllerManager_CreatesIngressFilterAndPredicate(t *testing.T) {
+	// This test ensures no panic when constructing the filter and predicate path in setupWatches
+	cfg := &config.Config{
+		IngressClass:          "nginx",
+		WatchNamespaces:       "",
+		ExcludeNamespaces:     "excluded",
+		ExcludeIngresses:      "bad,ns1/bad2",
+		AnnotationEnabledKey:  "coredns-ingress-sync-enabled",
+		CoreDNSNamespace:      "kube-system",
+		CoreDNSConfigMapName:  "coredns",
+		DynamicConfigMapName:  "coredns-ingress-sync-rewrite-rules",
+		TargetCNAME:           "ingress-nginx.svc.cluster.local.",
+		LeaderElectionEnabled: false,
+		ControllerNamespace:   "default",
+	}
+	// Note: We don't need a real controller manager instance for this test
+	// as we're validating filter behavior used by the predicate wiring.
+
+	// Build a scheme and a manager with cache options, but don't actually start it
+	scheme := runtime.NewScheme()
+	_ = networkingv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+
+	// We won't create a real manager here; instead we just exercise the code path that creates the filter
+	// by calling the same construction logic and validating ShouldProcessIngress works as expected
+	f := ingfilter.NewFilter(cfg.IngressClass, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeIngresses, cfg.AnnotationEnabledKey)
+
+	// Ingress matching class but excluded via name
+	cls := "nginx"
+	ing := &networkingv1.Ingress{Spec: networkingv1.IngressSpec{IngressClassName: &cls}}
+	ing.Name = "bad"
+	ing.Namespace = "default"
+	if f.ShouldProcessIngress(ing) {
+		t.Error("Expected ingress 'bad' to be excluded by name")
+	}
+
+	// Ingress excluded by namespace/name
+	ing2 := &networkingv1.Ingress{Spec: networkingv1.IngressSpec{IngressClassName: &cls}}
+	ing2.Name = "bad2"
+	ing2.Namespace = "ns1"
+	if f.ShouldProcessIngress(ing2) {
+		t.Error("Expected ingress ns1/bad2 to be excluded by namespace/name")
 	}
 }
 
