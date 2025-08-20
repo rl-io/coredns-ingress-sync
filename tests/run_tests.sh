@@ -284,6 +284,18 @@ run_e2e_tests() {
         return
     fi
     
+    # Run annotation flip E2E test
+    log_section "Annotation Flip End-to-End Test"
+    chmod +x e2e_annotation_flip_test.sh
+    
+    if ./e2e_annotation_flip_test.sh; then
+        log_info "✅ Annotation flip end-to-end test passed"
+    else
+        log_error "❌ Annotation flip end-to-end test failed"
+        E2E_RESULT=1
+        return
+    fi
+    
     # Run comprehensive RBAC E2E tests
     log_section "RBAC End-to-End Tests"
     chmod +x e2e_rbac_test.sh

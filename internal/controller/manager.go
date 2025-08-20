@@ -153,11 +153,19 @@ func (cm *ControllerManager) setupWatches(mgr manager.Manager, c ctrlcontroller.
 func buildIngressPredicate(ingressFilter *ingress.Filter) predicate.TypedPredicate[*networkingv1.Ingress] {
 	return predicate.TypedFuncs[*networkingv1.Ingress]{
 		CreateFunc: func(e event.TypedCreateEvent[*networkingv1.Ingress]) bool {
-			return ingressFilter.ShouldProcessIngress(e.Object)
+			// Only reconcile for creates that match our target class and namespace scope
+			return ingressFilter.IsTargetIngress(e.Object) && ingressFilter.ShouldWatchNamespace(e.Object.Namespace)
 		},
 		UpdateFunc: func(e event.TypedUpdateEvent[*networkingv1.Ingress]) bool {
-			// Trigger when either old or new state qualifies, so transitions (e.g., annotation flips) enqueue reconciles
-			return ingressFilter.ShouldProcessIngress(e.ObjectOld) || ingressFilter.ShouldProcessIngress(e.ObjectNew)
+			// Be generous on updates: if either old or new ingress belongs to our target class and namespace scope,
+			// enqueue a reconcile. This guarantees annotation flips (true->false/false->true) are observed.
+			if e.ObjectOld != nil && ingressFilter.IsTargetIngress(e.ObjectOld) && ingressFilter.ShouldWatchNamespace(e.ObjectOld.Namespace) {
+				return true
+			}
+			if e.ObjectNew != nil && ingressFilter.IsTargetIngress(e.ObjectNew) && ingressFilter.ShouldWatchNamespace(e.ObjectNew.Namespace) {
+				return true
+			}
+			return false
 		},
 		DeleteFunc: func(e event.TypedDeleteEvent[*networkingv1.Ingress]) bool {
 			// Always reconcile on delete to prune rewrite rules
