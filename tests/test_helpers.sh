@@ -18,8 +18,6 @@ CONTROLLER_DEPLOYED_BY_TEST=${CONTROLLER_DEPLOYED_BY_TEST:-false}
 
 # Derived configuration variables
 HELM_CHART_PATH=${HELM_CHART_PATH:-"$PROJECT_DIR/helm/coredns-ingress-sync"}
-DEPLOYMENT_FULL_NAME="${CONTROLLER_NAME}"
-CLUSTER_ROLE_NAME="${CONTROLLER_NAME}-coredns"
 EXPECTED_IMPORT_STATEMENT="import /etc/coredns/custom/${CONTROLLER_NAME}/*.server"
 EXPECTED_MOUNT_PATH="/etc/coredns/custom/${CONTROLLER_NAME}"
 
@@ -742,9 +740,14 @@ helm_install_controller() {
     local namespace="$2"
     local auto_configure="$3"
     local additional_args="${4:-}"
-    
+    # Prefer test values if present to ensure local image/pullPolicy
+    local values_arg=""
+    if [[ -f "$HELM_CHART_PATH/values-test.yaml" ]]; then
+        values_arg="--values $HELM_CHART_PATH/values-test.yaml"
+    fi
     helm install "$release_name" "$HELM_CHART_PATH" \
         --namespace "$namespace" \
+        $values_arg \
         --set "coreDNS.autoConfigure=$auto_configure" \
         --set "controller.targetCNAME=test-target.cluster.local" \
         $additional_args \
@@ -757,9 +760,14 @@ helm_upgrade_controller() {
     local namespace="$2"
     local auto_configure="$3"
     local additional_args="${4:-}"
-    
+    # Prefer test values if present to ensure local image/pullPolicy
+    local values_arg=""
+    if [[ -f "$HELM_CHART_PATH/values-test.yaml" ]]; then
+        values_arg="--values $HELM_CHART_PATH/values-test.yaml"
+    fi
     helm upgrade "$release_name" "$HELM_CHART_PATH" \
         --namespace "$namespace" \
+        $values_arg \
         --set "coreDNS.autoConfigure=$auto_configure" \
         --set "controller.targetCNAME=test-target.cluster.local" \
         $additional_args \
