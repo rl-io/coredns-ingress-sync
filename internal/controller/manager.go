@@ -11,19 +11,19 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/rl-io/coredns-ingress-sync/internal/cache"
 	"github.com/rl-io/coredns-ingress-sync/internal/config"
-	"github.com/rl-io/coredns-ingress-sync/internal/watches"
 	"github.com/rl-io/coredns-ingress-sync/internal/ingress"
+	"github.com/rl-io/coredns-ingress-sync/internal/watches"
 )
 
 // Reconciler interface to avoid import cycle
@@ -56,7 +56,7 @@ func NewControllerManager(logger logr.Logger, cfg *config.Config, reconciler Rec
 func (cm *ControllerManager) Setup() (manager.Manager, error) {
 	// Parse watch namespaces
 	watchNamespaces := cache.ParseNamespaces(cm.config.WatchNamespaces)
-	
+
 	// Build cache options
 	cacheBuilder := cache.NewConfigBuilder(watchNamespaces, cm.config.CoreDNSNamespace)
 	cacheOptions := cacheBuilder.BuildCacheOptions()
@@ -194,7 +194,7 @@ func (cm *ControllerManager) logStartupInfo(watchNamespaces []string) {
 		"target_cname", cm.config.TargetCNAME,
 		"dynamic_configmap", cm.config.DynamicConfigMapName,
 		"coredns_configmap", fmt.Sprintf("%s/%s", cm.config.CoreDNSNamespace, cm.config.CoreDNSConfigMapName))
-	
+
 	if len(watchNamespaces) > 0 {
 		cm.logger.Info("Watching specific namespaces", "namespaces", watchNamespaces)
 	} else {

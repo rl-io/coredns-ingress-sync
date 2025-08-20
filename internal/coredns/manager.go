@@ -121,6 +121,21 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 			return nil
 		}
 
+		// If content changed, compute a small diff for logging (added/removed hosts)
+		var added, removed []string
+		if existingConfig, exists := configMap.Data[m.config.DynamicConfigKey]; exists {
+			oldHosts := extractHostsFromDynamicConfig(existingConfig)
+			newHosts := extractHostsFromDynamicConfig(dynamicConfig)
+			added, removed = diffHostSets(oldHosts, newHosts)
+			// Log concise change summary with small samples
+			m.logger.Info("Detected CoreDNS rewrite changes",
+				"added", len(added),
+				"removed", len(removed),
+				"sampleAdded", sampleStrings(added, 5),
+				"sampleRemoved", sampleStrings(removed, 5),
+			)
+		}
+
 		// Update ConfigMap with fresh data
 		configMap.Data[m.config.DynamicConfigKey] = dynamicConfig
 
@@ -170,6 +185,41 @@ func (m *Manager) generateDynamicConfig(domains []string, hosts []string) string
 	}
 
 	return config.String()
+}
+
+// extractHostsFromDynamicConfig parses rewrite rules and extracts hostnames
+func extractHostsFromDynamicConfig(content string) []string {
+	var hosts []string
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Expected form: rewrite name exact <host> <target>
+		fields := strings.Fields(line)
+		if len(fields) >= 5 && fields[0] == "rewrite" && fields[1] == "name" && fields[2] == "exact" {
+			hosts = append(hosts, fields[3])
+		}
+	}
+	return hosts
+}
+
+// diffHostSets returns hosts added and removed comparing old vs new
+func diffHostSets(oldHosts, newHosts []string) ([]string, []string) {
+	oldSet := make(map[string]bool, len(oldHosts))
+	newSet := make(map[string]bool, len(newHosts))
+	for _, h := range oldHosts { oldSet[h] = true }
+	for _, h := range newHosts { newSet[h] = true }
+	var added, removed []string
+	for h := range newSet { if !oldSet[h] { added = append(added, h) } }
+	for h := range oldSet { if !newSet[h] { removed = append(removed, h) } }
+	return added, removed
+}
+
+// sampleStrings returns up to n items for logging
+func sampleStrings(in []string, n int) []string {
+	if len(in) <= n { return in }
+	return in[:n]
 }
 
 // EnsureConfiguration ensures CoreDNS is properly configured
