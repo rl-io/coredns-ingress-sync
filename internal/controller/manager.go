@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -126,10 +127,7 @@ func (cm *ControllerManager) setupWatches(mgr manager.Manager, c ctrlcontroller.
 					},
 				}}
 			}),
-			predicate.NewTypedPredicateFuncs(func(obj *networkingv1.Ingress) bool {
-				// Use comprehensive filter: class, namespace, and exclusion lists
-				return ingressFilter.ShouldProcessIngress(obj)
-			}))); err != nil {
+			buildIngressPredicate(ingressFilter))); err != nil {
 		return fmt.Errorf("failed to set up ingress watch: %w", err)
 	}
 
@@ -145,6 +143,27 @@ func (cm *ControllerManager) setupWatches(mgr manager.Manager, c ctrlcontroller.
 	}
 
 	return nil
+}
+
+// buildIngressPredicate creates a predicate that triggers reconciles for:
+// - Create: only if the ingress should be processed
+// - Update: if either the old or new ingress should be processed (captures transitions)
+// - Delete: always trigger so we can recompute rules on removal
+// This ensures annotation toggles or exclusion changes still enqueue a reconcile.
+func buildIngressPredicate(ingressFilter *ingress.Filter) predicate.TypedPredicate[*networkingv1.Ingress] {
+	return predicate.TypedFuncs[*networkingv1.Ingress]{
+		CreateFunc: func(e event.TypedCreateEvent[*networkingv1.Ingress]) bool {
+			return ingressFilter.ShouldProcessIngress(e.Object)
+		},
+		UpdateFunc: func(e event.TypedUpdateEvent[*networkingv1.Ingress]) bool {
+			// Trigger when either old or new state qualifies, so transitions (e.g., annotation flips) enqueue reconciles
+			return ingressFilter.ShouldProcessIngress(e.ObjectOld) || ingressFilter.ShouldProcessIngress(e.ObjectNew)
+		},
+		DeleteFunc: func(e event.TypedDeleteEvent[*networkingv1.Ingress]) bool {
+			// Always reconcile on delete to prune rewrite rules
+			return true
+		},
+	}
 }
 
 // setupHealthChecks adds health and readiness check endpoints
