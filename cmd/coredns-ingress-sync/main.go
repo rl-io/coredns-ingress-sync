@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -150,10 +151,27 @@ func runController(logger logr.Logger) {
 					},
 				}}
 			}),
-			predicate.NewTypedPredicateFuncs(func(obj *networkingv1.Ingress) bool {
-				// Comprehensive check including exclusions
-				return ingressFilter.ShouldProcessIngress(obj)
-			}))); err != nil {
+			predicate.TypedFuncs[*networkingv1.Ingress]{
+				CreateFunc: func(e event.TypedCreateEvent[*networkingv1.Ingress]) bool {
+					// Only reconcile for creates that match our target class and namespace scope
+					return ingressFilter.IsTargetIngress(e.Object) && ingressFilter.ShouldWatchNamespace(e.Object.Namespace)
+				},
+				UpdateFunc: func(e event.TypedUpdateEvent[*networkingv1.Ingress]) bool {
+					// Enqueue if either old or new belongs to our target class and namespace scope.
+					// This guarantees annotation flips (true->false/false->true) are observed.
+					if e.ObjectOld != nil && ingressFilter.IsTargetIngress(e.ObjectOld) && ingressFilter.ShouldWatchNamespace(e.ObjectOld.Namespace) {
+						return true
+					}
+					if e.ObjectNew != nil && ingressFilter.IsTargetIngress(e.ObjectNew) && ingressFilter.ShouldWatchNamespace(e.ObjectNew.Namespace) {
+						return true
+					}
+					return false
+				},
+				DeleteFunc: func(e event.TypedDeleteEvent[*networkingv1.Ingress]) bool {
+					// Always reconcile on delete to prune rewrite rules
+					return true
+				},
+			})); err != nil {
 		logger.Error(err, "Failed to set up ingress watch")
 		os.Exit(1)
 	}
@@ -176,7 +194,8 @@ func runController(logger logr.Logger) {
 		"ingress_class", cfg.IngressClass,
 		"target_cname", cfg.TargetCNAME,
 		"dynamic_configmap", cfg.DynamicConfigMapName,
-		"coredns_configmap", fmt.Sprintf("%s/%s", cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName))
+		"coredns_configmap", fmt.Sprintf("%s/%s", cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName),
+		"annotation_enabled_key", cfg.AnnotationEnabledKey)
 
 	if len(watchNamespaces) > 0 {
 		logger.Info("Watching specific namespaces", "namespaces", watchNamespaces)
