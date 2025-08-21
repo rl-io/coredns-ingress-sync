@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.15](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.14...coredns-ingress-sync-v0.1.15) (2025-08-21)
+
+
+### Features
+
+* Add end-to-end test for annotation flip and enhance ingress predicates ([#64](https://github.com/rl-io/coredns-ingress-sync/issues/64)) ([9ba57ea](https://github.com/rl-io/coredns-ingress-sync/commit/9ba57ea67039849796dd89a2bbf390bb42cea7dd))
+* add support for excluding namespaces and ingresses in ingress filter ([#60](https://github.com/rl-io/coredns-ingress-sync/issues/60)) ([ee6e13f](https://github.com/rl-io/coredns-ingress-sync/commit/ee6e13f4fc62f7ee6c0db01ac740628fadd6d6e4))
+
 ## [0.1.14](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.13...coredns-ingress-sync-v0.1.14) (2025-08-05)
 
 
