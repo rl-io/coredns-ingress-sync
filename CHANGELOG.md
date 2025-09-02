@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.16](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.15...coredns-ingress-sync-v0.1.16) (2025-09-02)
+
+
+### Features
+
+* enhance security workflow with nightly audits ([e96c42c](https://github.com/rl-io/coredns-ingress-sync/commit/e96c42ce7cf4a41affd613dd0cdda719ce7a0a39))
+
+
+### Bug Fixes
+
+* modify helm templates to use pre-install hooks only ([#68](https://github.com/rl-io/coredns-ingress-sync/issues/68)) ([7a57bd7](https://github.com/rl-io/coredns-ingress-sync/commit/7a57bd7dee27b132a711a236d70255134ba08900))
+
+
+### Miscellaneous
+
+* update Go dependencies ([#67](https://github.com/rl-io/coredns-ingress-sync/issues/67)) ([bd10f4c](https://github.com/rl-io/coredns-ingress-sync/commit/bd10f4c4217c105b26a12fe2804f39236d1e3148))
+
 ## [0.1.15](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.14...coredns-ingress-sync-v0.1.15) (2025-08-21)
 
 
