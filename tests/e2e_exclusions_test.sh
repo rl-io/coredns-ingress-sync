@@ -166,10 +166,10 @@ spec:
               number: 80
 EOF
 
-    wait_for_controller_sync 5
+  wait_for_controller_sync 5
 
-    # Verify included
-    if ! hostname_in_configmap "included-ns-app.${TEST_DOMAIN}"; then
+  # Verify included (allow time for async reconciliation)
+  if ! wait_for_condition "hostname_in_configmap \"included-ns-app.${TEST_DOMAIN}\"" 30 2; then
         log_error "Expected hostname missing: included-ns-app.${TEST_DOMAIN}"
         local cfg
         cfg=$(get_configmap_content)

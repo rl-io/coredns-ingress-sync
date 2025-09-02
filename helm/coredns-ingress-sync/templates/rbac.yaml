@@ -8,7 +8,7 @@ metadata:
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "-15"
     "helm.sh/hook-delete-policy": before-hook-creation
 rules:
@@ -29,7 +29,7 @@ metadata:
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "-14"
     "helm.sh/hook-delete-policy": before-hook-creation
 roleRef:
@@ -60,7 +60,7 @@ metadata:
   labels:
     {{- include "coredns-ingress-sync.labels" $ | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "-15"
     "helm.sh/hook-delete-policy": before-hook-creation
 rules:
@@ -76,7 +76,7 @@ metadata:
   labels:
     {{- include "coredns-ingress-sync.labels" $ | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "-14"
     "helm.sh/hook-delete-policy": before-hook-creation
 roleRef:
@@ -100,7 +100,7 @@ metadata:
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "-15"
     "helm.sh/hook-delete-policy": before-hook-creation
 rules:
@@ -127,7 +127,7 @@ metadata:
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "-14"
     "helm.sh/hook-delete-policy": before-hook-creation
 roleRef:
@@ -149,7 +149,7 @@ metadata:
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "-15"
     "helm.sh/hook-delete-policy": before-hook-creation
 rules:
@@ -171,7 +171,7 @@ metadata:
   labels:
     {{- include "coredns-ingress-sync.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "-14"
     "helm.sh/hook-delete-policy": before-hook-creation
 roleRef:
