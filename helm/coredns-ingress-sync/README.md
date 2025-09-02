@@ -272,7 +272,7 @@ The Helm chart includes automatic lifecycle management for CoreDNS configuration
 
 ### Install Process
 
-1. **Pre-install hook**: Adds `import /etc/coredns/custom/*.server` to CoreDNS Corefile
+1. **Pre-install hooks**: Run a lightweight preflight check
 2. **Controller deployment**: Starts watching Ingress resources and creating DNS records
 3. **CoreDNS restart**: Applies the new configuration
 
@@ -282,7 +282,8 @@ The Helm chart includes automatic lifecycle management for CoreDNS configuration
 2. **Controller cleanup**: Removes the controller deployment and associated resources  
 3. **CoreDNS restart**: Applies the cleaned configuration
 
-This ensures that your CoreDNS configuration remains clean and doesn't have any leftover import statements after uninstallation.
+This ensures that your CoreDNS configuration remains clean and doesn't have any
+leftover import statements after uninstallation.
 
 ## Troubleshooting
 
