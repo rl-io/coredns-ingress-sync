@@ -98,16 +98,3 @@ jobs:
         go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
         gosec ./...
         
-  image-cleanup:
-    name: Clean up old images
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Delete old container images
-      uses: actions/delete-package-versions@v5
-      with:
-        package-name: coredns-ingress-sync
-        package-type: container
-        min-versions-to-keep: 10
-        delete-only-untagged-versions: true
