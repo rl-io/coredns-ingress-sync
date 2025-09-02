@@ -100,3 +100,12 @@ make ci-test
 - [Trivy Scanner](https://trivy.dev/)
 - [Cosign Signatures](https://docs.sigstore.dev/cosign/signing/signing_with_containers/)
 - [GitHub Security Features](https://docs.github.com/en/code-security)
+
+## Nightly Security Audit
+
+The Security and Dependency Updates workflow runs nightly and includes:
+
+- govulncheck (golang.org/x/vuln) against the module
+- gosec static analysis
+
+The job sets up Go and adds GOPATH/bin to PATH so installed tools are available.

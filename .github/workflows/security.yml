@@ -15,6 +15,9 @@ jobs:
   dependency-update:
     name: Update Dependencies
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     
     steps:
     - name: Checkout code
@@ -87,6 +90,13 @@ jobs:
       
     # Trivy scanning is handled by the CI/CD pipeline
     # This job focuses on Go-specific security auditing
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        check-latest: true
+    - name: Add Go bin to PATH
+      run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
         
     - name: Run Go security audit
       run: |
@@ -95,6 +105,6 @@ jobs:
         
     - name: Check for security issues
       run: |
-        go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+        go install github.com/securego/gosec/v2/cmd/gosec@latest
         gosec ./...
         
