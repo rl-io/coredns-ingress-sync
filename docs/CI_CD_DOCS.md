@@ -214,14 +214,21 @@ The pipeline is built on four core reusable actions located in `.github/actions/
 
 - **Dependency Update**: Automated dependency updates
 - **Security Scan**: Daily vulnerability scanning
-- **Image Cleanup**: Removes old container images
 
 **Features:**
 
 - 🔄 Automated dependency updates with PR creation
 - 🛡️ Daily security scanning
-- 🧹 Automatic cleanup of old container images
 - 📈 Security audit with govulncheck and gosec
+
+Note on registry pruning:
+
+- We intentionally do not prune GHCR images in CI.
+- Deleting untagged container versions in GHCR can remove platform-specific
+   child manifests referenced by tagged multi-arch images, leading to pull
+   errors (manifest unknown).
+- If registry hygiene is needed, use explicit tag-based policies or external
+   tooling that understands multi-arch referential integrity.
 
 ## Setup Instructions
 
@@ -462,4 +469,5 @@ make docker-scan
 6. Wait for CI/CD checks to pass
 7. Address any review feedback
 
-The CI/CD pipeline will automatically handle testing, building, and deployment once your changes are merged!
+The CI/CD pipeline will automatically handle testing, building, and deployment
+once your changes are merged!
