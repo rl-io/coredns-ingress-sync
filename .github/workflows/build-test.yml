@@ -41,7 +41,7 @@ jobs:
       uses: actions/checkout@v5
       
     - name: Download image artifact
-      uses: actions/download-artifact@v5
+      uses: actions/download-artifact@v6
       with:
         name: docker-image
         path: /tmp
@@ -65,7 +65,7 @@ jobs:
       uses: actions/checkout@v5
       
     - name: Download image artifact
-      uses: actions/download-artifact@v5
+      uses: actions/download-artifact@v6
       with:
         name: docker-image
         path: /tmp
