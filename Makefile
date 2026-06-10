@@ -278,9 +278,9 @@ kind-test-all-versions: ## Test controller against all supported Kubernetes vers
 	./tests/kind/test-k8s-versions.sh
 
 .PHONY: kind-test-version
-kind-test-version: ## Test specific Kubernetes version (usage: make kind-test-version K8S_VERSION=1.29.4)
+kind-test-version: ## Test specific Kubernetes version (usage: make kind-test-version K8S_VERSION=1.35.5)
 	@if [ -z "$(K8S_VERSION)" ]; then \
-		echo "Usage: make kind-test-version K8S_VERSION=1.29.4"; \
+		echo "Usage: make kind-test-version K8S_VERSION=1.35.5"; \
 		./tests/kind/test-k8s-versions.sh --list; \
 		exit 1; \
 	fi
@@ -288,11 +288,11 @@ kind-test-version: ## Test specific Kubernetes version (usage: make kind-test-ve
 
 .PHONY: kind-test-latest
 kind-test-latest: ## Test latest supported Kubernetes version
-	./tests/kind/test-k8s-versions.sh --version 1.30.13
+	./tests/kind/test-k8s-versions.sh --version 1.35.5
 
 .PHONY: kind-test-oldest
-kind-test-oldest: ## Test oldest supported Kubernetes version
-	./tests/kind/test-k8s-versions.sh --version 1.25.16
+kind-test-oldest: ## Test oldest version in the test matrix
+	./tests/kind/test-k8s-versions.sh --version 1.33.12
 
 .PHONY: kind-test-cleanup
 kind-test-cleanup: ## Clean up all KIND test clusters
