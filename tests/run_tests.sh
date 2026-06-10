@@ -49,7 +49,7 @@ show_usage() {
     echo ""
     echo "For local multi-version Kubernetes testing:"
     echo "  make kind-test-all-versions     # Test all supported K8s versions"
-    echo "  make kind-test-version K8S_VERSION=1.29.4  # Test specific version"
+    echo "  make kind-test-version K8S_VERSION=1.35.5  # Test specific version"
     echo "  See tests/kind/README.md for details"
     echo ""
 }
