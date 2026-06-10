@@ -49,7 +49,7 @@ runs:
   using: 'composite'
   steps:
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: ${{ inputs.go_version }}
         cache: true
@@ -89,7 +89,7 @@ runs:
       
     - name: Upload coverage to Codecov
       if: inputs.codecov_token != ''
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@v7
       with:
         flags: unittests
         name: codecov-umbrella
@@ -98,7 +98,7 @@ runs:
         fail_ci_if_error: false
         
     - name: Upload coverage reports
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: coverage-reports${{ inputs.artifact_suffix }}
         path: |
@@ -148,7 +148,7 @@ runs:
         
     - name: Create Kind cluster
       if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
-      uses: helm/kind-action@v1.12.0
+      uses: helm/kind-action@v1.14.0
       with:
         cluster_name: test-cluster
         config: kind-config.yaml
@@ -174,7 +174,7 @@ runs:
         
     - name: Install Helm
       if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
-      uses: azure/setup-helm@v4
+      uses: azure/setup-helm@v5
       with:
         version: v3.12.0
         
@@ -230,7 +230,7 @@ runs:
         
     - name: Upload test results
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: test-results${{ inputs.artifact_suffix }}
         path: test_results/
