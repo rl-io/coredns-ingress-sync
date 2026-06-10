@@ -1,15 +1,24 @@
 package ingress
 
 import (
+	"strconv"
 	"strings"
 
+	"github.com/go-logr/logr"
 	networkingv1 "k8s.io/api/networking/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/rl-io/coredns-ingress-sync/internal/config"
 )
 
 // Filter provides ingress filtering functionality
 type Filter struct {
-	ingressClass     string
+	// classMappings is the ordered list of class->CNAME mappings. Slice order
+	// defines the default priority tiebreak (index 0 = lowest priority).
+	classMappings    []config.IngressClassMapping
+	classToCNAME     map[string]string // ingress class -> target CNAME
+	classToIndex     map[string]int    // ingress class -> config order index
 	watchNamespaces  []string
 	watchAllNamespaces bool
 	excludeNamespaces []string
@@ -17,13 +26,31 @@ type Filter struct {
 	excludeIngressNames map[string]bool               // name -> true
 	excludeIngressByNS  map[string]map[string]bool    // ns -> name -> true
 	annotationEnabledKey string
+	annotationPriorityKey string
+	logger logr.Logger
 }
 
-// NewFilter creates a new ingress filter
-func NewFilter(ingressClass string, watchNamespacesEnv string, excludeNamespacesEnv string, excludeIngressesEnv string, annotationEnabledKey string) *Filter {
+// NewFilter creates a new ingress filter. classMappings is the ordered list of
+// ingress class -> target CNAME mappings; its order defines the default
+// priority tiebreak. annotationPriorityKey, when set, lets an individual
+// ingress override its priority via an integer annotation (higher wins).
+func NewFilter(classMappings []config.IngressClassMapping, watchNamespacesEnv string, excludeNamespacesEnv string, excludeIngressesEnv string, annotationEnabledKey string, annotationPriorityKey string) *Filter {
 	filter := &Filter{
-		ingressClass: ingressClass,
-		annotationEnabledKey: annotationEnabledKey,
+		classMappings:         classMappings,
+		classToCNAME:          make(map[string]string, len(classMappings)),
+		classToIndex:          make(map[string]int, len(classMappings)),
+		annotationEnabledKey:  annotationEnabledKey,
+		annotationPriorityKey: annotationPriorityKey,
+		logger:                ctrl.Log.WithName("ingress-filter"),
+	}
+
+	// Build lookup tables. If a class appears more than once, the first
+	// occurrence wins (lowest index and its CNAME).
+	for i, m := range classMappings {
+		if _, exists := filter.classToIndex[m.IngressClass]; !exists {
+			filter.classToIndex[m.IngressClass] = i
+			filter.classToCNAME[m.IngressClass] = m.TargetCNAME
+		}
 	}
 
 	// Parse watch namespaces
@@ -84,13 +111,22 @@ func NewFilter(ingressClass string, watchNamespacesEnv string, excludeNamespaces
 	return filter
 }
 
-// IsTargetIngress checks if an ingress object matches our ingress class
+// IsTargetIngress checks if an ingress object matches any configured ingress class
 func (f *Filter) IsTargetIngress(obj client.Object) bool {
 	ingress, ok := obj.(*networkingv1.Ingress)
 	if !ok {
 		return false
 	}
-	return ingress.Spec.IngressClassName != nil && *ingress.Spec.IngressClassName == f.ingressClass
+	return f.matchesClass(ingress)
+}
+
+// matchesClass reports whether the ingress declares a class we are configured to watch
+func (f *Filter) matchesClass(ing *networkingv1.Ingress) bool {
+	if ing.Spec.IngressClassName == nil {
+		return false
+	}
+	_, ok := f.classToIndex[*ing.Spec.IngressClassName]
+	return ok
 }
 
 // ShouldWatchNamespace checks if we should process objects in the given namespace
@@ -144,7 +180,7 @@ func (f *Filter) ShouldProcessIngress(ing *networkingv1.Ingress) bool {
 	if ing == nil {
 		return false
 	}
-	if ing.Spec.IngressClassName == nil || *ing.Spec.IngressClassName != f.ingressClass {
+	if !f.matchesClass(ing) {
 		return false
 	}
 	if !f.ShouldWatchNamespace(ing.Namespace) {
@@ -166,31 +202,108 @@ func (f *Filter) ShouldProcessIngress(ing *networkingv1.Ingress) bool {
 	return true
 }
 
-// ExtractHostnames extracts all hostnames from a list of ingresses that match our criteria
-func (f *Filter) ExtractHostnames(ingresses []networkingv1.Ingress) []string {
-	hostSet := make(map[string]bool)
+// hostWinner tracks the ingress currently winning the rewrite for a hostname.
+type hostWinner struct {
+	cname    string
+	priority int // resolved priority; higher wins
+	index    int // class config order index; lower wins ties (first listed = default)
+	source   string // namespace/name, used for tie-break logging
+}
 
-	for _, ing := range ingresses {
-		// Skip ingresses that shouldn't be processed
-		if !f.ShouldProcessIngress(&ing) {
+// beats reports whether candidate c should win over the current best b.
+// Higher priority wins; on equal priority the lower config index wins, so the
+// first-listed class is the safe default when nothing is annotated.
+func (c hostWinner) beats(b hostWinner) bool {
+	if c.priority != b.priority {
+		return c.priority > b.priority
+	}
+	if c.index != b.index {
+		return c.index < b.index
+	}
+	// Same priority and same config index (only possible for the same class,
+	// hence identical CNAME). Fall back to a stable lexicographic pick so the
+	// output never flaps across reconciles.
+	return c.cname < b.cname
+}
+
+// ExtractHostnameMappings returns a map of hostname -> target CNAME for all
+// processable ingresses. When multiple ingresses (typically different classes)
+// declare the same hostname, the one with the higher resolved priority wins.
+// Priority comes from the per-ingress priority annotation when present; absent
+// (or invalid), all ingresses share a baseline priority and the class config
+// order decides (first listed wins). A positive annotation therefore promotes
+// an otherwise-default class to win the rewrite.
+func (f *Filter) ExtractHostnameMappings(ingresses []networkingv1.Ingress) map[string]string {
+	winners := make(map[string]hostWinner)
+
+	for i := range ingresses {
+		ing := &ingresses[i]
+		if !f.ShouldProcessIngress(ing) {
 			continue
 		}
 
-		// Extract hosts from rules
+		class := *ing.Spec.IngressClassName
+		candidate := hostWinner{
+			cname:    f.classToCNAME[class],
+			priority: resolvePriority(ing, f.annotationPriorityKey),
+			index:    f.classToIndex[class],
+			source:   ing.Namespace + "/" + ing.Name,
+		}
+
 		for _, rule := range ing.Spec.Rules {
-			if rule.Host != "" {
-				hostSet[rule.Host] = true
+			if rule.Host == "" {
+				continue
+			}
+
+			existing, ok := winners[rule.Host]
+			if !ok {
+				winners[rule.Host] = candidate
+				continue
+			}
+			if candidate.beats(existing) {
+				// Only log when the resolved targets actually differ; same-class
+				// duplicates produce identical CNAMEs and are not noteworthy.
+				if candidate.cname != existing.cname {
+					f.logger.V(1).Info("Hostname served by multiple classes; higher-priority ingress wins",
+						"host", rule.Host,
+						"winner", candidate.source, "winnerCNAME", candidate.cname, "winnerPriority", candidate.priority,
+						"loser", existing.source, "loserCNAME", existing.cname, "loserPriority", existing.priority)
+				}
+				winners[rule.Host] = candidate
 			}
 		}
 	}
 
-	// Convert set to slice
-	var hosts []string
-	for host := range hostSet {
+	result := make(map[string]string, len(winners))
+	for host, w := range winners {
+		result[host] = w.cname
+	}
+	return result
+}
+
+// ExtractHostnames extracts the set of hostnames from processable ingresses.
+func (f *Filter) ExtractHostnames(ingresses []networkingv1.Ingress) []string {
+	mappings := f.ExtractHostnameMappings(ingresses)
+	hosts := make([]string, 0, len(mappings))
+	for host := range mappings {
 		hosts = append(hosts, host)
 	}
-
 	return hosts
+}
+
+// resolvePriority returns the explicit priority for an ingress: the integer
+// value of its priority annotation when present and valid, otherwise the
+// baseline priority of 0. Higher wins; ties are broken by class config order
+// (see hostWinner.beats), so an unannotated ingress relies on config order.
+func resolvePriority(ing *networkingv1.Ingress, annotationKey string) int {
+	if annotationKey != "" {
+		if val, ok := ing.Annotations[annotationKey]; ok {
+			if p, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
+				return p
+			}
+		}
+	}
+	return 0
 }
 
 // GetWatchNamespaces returns the list of namespaces being watched

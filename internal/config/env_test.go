@@ -24,6 +24,8 @@ func TestLoad(t *testing.T) {
 		"DEPLOYMENT_NAME":         os.Getenv("DEPLOYMENT_NAME"),
 		"MOUNT_PATH":              os.Getenv("MOUNT_PATH"),
 		"ANNOTATION_ENABLED_KEY":  os.Getenv("ANNOTATION_ENABLED_KEY"),
+		"ANNOTATION_PRIORITY_KEY": os.Getenv("ANNOTATION_PRIORITY_KEY"),
+		"INGRESS_CLASS_MAPPINGS":  os.Getenv("INGRESS_CLASS_MAPPINGS"),
 	}
 
 	// Restore original environment after test
@@ -61,6 +63,12 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, "/etc/coredns/custom/coredns-ingress-sync", config.MountPath)
 		assert.Equal(t, "coredns-ingress-sync", config.ReleaseInstance)
 		assert.Equal(t, "coredns-ingress-sync-enabled", config.AnnotationEnabledKey)
+		assert.Equal(t, "coredns-ingress-sync-priority", config.AnnotationPriorityKey)
+		// Default mappings are the single-class backward-compatible shim.
+		assert.Equal(t, []IngressClassMapping{{
+			IngressClass: "nginx",
+			TargetCNAME:  "ingress-nginx-controller.ingress-nginx.svc.cluster.local.",
+		}}, config.IngressClassMappings)
 	})
 
 	t.Run("environment overrides", func(t *testing.T) {
@@ -79,11 +87,18 @@ func TestLoad(t *testing.T) {
 		os.Setenv("DEPLOYMENT_NAME", "my-custom-deployment")
 		os.Setenv("MOUNT_PATH", "/custom/mount/path")
 		os.Setenv("ANNOTATION_ENABLED_KEY", "my-company.io/dns-sync-enabled")
+		os.Setenv("ANNOTATION_PRIORITY_KEY", "my-company.io/dns-sync-priority")
 
 		config := Load()
 
 		assert.Equal(t, "traefik", config.IngressClass)
 		assert.Equal(t, "traefik.example.com", config.TargetCNAME)
+		assert.Equal(t, "my-company.io/dns-sync-priority", config.AnnotationPriorityKey)
+		// With no INGRESS_CLASS_MAPPINGS, the legacy vars form a single mapping.
+		assert.Equal(t, []IngressClassMapping{{
+			IngressClass: "traefik",
+			TargetCNAME:  "traefik.example.com",
+		}}, config.IngressClassMappings)
 		assert.Equal(t, "custom-config", config.DynamicConfigMapName)
 		assert.Equal(t, "custom.server", config.DynamicConfigKey)
 		assert.Equal(t, "dns-system", config.CoreDNSNamespace)
@@ -96,6 +111,82 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, "/custom/mount/path", config.MountPath)
 		assert.Equal(t, "my-custom-deployment", config.ReleaseInstance)
 		assert.Equal(t, "my-company.io/dns-sync-enabled", config.AnnotationEnabledKey)
+	})
+}
+
+func TestLoadIngressClassMappings(t *testing.T) {
+	// Save and restore the env vars this test mutates.
+	keys := []string{"INGRESS_CLASS_MAPPINGS", "INGRESS_CLASS", "TARGET_CNAME"}
+	original := make(map[string]string, len(keys))
+	for _, k := range keys {
+		original[k] = os.Getenv(k)
+	}
+	defer func() {
+		for k, v := range original {
+			if v == "" {
+				os.Unsetenv(k)
+			} else {
+				os.Setenv(k, v)
+			}
+		}
+	}()
+
+	t.Run("multi-class JSON takes precedence", func(t *testing.T) {
+		os.Setenv("INGRESS_CLASS", "nginx")
+		os.Setenv("TARGET_CNAME", "legacy.example.com.")
+		os.Setenv("INGRESS_CLASS_MAPPINGS", `[
+			{"ingressClass":"nginx","targetCNAME":"nginx.svc.cluster.local."},
+			{"ingressClass":"traefik","targetCNAME":"traefik.svc.cluster.local."}
+		]`)
+
+		cfg := Load()
+
+		assert.Equal(t, []IngressClassMapping{
+			{IngressClass: "nginx", TargetCNAME: "nginx.svc.cluster.local."},
+			{IngressClass: "traefik", TargetCNAME: "traefik.svc.cluster.local."},
+		}, cfg.IngressClassMappings)
+		// First mapping mirrors the legacy single-class fields.
+		assert.Equal(t, "nginx", cfg.IngressClass)
+		assert.Equal(t, "nginx.svc.cluster.local.", cfg.TargetCNAME)
+	})
+
+	t.Run("invalid JSON falls back to single-class shim", func(t *testing.T) {
+		os.Setenv("INGRESS_CLASS", "traefik")
+		os.Setenv("TARGET_CNAME", "traefik.example.com.")
+		os.Setenv("INGRESS_CLASS_MAPPINGS", "{not json")
+
+		cfg := Load()
+
+		assert.Equal(t, []IngressClassMapping{
+			{IngressClass: "traefik", TargetCNAME: "traefik.example.com."},
+		}, cfg.IngressClassMappings)
+	})
+
+	t.Run("entries missing ingressClass are dropped", func(t *testing.T) {
+		os.Unsetenv("INGRESS_CLASS")
+		os.Unsetenv("TARGET_CNAME")
+		os.Setenv("INGRESS_CLASS_MAPPINGS", `[
+			{"targetCNAME":"orphan.svc.cluster.local."},
+			{"ingressClass":"traefik","targetCNAME":"traefik.svc.cluster.local."}
+		]`)
+
+		cfg := Load()
+
+		assert.Equal(t, []IngressClassMapping{
+			{IngressClass: "traefik", TargetCNAME: "traefik.svc.cluster.local."},
+		}, cfg.IngressClassMappings)
+	})
+
+	t.Run("empty JSON array falls back to single-class shim", func(t *testing.T) {
+		os.Setenv("INGRESS_CLASS", "nginx")
+		os.Setenv("TARGET_CNAME", "nginx.example.com.")
+		os.Setenv("INGRESS_CLASS_MAPPINGS", "[]")
+
+		cfg := Load()
+
+		assert.Equal(t, []IngressClassMapping{
+			{IngressClass: "nginx", TargetCNAME: "nginx.example.com."},
+		}, cfg.IngressClassMappings)
 	})
 }
 

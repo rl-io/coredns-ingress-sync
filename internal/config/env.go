@@ -1,11 +1,28 @@
 package config
 
-import "os"
+import (
+	"encoding/json"
+	"os"
+)
+
+// IngressClassMapping maps an ingress class to the target CNAME that CoreDNS
+// should rewrite matching hostnames to. The order of mappings acts as the
+// default tiebreak: the first entry has the lowest implicit priority.
+type IngressClassMapping struct {
+	IngressClass string `json:"ingressClass"`
+	TargetCNAME  string `json:"targetCNAME"`
+}
 
 // Config holds all configuration values for the coredns-ingress-sync controller
 type Config struct {
+	// IngressClass and TargetCNAME mirror the first (default, lowest-priority)
+	// entry of IngressClassMappings. They are retained for backward
+	// compatibility with single-class consumers (logging, preflight, cleanup).
 	IngressClass          string
 	TargetCNAME           string
+	// IngressClassMappings is the ordered list of class->CNAME mappings the
+	// controller watches. Order defines the default priority tiebreak.
+	IngressClassMappings  []IngressClassMapping
 	DynamicConfigMapName  string
 	DynamicConfigKey      string
 	CoreDNSNamespace      string
@@ -16,6 +33,7 @@ type Config struct {
 	ExcludeNamespaces     string // Comma-separated list of namespaces to exclude
 	ExcludeIngresses      string // Comma-separated list of ingress names or namespace/name
 	AnnotationEnabledKey  string // Annotation key to enable/disable processing (false disables)
+	AnnotationPriorityKey string // Annotation key to override per-ingress priority (integer, higher wins)
 	ExcludeAnnotationKey  string // Annotation key to trigger exclusion when present
 	ExcludeAnnotationValue string // Optional value to require for exclusion; empty means any value
 	ImportStatement       string
@@ -37,9 +55,14 @@ func Load() *Config {
 	// Create import statement based on mount path
 	importStatement := "import " + mountPath + "/*.server"
 
+	// Resolve class mappings (multi-class config takes precedence over the
+	// legacy single-class INGRESS_CLASS + TARGET_CNAME pair).
+	mappings := loadIngressClassMappings()
+
 	return &Config{
-		IngressClass:          getEnvOrDefault("INGRESS_CLASS", "nginx"),
-		TargetCNAME:           getEnvOrDefault("TARGET_CNAME", "ingress-nginx-controller.ingress-nginx.svc.cluster.local."),
+		IngressClass:          mappings[0].IngressClass,
+		TargetCNAME:           mappings[0].TargetCNAME,
+		IngressClassMappings:  mappings,
 		DynamicConfigMapName:  getEnvOrDefault("DYNAMIC_CONFIGMAP_NAME", "coredns-ingress-sync-rewrite-rules"),
 		DynamicConfigKey:      getEnvOrDefault("DYNAMIC_CONFIG_KEY", "dynamic.server"),
 		CoreDNSNamespace:      getEnvOrDefault("COREDNS_NAMESPACE", "kube-system"),
@@ -50,6 +73,7 @@ func Load() *Config {
 	ExcludeNamespaces:     getEnvOrDefault("EXCLUDE_NAMESPACES", ""),
 	ExcludeIngresses:      getEnvOrDefault("EXCLUDE_INGRESSES", ""),
 		AnnotationEnabledKey:  getEnvOrDefault("ANNOTATION_ENABLED_KEY", "coredns-ingress-sync-enabled"),
+		AnnotationPriorityKey: getEnvOrDefault("ANNOTATION_PRIORITY_KEY", "coredns-ingress-sync-priority"),
 	ExcludeAnnotationKey:  getEnvOrDefault("EXCLUDE_ANNOTATION_KEY", ""),
 	ExcludeAnnotationValue: getEnvOrDefault("EXCLUDE_ANNOTATION_VALUE", ""),
 		ImportStatement:       importStatement,
@@ -57,6 +81,35 @@ func Load() *Config {
 		MountPath:             mountPath,
 		ReleaseInstance:       getEnvOrDefault("RELEASE_INSTANCE", getEnvOrDefault("DEPLOYMENT_NAME", "coredns-ingress-sync")),
 	}
+}
+
+// loadIngressClassMappings resolves the ordered list of ingress class -> CNAME
+// mappings. The JSON env var INGRESS_CLASS_MAPPINGS takes precedence when set
+// and valid; otherwise it falls back to a single-entry mapping built from the
+// legacy INGRESS_CLASS + TARGET_CNAME variables. The returned slice always
+// contains at least one entry.
+func loadIngressClassMappings() []IngressClassMapping {
+	if raw := os.Getenv("INGRESS_CLASS_MAPPINGS"); raw != "" {
+		var parsed []IngressClassMapping
+		if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
+			// Drop entries missing an ingress class; they cannot be matched.
+			valid := make([]IngressClassMapping, 0, len(parsed))
+			for _, m := range parsed {
+				if m.IngressClass != "" {
+					valid = append(valid, m)
+				}
+			}
+			if len(valid) > 0 {
+				return valid
+			}
+		}
+	}
+
+	// Backward-compatible single-class shim.
+	return []IngressClassMapping{{
+		IngressClass: getEnvOrDefault("INGRESS_CLASS", "nginx"),
+		TargetCNAME:  getEnvOrDefault("TARGET_CNAME", "ingress-nginx-controller.ingress-nginx.svc.cluster.local."),
+	}}
 }
 
 // getEnvOrDefault returns the value of the environment variable or the default value
