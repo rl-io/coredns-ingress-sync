@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.17](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.16...coredns-ingress-sync-v0.1.17) (2026-06-10)
+
+
+### Features
+
+* multi-class ingress support with per-ingress priority annotation ([#81](https://github.com/rl-io/coredns-ingress-sync/issues/81)) ([59e6e0c](https://github.com/rl-io/coredns-ingress-sync/commit/59e6e0c447b5cd38a9191a161c7347ea110e807f))
+
 ## [0.1.16](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.15...coredns-ingress-sync-v0.1.16) (2025-09-02)
 
 
