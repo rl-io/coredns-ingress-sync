@@ -4,7 +4,7 @@ This directory contains scripts for testing the CoreDNS Ingress Sync controller 
 
 ## Overview
 
-The KIND test suite validates our controller against all supported Kubernetes versions (1.25+) by:
+The KIND test suite validates our controller against a matrix of recent Kubernetes versions (the node images shipped by the latest KIND release) by:
 
 - Creating KIND clusters with specific K8s versions
 - Installing ingress-nginx in each cluster
@@ -33,17 +33,19 @@ Before running the tests, ensure you have:
 
 This will test each version in sequence:
 
-- 1.29.14   # Previous stable
-- 1.30.13   # 1.30 stable
-- 1.31.9    # 1.31 stable
-- 1.32.5    # 1.32 stable
-- 1.33.1    # Latest stable
+- 1.33.12   # 1.33 stable
+- 1.34.8    # 1.34 stable
+- 1.35.5    # 1.35 stable (latest)
+
+These track the node images shipped by the latest KIND release (v0.32.0), which
+a single modern `kind` binary can boot. Older minors (1.32 and below) require an
+older `kind` binary and are not included.
 
 ### Test Specific Version
 
 ```bash
 # Test a specific Kubernetes version
-./tests/kind/test-k8s-versions.sh --version 1.29.4
+./tests/kind/test-k8s-versions.sh --version 1.35.5
 ```
 
 ### List Supported Versions
@@ -105,16 +107,13 @@ The script provides detailed output for each step and a final summary:
 ==========================================
 TEST SUMMARY
 ==========================================
-✅ PASSED (6):
-  ✅ Kubernetes 1.25.16
-  ✅ Kubernetes 1.26.15
-  ✅ Kubernetes 1.27.13
-  ✅ Kubernetes 1.28.9
-  ✅ Kubernetes 1.29.4
-  ✅ Kubernetes 1.30.0
+✅ PASSED (3):
+  ✅ Kubernetes 1.33.12
+  ✅ Kubernetes 1.34.8
+  ✅ Kubernetes 1.35.5
 
 All tests passed! 🎉
-Controller is compatible with Kubernetes 1.25.16 through 1.30.0
+Controller is compatible with Kubernetes 1.33.12 through 1.35.5
 ```
 
 ## Troubleshooting
@@ -193,12 +192,17 @@ Edit the `K8S_VERSIONS` array in `test-k8s-versions.sh`:
 
 ```bash
 K8S_VERSIONS=(
-    "1.25.16"
-    "1.26.15" 
+    "1.33.12"
+    "1.34.8"
     # ... existing versions
-    "1.31.0"    # Add new version
+    "1.36.1"    # Add new version (use a tag from the latest KIND release)
 )
 ```
+
+When adding versions, use a node-image tag published by the KIND release you
+have installed (see the release notes at
+<https://github.com/kubernetes-sigs/kind/releases>), otherwise `kind create
+cluster` will fail to find the image.
 
 ### Modifying Test Scenarios
 
@@ -235,7 +239,7 @@ Example workflow:
 
 ```bash
 # Quick test on latest version
-./tests/kind/test-k8s-versions.sh --version 1.30.0
+./tests/kind/test-k8s-versions.sh --version 1.35.5
 
 # If successful, test all versions
 ./tests/kind/test-k8s-versions.sh
