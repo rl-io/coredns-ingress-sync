@@ -73,12 +73,14 @@ helm install my-dns-controller rl-io/coredns-ingress-sync \
 | `image.tag` | Controller image tag | `latest` |
 | `image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `replicaCount` | Number of replicas | `1` |
-| `controller.ingressClass` | Ingress class to watch | `nginx` |
-| `controller.targetCname` | Target service for DNS resolution | `ingress-nginx-controller.ingress-nginx.svc.cluster.local.` |
+| `controller.ingressClassMappings` | Ordered list of `{ingressClass, targetCNAME}` mappings (preferred). When set, takes precedence over `ingressClass`/`targetCNAME`. List order is the default priority tiebreak (first listed wins). | `[]` |
+| `controller.ingressClass` | Ingress class to watch (legacy single-class; used when `ingressClassMappings` is empty) | `nginx` |
+| `controller.targetCNAME` | Target service for DNS resolution (legacy single-class; used when `ingressClassMappings` is empty) | `ingress-nginx-controller.ingress-nginx.svc.cluster.local.` |
 | `controller.watchNamespaces` | Namespaces to monitor (empty = all) | `""` |
 | `controller.excludeNamespaces` | Namespaces to exclude | `""` |
 | `controller.excludeIngresses` | Ingresses to exclude (name or namespace/name) | `""` |
 | `controller.annotationEnabledKey` | Annotation key treated as boolean to enable/disable syncing | `coredns-ingress-sync-enabled` |
+| `controller.annotationPriorityKey` | Annotation key for per-ingress priority (integer, higher wins) when multiple ingresses share a hostname | `coredns-ingress-sync-priority` |
 | `controller.logLevel` | Controller log level | `info` |
 
 ### Advanced Configuration

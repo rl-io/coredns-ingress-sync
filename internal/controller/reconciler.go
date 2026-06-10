@@ -73,14 +73,21 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 		}
 	}
 
-	// Extract hostnames from target ingresses
-	hosts := r.IngressFilter.ExtractHostnames(ingressList.Items)
+	// Resolve hostname -> target CNAME mappings from target ingresses,
+	// applying per-ingress priority where multiple classes share a hostname.
+	hostCNAMEMap := r.IngressFilter.ExtractHostnameMappings(ingressList.Items)
+
+	// Collect hostnames for domain extraction and metrics.
+	hosts := make([]string, 0, len(hostCNAMEMap))
+	for host := range hostCNAMEMap {
+		hosts = append(hosts, host)
+	}
 
 	// Extract unique domains from hosts
 	domains := r.extractDomains(hosts)
 
-	logger.V(1).Info("Processing ingresses", 
-		"domains", len(domains), 
+	logger.V(1).Info("Processing ingresses",
+		"domains", len(domains),
 		"hosts", len(hosts),
 		"domainList", domains)
 
@@ -99,7 +106,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 	}
 
 	// Update dynamic ConfigMap with discovered domains
-	if err := r.CoreDNSManager.UpdateDynamicConfigMap(ctx, domains, hosts); err != nil {
+	if err := r.CoreDNSManager.UpdateDynamicConfigMap(ctx, domains, hostCNAMEMap); err != nil {
 		logger.Error(err, "Failed to update dynamic ConfigMap")
 		duration := time.Since(startTime).Seconds()
 		metrics.RecordReconciliationError(duration, "dns_update")

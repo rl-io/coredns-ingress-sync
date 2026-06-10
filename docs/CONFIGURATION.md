@@ -10,6 +10,19 @@ The controller is configured through Helm values. All configuration options are 
 
 ```yaml
 controller:
+  # Multi-class configuration (preferred). An ordered list of ingress class ->
+  # target CNAME mappings. When set, it takes precedence over the legacy
+  # ingressClass/targetCNAME pair below. List order is the default priority
+  # tiebreak: the first entry has the lowest implicit priority, so when two
+  # ingresses share a hostname the first-listed class wins unless a per-ingress
+  # priority annotation overrides it.
+  ingressClassMappings: []
+  #  - ingressClass: nginx
+  #    targetCNAME: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+  #  - ingressClass: traefik
+  #    targetCNAME: "traefik.traefik.svc.cluster.local."
+
+  # Legacy single-class config (used only when ingressClassMappings is empty).
   # Ingress class to watch for changes
   ingressClass: "nginx"
 
@@ -28,6 +41,10 @@ controller:
   # Annotation-based exclusion: when set to a false-like value on an Ingress, it will be ignored
   # Examples of false-like values: "false", "0", "no", "off", "disabled"
   annotationEnabledKey: "coredns-ingress-sync-enabled"
+  # Annotation key for per-ingress priority (integer, higher wins). When two
+  # ingresses (e.g. nginx and traefik) share a hostname, the one with the
+  # higher value wins the CoreDNS rewrite. No annotation = config order wins.
+  annotationPriorityKey: "coredns-ingress-sync-priority"
   # Examples:
   # watchNamespaces: "production,staging"  # Watch only production and staging
   # watchNamespaces: "default"             # Watch only default namespace
@@ -168,12 +185,14 @@ The controller supports configuration through environment variables (set via Hel
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INGRESS_CLASS` | IngressClass to watch | `nginx` |
-| `TARGET_CNAME` | Target service for DNS resolution | `ingress-nginx-controller.ingress-nginx.svc.cluster.local.` |
+| `INGRESS_CLASS_MAPPINGS` | JSON array of `{"ingressClass","targetCNAME"}` mappings (preferred). When set, takes precedence over `INGRESS_CLASS`/`TARGET_CNAME`. Array order is the default priority tiebreak (first listed wins). | `""` (uses single-class shim) |
+| `INGRESS_CLASS` | IngressClass to watch (legacy single-class; used when `INGRESS_CLASS_MAPPINGS` is unset) | `nginx` |
+| `TARGET_CNAME` | Target service for DNS resolution (legacy single-class; used when `INGRESS_CLASS_MAPPINGS` is unset) | `ingress-nginx-controller.ingress-nginx.svc.cluster.local.` |
 | `WATCH_NAMESPACES` | Namespaces to monitor (empty = all) | `""` |
 | `EXCLUDE_NAMESPACES` | Namespaces to exclude (comma-separated) | `""` |
 | `EXCLUDE_INGRESSES` | Ingresses to exclude (name or namespace/name, comma-separated) | `""` |
 | `ANNOTATION_ENABLED_KEY` | Annotation key to control inclusion; false-like value disables | `coredns-ingress-sync-enabled` |
+| `ANNOTATION_PRIORITY_KEY` | Annotation key for per-ingress priority (integer, higher wins) when multiple ingresses share a hostname | `coredns-ingress-sync-priority` |
 | `COREDNS_NAMESPACE` | CoreDNS namespace | `kube-system` |
 | `COREDNS_CONFIGMAP_NAME` | CoreDNS ConfigMap name | `coredns` |
 | `COREDNS_VOLUME_NAME` | CoreDNS volume name | `coredns-ingress-sync-volume` |
@@ -287,6 +306,73 @@ spec:
       http:
         paths: []
 ```
+
+### Multi-class configuration and per-ingress priority
+
+A single controller can watch multiple ingress classes and rewrite each
+hostname to the correct target CNAME. This is the mechanism used during an
+ingress-nginx → Traefik migration, where both controllers serve the same
+hostnames simultaneously (one Ingress per class per service).
+
+Configure the ordered class mappings via Helm:
+
+```yaml
+controller:
+  ingressClassMappings:
+    - ingressClass: nginx
+      targetCNAME: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+    - ingressClass: traefik
+      targetCNAME: "traefik.traefik.svc.cluster.local."
+  annotationPriorityKey: "coredns-ingress-sync-priority"
+```
+
+When two Ingresses declare the same hostname, the winner of the CoreDNS rewrite
+is resolved as follows:
+
+1. **Priority annotation (higher wins).** Set
+   `coredns-ingress-sync-priority` to an integer on an Ingress to give it an
+   explicit priority. The highest value wins the hostname.
+2. **Config order (tiebreak).** Without annotations, all Ingresses share a
+   baseline priority and the **first-listed class wins** (nginx in the example
+   above). This is the safe default during migration.
+
+`INGRESS_CLASS_MAPPINGS` takes precedence over the legacy `INGRESS_CLASS` /
+`TARGET_CNAME` pair. Single-class deployments that set only the legacy values
+continue to work unchanged.
+
+#### Migration workflow (nginx → Traefik)
+
+```yaml
+# Both Ingresses exist for the same host. With no priority annotation,
+# nginx (first in config) wins the internal rewrite — the safe default.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-nginx
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: app.example.com
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-traefik
+  annotations:
+    # Promote Traefik to win the CoreDNS rewrite for this hostname only.
+    # Remove or lower this value to roll back instantly — no other service
+    # is affected.
+    coredns-ingress-sync-priority: "20"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: app.example.com
+```
+
+Migrate service-by-service: deploy both Ingresses (nginx wins by default), test
+Traefik externally, then annotate the Traefik Ingress to flip the internal
+rewrite. Removing the annotation rolls that single hostname back to nginx.
 
 To use a custom key, set it in values and annotate with that key:
 

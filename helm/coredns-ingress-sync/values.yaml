@@ -83,6 +83,21 @@ coreDNS:
 
 # Controller configuration
 controller:
+  # Multi-class configuration (preferred).
+  # An ordered list of ingress class -> target CNAME mappings. List order is the
+  # default priority tiebreak: the first entry has the lowest implicit priority,
+  # so when two ingresses share a hostname the later-listed class wins unless a
+  # per-ingress priority annotation overrides it.
+  # When set, this takes precedence over the legacy ingressClass/targetCNAME
+  # pair below. Leave empty ([]) to use the single-class settings.
+  ingressClassMappings: []
+  #  - ingressClass: nginx
+  #    targetCNAME: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+  #  - ingressClass: traefik
+  #    targetCNAME: "traefik.traefik.svc.cluster.local."
+
+  # Legacy single-class configuration. Used only when ingressClassMappings is
+  # empty, and kept for backward compatibility.
   # Ingress class to watch
   ingressClass: "nginx"
   # Target CNAME for DNS resolution
@@ -97,6 +112,9 @@ controller:
   excludeIngresses: ""
   # Annotation key to enable syncing (set to false to disable on a given ingress)
   annotationEnabledKey: "coredns-ingress-sync-enabled"
+  # Annotation key for per-ingress priority (integer, higher wins). When two
+  # ingresses share a hostname, the one with the higher value wins the rewrite.
+  annotationPriorityKey: "coredns-ingress-sync-priority"
   # Log level: debug, info, warn, error
   logLevel: "info"
   

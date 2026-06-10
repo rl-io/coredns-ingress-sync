@@ -107,7 +107,7 @@ func runController(logger logr.Logger) {
 	}
 
 	// Create ingress filter
-	ingressFilter := ingress.NewFilter(cfg.IngressClass, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeIngresses, cfg.AnnotationEnabledKey)
+	ingressFilter := ingress.NewFilter(cfg.IngressClassMappings, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeIngresses, cfg.AnnotationEnabledKey, cfg.AnnotationPriorityKey)
 
 	// Create CoreDNS manager
 	coreDNSConfig := coredns.Config{
@@ -116,7 +116,6 @@ func runController(logger logr.Logger) {
 		DynamicConfigMapName: cfg.DynamicConfigMapName,
 		DynamicConfigKey:     cfg.DynamicConfigKey,
 		ImportStatement:      cfg.ImportStatement,
-		TargetCNAME:          cfg.TargetCNAME,
 		VolumeName:           cfg.CoreDNSVolumeName,
 		MountPath:            cfg.MountPath,
 	}
@@ -191,11 +190,11 @@ func runController(logger logr.Logger) {
 
 	logger.Info("Starting coredns-ingress-sync controller",
 		"leader_election", cfg.LeaderElectionEnabled,
-		"ingress_class", cfg.IngressClass,
-		"target_cname", cfg.TargetCNAME,
+		"ingress_class_mappings", cfg.IngressClassMappings,
 		"dynamic_configmap", cfg.DynamicConfigMapName,
 		"coredns_configmap", fmt.Sprintf("%s/%s", cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName),
-		"annotation_enabled_key", cfg.AnnotationEnabledKey)
+		"annotation_enabled_key", cfg.AnnotationEnabledKey,
+		"annotation_priority_key", cfg.AnnotationPriorityKey)
 
 	if len(watchNamespaces) > 0 {
 		logger.Info("Watching specific namespaces", "namespaces", watchNamespaces)

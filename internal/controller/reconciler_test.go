@@ -14,9 +14,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/rl-io/coredns-ingress-sync/internal/config"
 	"github.com/rl-io/coredns-ingress-sync/internal/coredns"
 	"github.com/rl-io/coredns-ingress-sync/internal/ingress"
 )
+
+// nginxFilter builds a single-class nginx filter for reconciler tests. The
+// target CNAME now lives on the filter (via class mappings) rather than the
+// CoreDNS manager config.
+func nginxFilter(watchNamespaces string) *ingress.Filter {
+	return ingress.NewFilter(
+		[]config.IngressClassMapping{{IngressClass: "nginx", TargetCNAME: "ingress-nginx.svc.cluster.local."}},
+		watchNamespaces, "", "", "", "",
+	)
+}
 
 func TestNewIngressReconciler(t *testing.T) {
 	// Create fake client and scheme
@@ -25,14 +36,13 @@ func TestNewIngressReconciler(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	
 	// Create dependencies
-	ingressFilter := ingress.NewFilter("nginx", "", "", "", "")
+	ingressFilter := nginxFilter("")
 	coreDNSConfig := coredns.Config{
 		Namespace:            "kube-system",
 		ConfigMapName:        "coredns",
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		ImportStatement:      "import /etc/coredns/custom/*.server",
-		TargetCNAME:          "ingress-nginx.svc.cluster.local.",
 	}
 	coreDNSManager := coredns.NewManager(fakeClient, coreDNSConfig)
 	
@@ -207,14 +217,13 @@ func TestReconcile(t *testing.T) {
 			Build()
 		
 		// Create dependencies
-	ingressFilter := ingress.NewFilter("nginx", "", "", "", "")
+	ingressFilter := nginxFilter("")
 		coreDNSConfig := coredns.Config{
 			Namespace:            "kube-system",
 			ConfigMapName:        "coredns",
 			DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 			DynamicConfigKey:     "dynamic.server",
 			ImportStatement:      "import /etc/coredns/custom/*.server",
-			TargetCNAME:          "ingress-nginx.svc.cluster.local.",
 		}
 		coreDNSManager := coredns.NewManager(fakeClient, coreDNSConfig)
 		
@@ -281,14 +290,13 @@ func TestReconcile(t *testing.T) {
 			Build()
 		
 		// Create dependencies
-	ingressFilter := ingress.NewFilter("nginx", "", "", "", "") // Looking for nginx, not traefik
+	ingressFilter := nginxFilter("") // Looking for nginx, not traefik
 		coreDNSConfig := coredns.Config{
 			Namespace:            "kube-system",
 			ConfigMapName:        "coredns",
 			DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 			DynamicConfigKey:     "dynamic.server",
 			ImportStatement:      "import /etc/coredns/custom/*.server",
-			TargetCNAME:          "ingress-nginx.svc.cluster.local.",
 		}
 		coreDNSManager := coredns.NewManager(fakeClient, coreDNSConfig)
 		
@@ -327,14 +335,13 @@ func TestReconcile(t *testing.T) {
 		_ = corev1.AddToScheme(scheme)
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 		
-	ingressFilter := ingress.NewFilter("nginx", "", "", "", "")
+	ingressFilter := nginxFilter("")
 		coreDNSConfig := coredns.Config{
 			Namespace:            "kube-system",
 			ConfigMapName:        "coredns",
 			DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 			DynamicConfigKey:     "dynamic.server",
 			ImportStatement:      "import /etc/coredns/custom/*.server",
-			TargetCNAME:          "ingress-nginx.svc.cluster.local.",
 		}
 		coreDNSManager := coredns.NewManager(fakeClient, coreDNSConfig)
 		
@@ -424,14 +431,13 @@ func TestReconcile(t *testing.T) {
 			Build()
 		
 		// Create filter that only watches production namespace
-	ingressFilter := ingress.NewFilter("nginx", "production", "", "", "")
+	ingressFilter := nginxFilter("production")
 		coreDNSConfig := coredns.Config{
 			Namespace:            "kube-system",
 			ConfigMapName:        "coredns",
 			DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 			DynamicConfigKey:     "dynamic.server",
 			ImportStatement:      "import /etc/coredns/custom/*.server",
-			TargetCNAME:          "ingress-nginx.svc.cluster.local.",
 		}
 		coreDNSManager := coredns.NewManager(fakeClient, coreDNSConfig)
 		
@@ -478,6 +484,125 @@ func TestReconcile(t *testing.T) {
 			t.Error("Expected dynamic config to NOT contain unwatched.example.com")
 		}
 	})
+}
+
+// TestReconcile_MultiClassPriorityFlip verifies the end-to-end behaviour: with
+// an nginx and traefik Ingress for the same hostname, the generated rewrite
+// targets nginx by default, and flipping the priority annotation on the traefik
+// Ingress switches the rewrite target to traefik for that hostname only.
+func TestReconcile_MultiClassPriorityFlip(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = networkingv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	const host = "app.example.com"
+	const nginxCNAME = "nginx.cluster.local."
+	const traefikCNAME = "traefik.cluster.local."
+
+	mkIngress := func(name, class string, annotations map[string]string) *networkingv1.Ingress {
+		cls := class
+		return &networkingv1.Ingress{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", Annotations: annotations},
+			Spec: networkingv1.IngressSpec{
+				IngressClassName: &cls,
+				Rules:            []networkingv1.IngressRule{{Host: host}},
+			},
+		}
+	}
+
+	coreDNSConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+		Data:       map[string]string{"Corefile": ".:53 {\n    forward . /etc/resolv.conf\n}\n"},
+	}
+
+	const priorityKey = "coredns-ingress-sync-priority"
+	filter := ingress.NewFilter([]config.IngressClassMapping{
+		{IngressClass: "nginx", TargetCNAME: nginxCNAME},
+		{IngressClass: "traefik", TargetCNAME: traefikCNAME},
+	}, "", "", "", "", priorityKey)
+
+	nginxIng := mkIngress("app-nginx", "nginx", nil)
+	traefikIng := mkIngress("app-traefik", "traefik", nil)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(nginxIng, traefikIng, coreDNSConfigMap).
+		Build()
+
+	coreDNSManager := coredns.NewManager(fakeClient, coredns.Config{
+		Namespace:            "kube-system",
+		ConfigMapName:        "coredns",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
+		DynamicConfigKey:     "dynamic.server",
+		ImportStatement:      "import /etc/coredns/custom/*.server",
+	})
+
+	reconciler := &IngressReconciler{
+		Client:         fakeClient,
+		Scheme:         scheme,
+		IngressFilter:  filter,
+		CoreDNSManager: coreDNSManager,
+	}
+
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
+	ctx := context.Background()
+
+	readConfig := func() string {
+		var cm corev1.ConfigMap
+		if err := fakeClient.Get(ctx, types.NamespacedName{Name: "coredns-ingress-sync-rewrite-rules", Namespace: "kube-system"}, &cm); err != nil {
+			t.Fatalf("failed to read dynamic ConfigMap: %v", err)
+		}
+		return cm.Data["dynamic.server"]
+	}
+
+	// 1. No annotations: nginx (config index 0) wins.
+	if _, err := reconciler.Reconcile(ctx, req); err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	got := readConfig()
+	if !contains(got, "rewrite name exact "+host+" "+nginxCNAME) {
+		t.Errorf("expected nginx rewrite by default, got:\n%s", got)
+	}
+	if contains(got, traefikCNAME) {
+		t.Errorf("did not expect traefik rewrite by default, got:\n%s", got)
+	}
+
+	// 2. Promote traefik via priority annotation -> rewrite flips to traefik.
+	var live networkingv1.Ingress
+	if err := fakeClient.Get(ctx, types.NamespacedName{Name: "app-traefik", Namespace: "default"}, &live); err != nil {
+		t.Fatalf("failed to get traefik ingress: %v", err)
+	}
+	live.Annotations = map[string]string{priorityKey: "20"}
+	if err := fakeClient.Update(ctx, &live); err != nil {
+		t.Fatalf("failed to update traefik ingress: %v", err)
+	}
+
+	if _, err := reconciler.Reconcile(ctx, req); err != nil {
+		t.Fatalf("reconcile after flip failed: %v", err)
+	}
+	got = readConfig()
+	if !contains(got, "rewrite name exact "+host+" "+traefikCNAME) {
+		t.Errorf("expected traefik rewrite after annotation flip, got:\n%s", got)
+	}
+	if contains(got, nginxCNAME) {
+		t.Errorf("did not expect nginx rewrite after flip, got:\n%s", got)
+	}
+
+	// 3. Roll back by removing the annotation -> rewrite returns to nginx.
+	if err := fakeClient.Get(ctx, types.NamespacedName{Name: "app-traefik", Namespace: "default"}, &live); err != nil {
+		t.Fatalf("failed to re-get traefik ingress: %v", err)
+	}
+	live.Annotations = nil
+	if err := fakeClient.Update(ctx, &live); err != nil {
+		t.Fatalf("failed to clear traefik annotation: %v", err)
+	}
+	if _, err := reconciler.Reconcile(ctx, req); err != nil {
+		t.Fatalf("reconcile after rollback failed: %v", err)
+	}
+	got = readConfig()
+	if !contains(got, "rewrite name exact "+host+" "+nginxCNAME) {
+		t.Errorf("expected nginx rewrite after rollback, got:\n%s", got)
+	}
 }
 
 // Helper function to check if a string contains a substring

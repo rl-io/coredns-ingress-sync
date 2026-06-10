@@ -100,14 +100,13 @@ func TestMetricsIntegration(t *testing.T) {
 		Build()
 
 	// Create dependencies
-	ingressFilter := ingress.NewFilter("nginx", "", "", "", "")
+	ingressFilter := ingress.NewFilter(nginxClassMappings(), "", "", "", "", "")
 	coreDNSConfig := coredns.Config{
 		Namespace:            "kube-system",
 		ConfigMapName:        "coredns",
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		ImportStatement:      "import /etc/coredns/custom/coredns-ingress-sync/*.server",
-		TargetCNAME:          "ingress-nginx.svc.cluster.local.",
 		VolumeName:           "coredns-ingress-sync-volume",
 		MountPath:            "/etc/coredns/custom/coredns-ingress-sync",
 	}
