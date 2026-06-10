@@ -77,30 +77,65 @@ jobs:
         export_artifact: true
 
   test:
-    name: Run Tests
+    name: Run Tests (k8s ${{ matrix.k8s.version }})
     runs-on: ubuntu-latest
     needs: [changes, build]
     # Always run tests when build runs
     if: always() && needs.build.result == 'success'
+    strategy:
+      # Run every Kubernetes version even if one fails, so we see the full picture.
+      fail-fast: false
+      matrix:
+        k8s:
+          # Node images from the latest KIND release (v0.32.0). Digests pin the
+          # exact image so `kind create cluster` is reproducible.
+          - version: "1.33.12"
+            node_image: "kindest/node:v1.33.12@sha256:3f5c8443c620245e4d355cfe09e96a91ead32ceaa569d3f1ca9edf0cb2fe2ff4"
+          - version: "1.34.8"
+            node_image: "kindest/node:v1.34.8@sha256:02722c2dedddcfc00febf5d27fbeb9b7b2c14294c82109ff4a85d89ac9ba3256"
+          - version: "1.35.5"
+            node_image: "kindest/node:v1.35.5@sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95"
+            # Upload coverage from a single matrix leg (unit coverage is identical
+            # across k8s versions) to avoid redundant Codecov uploads.
+            codecov: true
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
-      
+
     - name: Download image artifact
       uses: actions/download-artifact@v6
       with:
         name: docker-image
         path: /tmp
-        
+
     - name: Run Comprehensive Tests
       uses: ./.github/actions/test-runner
       with:
         go_version: '1.24'
         run_integration_tests: true
         run_e2e_tests: true
-        codecov_token: ${{ secrets.CODECOV_TOKEN }}
+        codecov_token: ${{ matrix.k8s.codecov && secrets.CODECOV_TOKEN || '' }}
         image_artifact_path: /tmp
         cluster_timeout: 120
+        kind_version: v0.32.0
+        node_image: ${{ matrix.k8s.node_image }}
+        artifact_suffix: -k8s-${{ matrix.k8s.version }}
+
+  # Stable aggregate check: branch protection can require a single "Run Tests"
+  # status regardless of how many k8s versions are in the matrix above.
+  tests-complete:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: test
+    if: always()
+    steps:
+    - name: Verify all matrix test jobs passed
+      run: |
+        if [ "${{ needs.test.result }}" != "success" ]; then
+          echo "One or more k8s matrix test jobs did not succeed: ${{ needs.test.result }}"
+          exit 1
+        fi
+        echo "All k8s matrix test jobs passed."
 
   security-scan:
     name: Security Scan

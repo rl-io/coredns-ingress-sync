@@ -24,6 +24,18 @@ inputs:
     description: 'Timeout for cluster operations (seconds)'
     required: false
     default: '120'
+  kind_version:
+    description: 'kind binary version to install (e.g. v0.32.0)'
+    required: false
+    default: 'v0.26.0'
+  node_image:
+    description: 'kindest/node image to boot (e.g. kindest/node:v1.35.5@sha256:...). Empty uses the kind default for the chosen kind_version.'
+    required: false
+    default: ''
+  artifact_suffix:
+    description: 'Suffix appended to uploaded artifact names so parallel matrix jobs do not collide.'
+    required: false
+    default: ''
 
 outputs:
   test_status:
@@ -88,7 +100,7 @@ runs:
     - name: Upload coverage reports
       uses: actions/upload-artifact@v4
       with:
-        name: coverage-reports
+        name: coverage-reports${{ inputs.artifact_suffix }}
         path: |
           coverage.out
           coverage.html
@@ -140,6 +152,8 @@ runs:
       with:
         cluster_name: test-cluster
         config: kind-config.yaml
+        version: ${{ inputs.kind_version }}
+        node_image: ${{ inputs.node_image }}
               
     - name: Load image into Kind cluster
       if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
@@ -218,7 +232,7 @@ runs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-results
+        name: test-results${{ inputs.artifact_suffix }}
         path: test_results/
         
     - name: Test summary
