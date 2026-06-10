@@ -62,24 +62,29 @@ jobs:
       run: |
         # Package the chart
         helm package helm/coredns-ingress-sync
-        
+
         echo "Packaged chart:"
         ls -la coredns-ingress-sync-*.tgz
+
+        # Owner of the repository (lowercased for OCI registry compatibility).
+        # Derived from the GitHub context so the chart publishes under whichever
+        # org/user owns the repo, even after a repository transfer.
+        OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
         # Get chart details
         CHART_FILE=$(ls coredns-ingress-sync-*.tgz | head -n1)
         echo "Chart file: $CHART_FILE"
-        
+
         # Push to GitHub Packages (OCI format)
         # Use charts subdirectory to avoid collision with Docker image
-        echo "Pushing chart to oci://${REGISTRY}/rl-io/charts..."
-        
+        echo "Pushing chart to oci://${REGISTRY}/${OWNER}/charts..."
+
         # Try the push with charts subdirectory to separate from Docker images
-        helm push "$CHART_FILE" oci://${REGISTRY}/rl-io/charts --debug || {
+        helm push "$CHART_FILE" oci://${REGISTRY}/${OWNER}/charts --debug || {
           echo "Push failed. Trying alternative URL format..."
-          helm push "$CHART_FILE" oci://${REGISTRY}/rl-io/helm-charts --debug || {
+          helm push "$CHART_FILE" oci://${REGISTRY}/${OWNER}/helm-charts --debug || {
             echo "Alternative format also failed. Trying with original format..."
-            helm push "$CHART_FILE" oci://${REGISTRY}/rl-io --debug
+            helm push "$CHART_FILE" oci://${REGISTRY}/${OWNER} --debug
           }
         }
         
@@ -88,12 +93,13 @@ jobs:
     - name: Verify chart availability
       run: |
         echo "Verifying chart was pushed successfully..."
+        OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
         # Try to show the chart (this will fail gracefully if not available)
-        helm show chart oci://${REGISTRY}/rl-io/charts/${CHART_NAME} || {
-          echo "Chart not found at oci://${REGISTRY}/rl-io/charts/${CHART_NAME}, trying other locations..."
-          helm show chart oci://${REGISTRY}/rl-io/helm-charts/${CHART_NAME} || {
+        helm show chart oci://${REGISTRY}/${OWNER}/charts/${CHART_NAME} || {
+          echo "Chart not found at oci://${REGISTRY}/${OWNER}/charts/${CHART_NAME}, trying other locations..."
+          helm show chart oci://${REGISTRY}/${OWNER}/helm-charts/${CHART_NAME} || {
             echo "Chart not found at helm-charts location, trying root..."
-            helm show chart oci://${REGISTRY}/rl-io/${CHART_NAME} || {
+            helm show chart oci://${REGISTRY}/${OWNER}/${CHART_NAME} || {
               echo "Chart verification failed, but push may have succeeded. Check the GitHub Packages page."
             }
           }
