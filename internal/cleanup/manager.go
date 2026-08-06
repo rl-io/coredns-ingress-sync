@@ -78,7 +78,6 @@ func (m *Manager) Run(cfg *config.Config) error {
 		DynamicConfigMapName: cfg.DynamicConfigMapName,
 		DynamicConfigKey:     cfg.DynamicConfigKey,
 		ImportStatement:      cfg.ImportStatement,
-		TargetCNAME:          cfg.TargetCNAME,
 		VolumeName:           cfg.CoreDNSVolumeName,
 	}
 	coreDNSManager := coredns.NewManager(m.client, coreDNSConfig)

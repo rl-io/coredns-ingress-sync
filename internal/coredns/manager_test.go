@@ -29,7 +29,6 @@ func TestNewManager(t *testing.T) {
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		ImportStatement:      "import /etc/coredns/custom/*.server",
-		TargetCNAME:          "ingress.example.com.",
 		VolumeName:           "coredns-ingress-sync-volume",
 	}
 
@@ -45,13 +44,15 @@ func TestGenerateDynamicConfig(t *testing.T) {
 	
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	config := Config{
-		TargetCNAME:  "ingress.example.com.",
 		VolumeName:   "coredns-ingress-sync-volume",
 	}
 	manager := NewManager(fakeClient, config)
 
 	domains := []string{"example.com", "api.example.com"}
-	hosts := []string{"app1.example.com", "app2.example.com"}
+	hosts := map[string]string{
+		"app1.example.com": "ingress.example.com.",
+		"app2.example.com": "ingress.example.com.",
+	}
 
 	result := manager.generateDynamicConfig(domains, hosts)
 
@@ -71,14 +72,13 @@ func TestUpdateDynamicConfigMap_Create(t *testing.T) {
 		Namespace:            "kube-system",
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
-		TargetCNAME:          "ingress.example.com.",
 		VolumeName:           "coredns-ingress-sync-volume",
 	}
 	manager := NewManager(fakeClient, config)
 
 	ctx := context.Background()
 	domains := []string{"example.com"}
-	hosts := []string{"app1.example.com"}
+	hosts := map[string]string{"app1.example.com": "ingress.example.com."}
 
 	err := manager.UpdateDynamicConfigMap(ctx, domains, hosts)
 	require.NoError(t, err)
@@ -139,7 +139,6 @@ func TestEnsureVolumeMount(t *testing.T) {
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		ImportStatement:      "import /etc/coredns/custom/coredns-ingress-sync/*.server",
-		TargetCNAME:          "ingress.example.com.",
 		VolumeName:           "coredns-ingress-sync-volume",
 		MountPath:            "/etc/coredns/custom/coredns-ingress-sync",
 	}
@@ -294,14 +293,16 @@ func TestUpdateDynamicConfigMap_Update(t *testing.T) {
 		Namespace:            "kube-system",
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
-		TargetCNAME:          "ingress.example.com.",
 		VolumeName:           "coredns-ingress-sync-volume",
 	}
 	manager := NewManager(fakeClient, config)
 
 	ctx := context.Background()
 	domains := []string{"example.com"}
-	hosts := []string{"app1.example.com", "app2.example.com"}
+	hosts := map[string]string{
+		"app1.example.com": "ingress.example.com.",
+		"app2.example.com": "ingress.example.com.",
+	}
 
 	err := manager.UpdateDynamicConfigMap(ctx, domains, hosts)
 	require.NoError(t, err)
@@ -329,14 +330,13 @@ func TestUpdateDynamicConfigMap_NoUpdateNeeded(t *testing.T) {
 		Namespace:            "kube-system",
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
-		TargetCNAME:          "ingress.example.com.",
 		VolumeName:           "coredns-ingress-sync-volume",
 	}
 	manager := NewManager(nil, config) // We'll create a fake client with the correct content
 
 	// Generate the expected content
 	domains := []string{"example.com"}
-	hosts := []string{"app1.example.com"}
+	hosts := map[string]string{"app1.example.com": "ingress.example.com."}
 	expectedContent := manager.generateDynamicConfig(domains, hosts)
 
 	// Create existing ConfigMap with the same content
@@ -366,7 +366,22 @@ func TestUpdateDynamicConfigMap_NoUpdateNeeded(t *testing.T) {
 	err = fakeClient.Get(ctx, key, configMap)
 	require.NoError(t, err)
 
-	assert.Equal(t, expectedContent, configMap.Data["dynamic.server"])
+	// generateDynamicConfig embeds a "Last updated" timestamp that ticks
+	// every second, so strip it before comparing to avoid flaking when the
+	// two generateDynamicConfig calls straddle a second boundary.
+	assert.Equal(t, stripLastUpdatedLine(expectedContent), stripLastUpdatedLine(configMap.Data["dynamic.server"]))
+}
+
+func stripLastUpdatedLine(content string) string {
+	lines := strings.Split(content, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if strings.HasPrefix(l, "# Last updated:") {
+			continue
+		}
+		filtered = append(filtered, l)
+	}
+	return strings.Join(filtered, "\n")
 }
 
 func TestEnsureImport(t *testing.T) {

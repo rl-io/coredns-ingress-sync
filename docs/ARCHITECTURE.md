@@ -1,3 +1,58 @@
+# Problem Overview: Internal DNS Resolution
+
+```mermaid
+flowchart TD
+    A(App in EKS Cluster) -->|DNS Query for Ingress Hostname| B(CoreDNS)
+    B -->|Public DNS default| C(External DNS / Public IP)
+    A -.->|Internal traffic uses public DNS, inefficient and less secure| C
+    D(Desired: Internal DNS Resolution)
+    B -->|Internal DNS desired| E(Internal Service - ClusterIP)
+    D -.-> E
+    style D fill:#f9f,stroke:#333,stroke-width:2px,color:#222
+```
+
+**Explanation:**
+- By default, internal apps resolve ingress hostnames to public IPs, even for internal traffic.
+- The goal is to have CoreDNS resolve these hostnames to an internal ClusterIP for internal traffic, improving efficiency and security.
+
+# Solution Architecture: How the Controller Works
+
+```mermaid
+flowchart TD
+    subgraph Kubernetes Cluster
+        A(Ingress Resource - ingressClass: nginx)
+        A2(Gateway - gatewayClassName: traefik)
+        A3(HTTPRoute - parentRef: Gateway)
+        B(Controller - coredns-ingress-sync)
+        C(CoreDNS ConfigMap - coredns)
+        D(Dynamic ConfigMap - rewrite rules)
+        E(CoreDNS Deployment)
+        F(CoreDNS Pod)
+        G(Internal Service - ingress-nginx-controller)
+        G2(Internal Service - traefik)
+    end
+
+    A -->|Watches| B
+    A3 -->|references| A2
+    A2 -->|Watches| B
+    A3 -->|Watches| B
+    B -->|Merges Ingress + Gateway API hostnames, tiebreak on priority| D
+    B -->|Ensures import & volume mount| C
+    C -->|Mounts dynamic config| E
+    E -->|Runs with updated config| F
+    F -->|Resolves ingress hostnames| G
+    F -->|Resolves HTTPRoute hostnames| G2
+
+    style B fill:#bbf,stroke:#333,stroke-width:2px,color:#222
+    style D fill:#bfb,stroke:#333,stroke-width:2px,color:#222
+```
+
+**Explanation:**
+- The controller watches Ingress resources, and, when `gatewayClassMappings` is configured, also watches Gateway and HTTPRoute resources — mirroring the Ingress path but keying off `gatewayClassName` instead of `ingressClassName`.
+- Hostnames from both sources are merged into a single set of rewrite rules. If an Ingress and an HTTPRoute claim the same hostname, the Ingress wins by default (Gateway API can be promoted per-host via the existing priority annotation).
+- Gateway API support is purely additive and opt-in: when `gatewayClassMappings` is unset, no watches, RBAC, or CRD List/Get calls are added, and behavior is identical to Ingress-only operation.
+- It ensures CoreDNS is configured to import these rules and mounts the config.
+- CoreDNS then resolves ingress/HTTPRoute hostnames to the internal service address for internal traffic.
 # How It Works
 
 This document explains the technical implementation and architecture of the coredns-ingress-sync controller.
@@ -26,6 +81,18 @@ with support for **namespace filtering** and **modular CI/CD automation**.
 
 - **Cluster-wide**: Monitors ingresses across all namespaces (requires ClusterRole)
 - **Namespace-scoped**: Monitors only specific namespaces (uses per-namespace Roles)
+
+**Gateway API Support (optional)**: alongside Ingress, the controller can watch `Gateway` and
+`HTTPRoute` resources (`gateway.networking.k8s.io/v1`), configured via `gatewayClassMappings`. This
+mirrors the Ingress pipeline: a `gatewayapi.Filter` (in `internal/gatewayapi`) matches HTTPRoutes to
+their parent Gateway's `gatewayClassName` and applies the same namespace/annotation filtering as
+Ingress (shared via `internal/filterutil`). Candidate hostnames from both sources are merged through
+a shared tiebreak function (`internal/hostmap`), with Ingress winning ties by default. When
+`gatewayClassMappings` is empty (the default), no Gateway API watches, caches, RBAC, or List/Get
+calls are added — behavior is identical to a pre-Gateway-API deployment. HTTPRoute acceptance status
+(`status.parents[].conditions[type=Accepted]`) is not checked; a rejected or conflicting HTTPRoute
+still produces a rewrite rule, matching how Ingress spec is trusted without checking controller
+acceptance.
 
 ## Component Breakdown
 
@@ -345,6 +412,11 @@ The controller uses minimal required permissions:
 # Cluster-wide permissions (read-only)
 - apiGroups: ["networking.k8s.io"]
   resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+
+# Only added when controller.gatewayClassMappings is set
+- apiGroups: ["gateway.networking.k8s.io"]
+  resources: ["gateways", "httproutes"]
   verbs: ["get", "list", "watch"]
 
 # Namespace-scoped permissions

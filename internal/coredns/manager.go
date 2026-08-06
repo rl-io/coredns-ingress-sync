@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,7 +27,6 @@ type Config struct {
 	DynamicConfigMapName string
 	DynamicConfigKey    string
 	ImportStatement     string
-	TargetCNAME         string
 	VolumeName          string
 	MountPath           string
 }
@@ -63,8 +63,9 @@ func NewManager(client client.Client, config Config) *Manager {
 	}
 }
 
-// UpdateDynamicConfigMap creates or updates the dynamic configuration ConfigMap
-func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, hosts []string) error {
+// UpdateDynamicConfigMap creates or updates the dynamic configuration ConfigMap.
+// hostCNAMEMap maps each hostname to the target CNAME it should be rewritten to.
+func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, hostCNAMEMap map[string]string) error {
 	startTime := time.Now()
 	configMapName := types.NamespacedName{
 		Name:      m.config.DynamicConfigMapName,
@@ -72,7 +73,7 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 	}
 
 	// Generate dynamic configuration
-	dynamicConfig := m.generateDynamicConfig(domains, hosts)
+	dynamicConfig := m.generateDynamicConfig(domains, hostCNAMEMap)
 
 	// Retry logic to handle concurrent updates
 	for attempt := 0; attempt < 3; attempt++ {
@@ -170,8 +171,10 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 	return fmt.Errorf("exhausted retries updating dynamic ConfigMap")
 }
 
-// generateDynamicConfig creates the CoreDNS configuration content
-func (m *Manager) generateDynamicConfig(domains []string, hosts []string) string {
+// generateDynamicConfig creates the CoreDNS configuration content. Each
+// hostname is rewritten to its resolved target CNAME. Hosts are emitted in
+// sorted order so the output is stable across reconciles.
+func (m *Manager) generateDynamicConfig(domains []string, hostCNAMEMap map[string]string) string {
 	var config strings.Builder
 
 	// Header
@@ -179,9 +182,16 @@ func (m *Manager) generateDynamicConfig(domains []string, hosts []string) string
 	config.WriteString(fmt.Sprintf("# Last updated: %s\n", time.Now().Format(time.RFC3339)))
 	config.WriteString("\n")
 
-	// Generate individual rewrite rules for each discovered host
+	// Sort hosts for deterministic output.
+	hosts := make([]string, 0, len(hostCNAMEMap))
+	for host := range hostCNAMEMap {
+		hosts = append(hosts, host)
+	}
+	sort.Strings(hosts)
+
+	// Generate individual rewrite rules for each discovered host.
 	for _, host := range hosts {
-		config.WriteString(fmt.Sprintf("rewrite name exact %s %s\n", host, m.config.TargetCNAME))
+		config.WriteString(fmt.Sprintf("rewrite name exact %s %s\n", host, hostCNAMEMap[host]))
 	}
 
 	return config.String()
