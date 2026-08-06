@@ -21,7 +21,7 @@ jobs:
       image-digest: ${{ steps.docker_build.outputs.image_digest }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
       
     - name: Build Docker Image
       id: docker_build
@@ -38,10 +38,10 @@ jobs:
     needs: build
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
       
     - name: Download image artifact
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: docker-image
         path: /tmp
@@ -49,7 +49,7 @@ jobs:
     - name: Run Comprehensive Tests
       uses: ./.github/actions/test-runner
       with:
-        go_version: '1.24'
+        go_version: '1.26'
         run_integration_tests: true
         run_e2e_tests: true
         codecov_token: ${{ secrets.CODECOV_TOKEN }}
@@ -62,10 +62,10 @@ jobs:
     needs: build
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
       
     - name: Download image artifact
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: docker-image
         path: /tmp

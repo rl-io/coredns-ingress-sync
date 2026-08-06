@@ -4,19 +4,19 @@ import (
 	"context"
 	"testing"
 
-	networkingv1 "k8s.io/api/networking/v1"
+	dto "github.com/prometheus/client_model/go"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	dto "github.com/prometheus/client_model/go"
 
-	"github.com/rl-io/coredns-ingress-sync/internal/coredns"
 	"github.com/rl-io/coredns-ingress-sync/internal/controller"
+	"github.com/rl-io/coredns-ingress-sync/internal/coredns"
 	"github.com/rl-io/coredns-ingress-sync/internal/ingress"
 	"github.com/rl-io/coredns-ingress-sync/internal/metrics"
 )
@@ -100,20 +100,19 @@ func TestMetricsIntegration(t *testing.T) {
 		Build()
 
 	// Create dependencies
-	ingressFilter := ingress.NewFilter("nginx", "", "", "", "")
+	ingressFilter := ingress.NewFilter(nginxClassMappings(), "", "", "", "", "")
 	coreDNSConfig := coredns.Config{
 		Namespace:            "kube-system",
 		ConfigMapName:        "coredns",
 		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
 		DynamicConfigKey:     "dynamic.server",
 		ImportStatement:      "import /etc/coredns/custom/coredns-ingress-sync/*.server",
-		TargetCNAME:          "ingress-nginx.svc.cluster.local.",
 		VolumeName:           "coredns-ingress-sync-volume",
 		MountPath:            "/etc/coredns/custom/coredns-ingress-sync",
 	}
 	coreDNSManager := coredns.NewManager(fakeClient, coreDNSConfig)
 
-	reconciler := controller.NewIngressReconciler(fakeClient, scheme, ingressFilter, coreDNSManager)
+	reconciler := controller.NewIngressReconciler(fakeClient, scheme, ingressFilter, nil, coreDNSManager)
 
 	// Perform reconciliation
 	ctx := context.Background()
@@ -171,7 +170,7 @@ func resetAllMetrics() {
 	metrics.IngressesWatched.Reset()
 	metrics.IngressesProcessed.Reset()
 	metrics.CoreDNSConfigDrift.Reset()
-	
+
 	// Gauges need to be set to 0
 	metrics.DNSRecordsManaged.Set(0)
 	metrics.LeaderElectionStatus.Set(0)

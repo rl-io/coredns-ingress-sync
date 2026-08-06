@@ -49,7 +49,7 @@ show_usage() {
     echo ""
     echo "For local multi-version Kubernetes testing:"
     echo "  make kind-test-all-versions     # Test all supported K8s versions"
-    echo "  make kind-test-version K8S_VERSION=1.29.4  # Test specific version"
+    echo "  make kind-test-version K8S_VERSION=1.35.5  # Test specific version"
     echo "  See tests/kind/README.md for details"
     echo ""
 }
@@ -299,12 +299,24 @@ run_e2e_tests() {
     # Run comprehensive RBAC E2E tests
     log_section "RBAC End-to-End Tests"
     chmod +x e2e_rbac_test.sh
-    
+
     if ./e2e_rbac_test.sh; then
         log_info "✅ RBAC end-to-end tests passed"
-        E2E_RESULT=0
     else
         log_error "❌ RBAC end-to-end tests failed"
+        E2E_RESULT=1
+        return
+    fi
+
+    # Run Gateway API E2E test
+    log_section "Gateway API End-to-End Test"
+    chmod +x e2e_gateway_test.sh
+
+    if ./e2e_gateway_test.sh; then
+        log_info "✅ Gateway API end-to-end test passed"
+        E2E_RESULT=0
+    else
+        log_error "❌ Gateway API end-to-end test failed"
         E2E_RESULT=1
     fi
 }

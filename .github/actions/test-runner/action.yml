@@ -4,7 +4,7 @@ inputs:
   go_version:
     description: 'Go version to use'
     required: false
-    default: '1.24'
+    default: '1.26'
   run_integration_tests:
     description: 'Whether to run integration tests'
     required: false
@@ -24,6 +24,18 @@ inputs:
     description: 'Timeout for cluster operations (seconds)'
     required: false
     default: '120'
+  kind_version:
+    description: 'kind binary version to install (e.g. v0.32.0)'
+    required: false
+    default: 'v0.26.0'
+  node_image:
+    description: 'kindest/node image to boot (e.g. kindest/node:v1.35.5@sha256:...). Empty uses the kind default for the chosen kind_version.'
+    required: false
+    default: ''
+  artifact_suffix:
+    description: 'Suffix appended to uploaded artifact names so parallel matrix jobs do not collide.'
+    required: false
+    default: ''
 
 outputs:
   test_status:
@@ -37,7 +49,7 @@ runs:
   using: 'composite'
   steps:
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: ${{ inputs.go_version }}
         cache: true
@@ -77,7 +89,7 @@ runs:
       
     - name: Upload coverage to Codecov
       if: inputs.codecov_token != ''
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@v7
       with:
         flags: unittests
         name: codecov-umbrella
@@ -86,9 +98,9 @@ runs:
         fail_ci_if_error: false
         
     - name: Upload coverage reports
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: coverage-reports
+        name: coverage-reports${{ inputs.artifact_suffix }}
         path: |
           coverage.out
           coverage.html
@@ -136,10 +148,12 @@ runs:
         
     - name: Create Kind cluster
       if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
-      uses: helm/kind-action@v1.12.0
+      uses: helm/kind-action@v1.14.0
       with:
         cluster_name: test-cluster
         config: kind-config.yaml
+        version: ${{ inputs.kind_version }}
+        node_image: ${{ inputs.node_image }}
               
     - name: Load image into Kind cluster
       if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
@@ -160,10 +174,54 @@ runs:
         
     - name: Install Helm
       if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
-      uses: azure/setup-helm@v4
+      uses: azure/setup-helm@v5
       with:
         version: v3.12.0
-        
+
+    - name: Install Gateway API CRDs
+      if: inputs.run_e2e_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::🌐 Installing Gateway API CRDs"
+        kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.1/standard-install.yaml
+        kubectl wait --for=condition=established --timeout=60s \
+          crd/gatewayclasses.gateway.networking.k8s.io \
+          crd/gateways.gateway.networking.k8s.io \
+          crd/httproutes.gateway.networking.k8s.io
+        echo "::endgroup::"
+
+    - name: Install Traefik (Gateway API provider)
+      if: inputs.run_e2e_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::🌐 Installing Traefik"
+        helm repo add traefik https://traefik.github.io/charts
+        helm repo update traefik
+        # Traefik's chart defaults its Service to type LoadBalancer, and
+        # `helm install --wait` blocks until that Service has an external IP.
+        # Plain Kind has no LoadBalancer provisioner (no MetalLB /
+        # cloud-provider-kind), so that IP never arrives and --wait hangs for
+        # the full timeout on every run. CIS only ever targets the ClusterIP
+        # anyway, so force that instead -- --wait then just waits on the
+        # Deployment's pod readiness, which is fast.
+        if ! helm install traefik traefik/traefik \
+          --namespace traefik --create-namespace \
+          --set providers.kubernetesGateway.enabled=true \
+          --set gateway.enabled=false \
+          --set service.spec.type=ClusterIP \
+          --wait --timeout=120s; then
+
+          echo "::group::🔧 Traefik install failed, gathering debug information"
+          kubectl get pods -n traefik -o wide || true
+          kubectl describe pods -n traefik || true
+          kubectl get events -n traefik --sort-by='.lastTimestamp' || true
+          echo "::endgroup::"
+
+          exit 1
+        fi
+        kubectl wait --namespace traefik --for=condition=available --timeout=60s deployment/traefik
+        echo "::endgroup::"
+
     - name: Deploy controller for testing
       if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
       shell: bash
@@ -216,9 +274,9 @@ runs:
         
     - name: Upload test results
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: test-results
+        name: test-results${{ inputs.artifact_suffix }}
         path: test_results/
         
     - name: Test summary
