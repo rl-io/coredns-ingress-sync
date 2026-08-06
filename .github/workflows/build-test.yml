@@ -41,7 +41,7 @@ jobs:
       uses: actions/checkout@v5
       
     - name: Download image artifact
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         name: docker-image
         path: /tmp
@@ -49,7 +49,7 @@ jobs:
     - name: Run Comprehensive Tests
       uses: ./.github/actions/test-runner
       with:
-        go_version: '1.24'
+        go_version: '1.26'
         run_integration_tests: true
         run_e2e_tests: true
         codecov_token: ${{ secrets.CODECOV_TOKEN }}
@@ -65,7 +65,7 @@ jobs:
       uses: actions/checkout@v5
       
     - name: Download image artifact
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         name: docker-image
         path: /tmp

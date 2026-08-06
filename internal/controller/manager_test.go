@@ -268,7 +268,7 @@ func TestControllerManager_CreatesIngressFilterAndPredicate(t *testing.T) {
 
 	// We won't create a real manager here; instead we just exercise the code path that creates the filter
 	// by calling the same construction logic and validating ShouldProcessIngress works as expected
-	f := ingfilter.NewFilter(cfg.IngressClass, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeIngresses, cfg.AnnotationEnabledKey)
+	f := ingfilter.NewFilter([]config.IngressClassMapping{{IngressClass: cfg.IngressClass, TargetCNAME: cfg.TargetCNAME}}, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeIngresses, cfg.AnnotationEnabledKey, cfg.AnnotationPriorityKey)
 
 	// Ingress matching class but excluded via name
 	cls := "nginx"
@@ -353,7 +353,7 @@ func TestControllerManager_Configuration_Validation(t *testing.T) {
 
 func TestBuildIngressPredicate_AnnotationFlipTriggersUpdate(t *testing.T) {
 	// Setup filter and predicate
-	filt := ingfilter.NewFilter("nginx", "", "", "", "coredns-ingress-sync-enabled")
+	filt := ingfilter.NewFilter([]config.IngressClassMapping{{IngressClass: "nginx"}}, "", "", "", "coredns-ingress-sync-enabled", "")
 	pred := buildIngressPredicate(filt)
 
 	cls := "nginx"

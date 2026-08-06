@@ -18,15 +18,16 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Supported Kubernetes versions to test
-# Based on our kubeVersion constraint of >=1.25.0-0
-# Updated to latest available KIND node images (July 2025)
+# Supported Kubernetes versions to test.
+# The controller's kubeVersion constraint is >=1.25.0-0, but this matrix tracks
+# the node images shipped by the latest KIND release (v0.32.0), which a single
+# modern `kind` binary can boot reliably. Testing older minors (1.32 and below)
+# requires pinning an older `kind` binary per image and is not done here.
+# Patch versions match the digest-backed images in the KIND v0.32.0 release.
 K8S_VERSIONS=(
-    "1.29.14"   # Previous stable
-    "1.30.13"   # 1.30 stable
-    "1.31.9"    # 1.31 stable
-    "1.32.5"    # 1.32 stable
-    "1.33.1"    # Latest stable
+    "1.33.12"   # 1.33 stable
+    "1.34.8"    # 1.34 stable
+    "1.35.5"    # 1.35 stable (latest)
 )
 
 # KIND cluster name prefix
