@@ -484,6 +484,14 @@ func TestIsTargetIngress_MultiClass(t *testing.T) {
 	assert.False(t, filter.IsTargetIngress(&other))
 }
 
+func TestClassCount(t *testing.T) {
+	single := NewFilter([]config.IngressClassMapping{{IngressClass: "nginx", TargetCNAME: "nginx.cluster.local."}}, "", "", "", "", "")
+	assert.Equal(t, 1, single.ClassCount())
+
+	multi := NewFilter(multiClassMappings(), "", "", "", "", "")
+	assert.Equal(t, 2, multi.ClassCount())
+}
+
 func TestExtractHostnameMappings_ConfigOrderWins(t *testing.T) {
 	filter := NewFilter(multiClassMappings(), "", "", "", "", "coredns-ingress-sync-priority")
 
