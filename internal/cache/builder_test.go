@@ -29,17 +29,17 @@ func TestNewConfigBuilder(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			builder := NewConfigBuilder(tt.watchNamespaces, tt.coreDNSNS)
-			
+			builder := NewConfigBuilder(ConfigBuilderOptions{WatchNamespaces: tt.watchNamespaces, CoreDNSNamespace: tt.coreDNSNS})
+
 			if builder == nil {
 				t.Fatal("Expected non-nil ConfigBuilder")
 			}
-			
+
 			// Verify the builder was created with the correct fields
 			if len(builder.watchNamespaces) != len(tt.watchNamespaces) {
 				t.Errorf("Expected %d watch namespaces, got %d", len(tt.watchNamespaces), len(builder.watchNamespaces))
 			}
-			
+
 			if builder.coreDNSNamespace != tt.coreDNSNS {
 				t.Errorf("Expected CoreDNS namespace %s, got %s", tt.coreDNSNS, builder.coreDNSNamespace)
 			}
@@ -70,20 +70,39 @@ func TestBuildCacheOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			builder := NewConfigBuilder(tt.watchNamespaces, tt.coreDNSNS)
+			builder := NewConfigBuilder(ConfigBuilderOptions{WatchNamespaces: tt.watchNamespaces, CoreDNSNamespace: tt.coreDNSNS})
 			options := builder.BuildCacheOptions()
-			
+
 			// For empty watch namespaces, ByObject should be nil (default cache)
 			isDefaultCache := options.ByObject == nil
-			
+
 			if tt.expectDefaultCache && !isDefaultCache {
 				t.Error("Expected default cache options for watching all namespaces")
 			}
-			
+
 			if !tt.expectDefaultCache && isDefaultCache {
 				t.Error("Expected scoped cache options for specific namespaces")
 			}
 		})
+	}
+}
+
+func TestBuildCacheOptions_GatewayAPI(t *testing.T) {
+	disabled := NewConfigBuilder(ConfigBuilderOptions{
+		WatchNamespaces:  []string{"production"},
+		CoreDNSNamespace: "kube-system",
+	}).BuildCacheOptions()
+	if len(disabled.ByObject) != 2 {
+		t.Errorf("expected 2 ByObject entries when Gateway API is disabled, got %d", len(disabled.ByObject))
+	}
+
+	enabled := NewConfigBuilder(ConfigBuilderOptions{
+		WatchNamespaces:   []string{"production"},
+		CoreDNSNamespace:  "kube-system",
+		GatewayAPIEnabled: true,
+	}).BuildCacheOptions()
+	if len(enabled.ByObject) != 4 {
+		t.Errorf("expected 4 ByObject entries when Gateway API is enabled, got %d", len(enabled.ByObject))
 	}
 }
 
@@ -118,12 +137,12 @@ func TestParseNamespaces(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := ParseNamespaces(tt.input)
-			
+
 			if len(result) != len(tt.expected) {
 				t.Errorf("Expected %d namespaces, got %d. Expected: %v, Got: %v", len(tt.expected), len(result), tt.expected, result)
 				return
 			}
-			
+
 			for i, expected := range tt.expected {
 				if result[i] != expected {
 					t.Errorf("Expected namespace[%d] = %s, got %s", i, expected, result[i])
@@ -157,12 +176,12 @@ func TestSplitAndTrim(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := splitAndTrim(tt.input, tt.sep)
-			
+
 			if len(result) != len(tt.expected) {
 				t.Errorf("Expected %d items, got %d. Expected: %v, Got: %v", len(tt.expected), len(result), tt.expected, result)
 				return
 			}
-			
+
 			for i, expected := range tt.expected {
 				if result[i] != expected {
 					t.Errorf("Expected item[%d] = %s, got %s", i, expected, result[i])

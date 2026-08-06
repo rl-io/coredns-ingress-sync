@@ -8,19 +8,32 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
 // ConfigBuilder helps build cache configuration
 type ConfigBuilder struct {
-	watchNamespaces  []string
-	coreDNSNamespace string
+	watchNamespaces   []string
+	coreDNSNamespace  string
+	gatewayAPIEnabled bool
+}
+
+// ConfigBuilderOptions configures a ConfigBuilder. GatewayAPIEnabled controls
+// whether Gateway/HTTPRoute are added to the cache's ByObject scoping --
+// leave false for pure-Ingress deployments so no Gateway API types are ever
+// touched.
+type ConfigBuilderOptions struct {
+	WatchNamespaces   []string
+	CoreDNSNamespace  string
+	GatewayAPIEnabled bool
 }
 
 // NewConfigBuilder creates a new cache config builder
-func NewConfigBuilder(watchNamespaces []string, coreDNSNamespace string) *ConfigBuilder {
+func NewConfigBuilder(opts ConfigBuilderOptions) *ConfigBuilder {
 	return &ConfigBuilder{
-		watchNamespaces:  watchNamespaces,
-		coreDNSNamespace: coreDNSNamespace,
+		watchNamespaces:   opts.WatchNamespaces,
+		coreDNSNamespace:  opts.CoreDNSNamespace,
+		gatewayAPIEnabled: opts.GatewayAPIEnabled,
 	}
 }
 
@@ -35,12 +48,12 @@ func (cb *ConfigBuilder) BuildCacheOptions() cache.Options {
 		for _, ns := range cb.watchNamespaces {
 			ingressNamespaceMap[ns] = cache.Config{}
 		}
-		
+
 		// Always need access to CoreDNS namespace for ConfigMap operations
 		configMapNamespaceMap := map[string]cache.Config{
 			cb.coreDNSNamespace: {},
 		}
-		
+
 		// If we're watching namespaces that include the CoreDNS namespace,
 		// we need to merge the configs to avoid conflicts
 		if cb.coreDNSNamespace != "" {
@@ -52,7 +65,7 @@ func (cb *ConfigBuilder) BuildCacheOptions() cache.Options {
 				}
 			}
 		}
-		
+
 		cacheOptions.ByObject = map[client.Object]cache.ByObject{
 			&networkingv1.Ingress{}: {
 				Namespaces: ingressNamespaceMap,
@@ -61,15 +74,24 @@ func (cb *ConfigBuilder) BuildCacheOptions() cache.Options {
 				Namespaces: configMapNamespaceMap,
 			},
 		}
-		
+
+		if cb.gatewayAPIEnabled {
+			cacheOptions.ByObject[&gatewayv1.Gateway{}] = cache.ByObject{
+				Namespaces: ingressNamespaceMap,
+			}
+			cacheOptions.ByObject[&gatewayv1.HTTPRoute{}] = cache.ByObject{
+				Namespaces: ingressNamespaceMap,
+			}
+		}
+
 		logger := ctrl.Log.WithName("cache-builder")
-		
+
 		if len(cb.watchNamespaces) == 1 {
 			logger.V(1).Info("Using namespace-scoped cache for single namespace", "namespace", cb.watchNamespaces[0])
 		} else {
 			logger.V(1).Info("Using namespace-scoped cache for multiple namespaces", "namespaces", cb.watchNamespaces)
 		}
-		
+
 		logger.V(1).Info("CoreDNS ConfigMap access configured", "namespace", cb.coreDNSNamespace)
 	} else {
 		// Cluster-wide watching - no namespace restrictions

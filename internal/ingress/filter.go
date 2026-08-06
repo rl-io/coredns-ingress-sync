@@ -1,126 +1,79 @@
 package ingress
 
 import (
-	"strings"
-
+	"github.com/go-logr/logr"
 	networkingv1 "k8s.io/api/networking/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/rl-io/coredns-ingress-sync/internal/config"
+	"github.com/rl-io/coredns-ingress-sync/internal/filterutil"
+	"github.com/rl-io/coredns-ingress-sync/internal/hostmap"
 )
 
 // Filter provides ingress filtering functionality
 type Filter struct {
-	ingressClass     string
-	watchNamespaces  []string
-	watchAllNamespaces bool
-	excludeNamespaces []string
-	// exclude by ingress name (applies cluster-wide) and by namespace/name
-	excludeIngressNames map[string]bool               // name -> true
-	excludeIngressByNS  map[string]map[string]bool    // ns -> name -> true
-	annotationEnabledKey string
+	// classMappings is the ordered list of class->CNAME mappings. Slice order
+	// defines the default priority tiebreak (index 0 = lowest priority).
+	classMappings         []config.IngressClassMapping
+	classToCNAME          map[string]string // ingress class -> target CNAME
+	classToIndex          map[string]int    // ingress class -> config order index
+	nsScope               filterutil.NamespaceScope
+	excludeSet            filterutil.ExcludeSet
+	annotationEnabledKey  string
+	annotationPriorityKey string
+	logger                logr.Logger
 }
 
-// NewFilter creates a new ingress filter
-func NewFilter(ingressClass string, watchNamespacesEnv string, excludeNamespacesEnv string, excludeIngressesEnv string, annotationEnabledKey string) *Filter {
+// NewFilter creates a new ingress filter. classMappings is the ordered list of
+// ingress class -> target CNAME mappings; its order defines the default
+// priority tiebreak. annotationPriorityKey, when set, lets an individual
+// ingress override its priority via an integer annotation (higher wins).
+func NewFilter(classMappings []config.IngressClassMapping, watchNamespacesEnv string, excludeNamespacesEnv string, excludeIngressesEnv string, annotationEnabledKey string, annotationPriorityKey string) *Filter {
 	filter := &Filter{
-		ingressClass: ingressClass,
-		annotationEnabledKey: annotationEnabledKey,
+		classMappings:         classMappings,
+		classToCNAME:          make(map[string]string, len(classMappings)),
+		classToIndex:          make(map[string]int, len(classMappings)),
+		nsScope:               filterutil.NewNamespaceScope(watchNamespacesEnv, excludeNamespacesEnv),
+		excludeSet:            filterutil.NewExcludeSet(excludeIngressesEnv),
+		annotationEnabledKey:  annotationEnabledKey,
+		annotationPriorityKey: annotationPriorityKey,
+		logger:                ctrl.Log.WithName("ingress-filter"),
 	}
 
-	// Parse watch namespaces
-	if watchNamespacesEnv != "" {
-		namespaces := strings.Split(strings.ReplaceAll(watchNamespacesEnv, " ", ""), ",")
-		// Filter out empty strings
-		var validNamespaces []string
-		for _, ns := range namespaces {
-			if ns != "" {
-				validNamespaces = append(validNamespaces, ns)
-			}
-		}
-		filter.watchNamespaces = validNamespaces
-		filter.watchAllNamespaces = len(validNamespaces) == 0
-	} else {
-		filter.watchAllNamespaces = true
-	}
-
-	// Parse exclude namespaces
-	if excludeNamespacesEnv != "" {
-		namespaces := strings.Split(strings.ReplaceAll(excludeNamespacesEnv, " ", ""), ",")
-		for _, ns := range namespaces {
-			if ns != "" {
-				filter.excludeNamespaces = append(filter.excludeNamespaces, ns)
-			}
-		}
-	}
-
-	// Parse exclude ingresses (supports name or namespace/name)
-	filter.excludeIngressNames = make(map[string]bool)
-	filter.excludeIngressByNS = make(map[string]map[string]bool)
-	if excludeIngressesEnv != "" {
-		parts := strings.Split(strings.TrimSpace(excludeIngressesEnv), ",")
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			if strings.Contains(p, "/") {
-				// namespace/name form
-				segs := strings.SplitN(p, "/", 2)
-				ns := strings.TrimSpace(segs[0])
-				name := strings.TrimSpace(segs[1])
-				if ns == "" || name == "" {
-					continue
-				}
-				if _, ok := filter.excludeIngressByNS[ns]; !ok {
-					filter.excludeIngressByNS[ns] = make(map[string]bool)
-				}
-				filter.excludeIngressByNS[ns][name] = true
-			} else {
-				// name only (global)
-				filter.excludeIngressNames[p] = true
-			}
+	// Build lookup tables. If a class appears more than once, the first
+	// occurrence wins (lowest index and its CNAME).
+	for i, m := range classMappings {
+		if _, exists := filter.classToIndex[m.IngressClass]; !exists {
+			filter.classToIndex[m.IngressClass] = i
+			filter.classToCNAME[m.IngressClass] = m.TargetCNAME
 		}
 	}
 
 	return filter
 }
 
-// IsTargetIngress checks if an ingress object matches our ingress class
+// IsTargetIngress checks if an ingress object matches any configured ingress class
 func (f *Filter) IsTargetIngress(obj client.Object) bool {
 	ingress, ok := obj.(*networkingv1.Ingress)
 	if !ok {
 		return false
 	}
-	return ingress.Spec.IngressClassName != nil && *ingress.Spec.IngressClassName == f.ingressClass
+	return f.matchesClass(ingress)
+}
+
+// matchesClass reports whether the ingress declares a class we are configured to watch
+func (f *Filter) matchesClass(ing *networkingv1.Ingress) bool {
+	if ing.Spec.IngressClassName == nil {
+		return false
+	}
+	_, ok := f.classToIndex[*ing.Spec.IngressClassName]
+	return ok
 }
 
 // ShouldWatchNamespace checks if we should process objects in the given namespace
 func (f *Filter) ShouldWatchNamespace(namespace string) bool {
-	if f.watchAllNamespaces {
-		// If watching all, still respect exclude list
-		for _, ex := range f.excludeNamespaces {
-			if ex == namespace {
-				return false
-			}
-		}
-		return true
-	}
-	// Specific watch list: must be included and not excluded
-	allowed := false
-	for _, ns := range f.watchNamespaces {
-		if ns == namespace {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
-		return false
-	}
-	for _, ex := range f.excludeNamespaces {
-		if ex == namespace {
-			return false
-		}
-	}
-	return true
+	return f.nsScope.ShouldWatch(namespace)
 }
 
 // IsExcludedIngress returns true if the given ingress should be excluded by name/namespace
@@ -128,15 +81,7 @@ func (f *Filter) IsExcludedIngress(ing *networkingv1.Ingress) bool {
 	if ing == nil {
 		return false
 	}
-	if f.excludeIngressNames[ing.Name] {
-		return true
-	}
-	if byNS, ok := f.excludeIngressByNS[ing.Namespace]; ok {
-		if byNS[ing.Name] {
-			return true
-		}
-	}
-	return false
+	return f.excludeSet.IsExcluded(ing.Namespace, ing.Name)
 }
 
 // ShouldProcessIngress returns true if this ingress matches class, namespace, and is not excluded
@@ -144,7 +89,7 @@ func (f *Filter) ShouldProcessIngress(ing *networkingv1.Ingress) bool {
 	if ing == nil {
 		return false
 	}
-	if ing.Spec.IngressClassName == nil || *ing.Spec.IngressClassName != f.ingressClass {
+	if !f.matchesClass(ing) {
 		return false
 	}
 	if !f.ShouldWatchNamespace(ing.Namespace) {
@@ -166,52 +111,91 @@ func (f *Filter) ShouldProcessIngress(ing *networkingv1.Ingress) bool {
 	return true
 }
 
-// ExtractHostnames extracts all hostnames from a list of ingresses that match our criteria
-func (f *Filter) ExtractHostnames(ingresses []networkingv1.Ingress) []string {
-	hostSet := make(map[string]bool)
+// ExtractHostnameCandidates returns one hostmap.Candidate per (host, ingress)
+// pair for all processable ingresses, with ClassIndex set to the ingress
+// class's 0-based config-order index. Callers merging candidates from
+// multiple sources (e.g. Gateway API) should offset ClassIndex before calling
+// hostmap.Resolve so ties fall back to source order.
+func (f *Filter) ExtractHostnameCandidates(ingresses []networkingv1.Ingress) []hostmap.Candidate {
+	var candidates []hostmap.Candidate
 
-	for _, ing := range ingresses {
-		// Skip ingresses that shouldn't be processed
-		if !f.ShouldProcessIngress(&ing) {
+	for i := range ingresses {
+		ing := &ingresses[i]
+		if !f.ShouldProcessIngress(ing) {
 			continue
 		}
 
-		// Extract hosts from rules
+		class := *ing.Spec.IngressClassName
+		cname := f.classToCNAME[class]
+		priority := resolvePriority(ing, f.annotationPriorityKey)
+		index := f.classToIndex[class]
+		source := ing.Namespace + "/" + ing.Name
+
 		for _, rule := range ing.Spec.Rules {
-			if rule.Host != "" {
-				hostSet[rule.Host] = true
+			if rule.Host == "" {
+				continue
 			}
+			candidates = append(candidates, hostmap.Candidate{
+				Host:       rule.Host,
+				CNAME:      cname,
+				Priority:   priority,
+				ClassIndex: index,
+				Source:     source,
+			})
 		}
 	}
 
-	// Convert set to slice
-	var hosts []string
-	for host := range hostSet {
+	return candidates
+}
+
+// ExtractHostnameMappings returns a map of hostname -> target CNAME for all
+// processable ingresses. When multiple ingresses (typically different classes)
+// declare the same hostname, the one with the higher resolved priority wins.
+// Priority comes from the per-ingress priority annotation when present; absent
+// (or invalid), all ingresses share a baseline priority and the class config
+// order decides (first listed wins). A positive annotation therefore promotes
+// an otherwise-default class to win the rewrite.
+func (f *Filter) ExtractHostnameMappings(ingresses []networkingv1.Ingress) map[string]string {
+	return hostmap.Resolve(f.ExtractHostnameCandidates(ingresses), f.logger)
+}
+
+// ExtractHostnames extracts the set of hostnames from processable ingresses.
+func (f *Filter) ExtractHostnames(ingresses []networkingv1.Ingress) []string {
+	mappings := f.ExtractHostnameMappings(ingresses)
+	hosts := make([]string, 0, len(mappings))
+	for host := range mappings {
 		hosts = append(hosts, host)
 	}
-
 	return hosts
+}
+
+// ClassCount returns the number of configured ingress class mappings. The
+// reconciler uses this to offset Gateway API candidates' ClassIndex when
+// merging candidates from both sources into one hostmap.Resolve call, so
+// ties between an Ingress and an HTTPRoute default to Ingress winning.
+func (f *Filter) ClassCount() int {
+	return len(f.classMappings)
+}
+
+// resolvePriority returns the explicit priority for an ingress: the integer
+// value of its priority annotation when present and valid, otherwise the
+// baseline priority of 0. Higher wins; ties are broken by class config order,
+// so an unannotated ingress relies on config order.
+func resolvePriority(ing *networkingv1.Ingress, annotationKey string) int {
+	return filterutil.ResolvePriority(ing.Annotations, annotationKey)
 }
 
 // GetWatchNamespaces returns the list of namespaces being watched
 func (f *Filter) GetWatchNamespaces() []string {
-	if f.watchAllNamespaces {
-		return nil // nil indicates all namespaces
-	}
-	return f.watchNamespaces
+	return f.nsScope.WatchNamespaces()
 }
 
 // WatchesAllNamespaces returns true if watching all namespaces
 func (f *Filter) WatchesAllNamespaces() bool {
-	return f.watchAllNamespaces
+	return f.nsScope.WatchesAllNamespaces()
 }
 
 // isFalseLike returns true if the string represents a false value
 func isFalseLike(s string) bool {
-	v := strings.TrimSpace(strings.ToLower(s))
-	switch v {
-	case "false", "0", "no", "off", "disabled":
-		return true
-	}
-	return false
+	return filterutil.IsFalseLike(s)
 }
