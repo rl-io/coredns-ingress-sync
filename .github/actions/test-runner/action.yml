@@ -197,14 +197,19 @@ runs:
         echo "::group::🌐 Installing Traefik"
         helm repo add traefik https://traefik.github.io/charts
         helm repo update traefik
-        # Traefik's image pull + pod scheduling on a cold GitHub-hosted runner
-        # routinely takes longer than the shared cluster_timeout (120s) allows
-        # for other, lighter-weight steps, so give it its own longer budget.
+        # Traefik's chart defaults its Service to type LoadBalancer, and
+        # `helm install --wait` blocks until that Service has an external IP.
+        # Plain Kind has no LoadBalancer provisioner (no MetalLB /
+        # cloud-provider-kind), so that IP never arrives and --wait hangs for
+        # the full timeout on every run. CIS only ever targets the ClusterIP
+        # anyway, so force that instead -- --wait then just waits on the
+        # Deployment's pod readiness, which is fast.
         if ! helm install traefik traefik/traefik \
           --namespace traefik --create-namespace \
           --set providers.kubernetesGateway.enabled=true \
           --set gateway.enabled=false \
-          --wait --timeout=240s; then
+          --set service.spec.type=ClusterIP \
+          --wait --timeout=120s; then
 
           echo "::group::🔧 Traefik install failed, gathering debug information"
           kubectl get pods -n traefik -o wide || true

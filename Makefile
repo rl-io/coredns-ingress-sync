@@ -285,6 +285,7 @@ kind-setup-gateway: kind-setup ## Additionally install Gateway API CRDs + Traefi
 		--namespace traefik --create-namespace \
 		--set providers.kubernetesGateway.enabled=true \
 		--set gateway.enabled=false \
+		--set service.spec.type=ClusterIP \
 		--wait --timeout=120s
 	kubectl wait --namespace traefik --for=condition=available --timeout=120s deployment/traefik
 
