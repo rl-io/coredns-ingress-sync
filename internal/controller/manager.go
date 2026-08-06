@@ -58,7 +58,11 @@ func (cm *ControllerManager) Setup() (manager.Manager, error) {
 	watchNamespaces := cache.ParseNamespaces(cm.config.WatchNamespaces)
 
 	// Build cache options
-	cacheBuilder := cache.NewConfigBuilder(watchNamespaces, cm.config.CoreDNSNamespace)
+	cacheBuilder := cache.NewConfigBuilder(cache.ConfigBuilderOptions{
+		WatchNamespaces:   watchNamespaces,
+		CoreDNSNamespace:  cm.config.CoreDNSNamespace,
+		GatewayAPIEnabled: len(cm.config.GatewayClassMappings) > 0,
+	})
 	cacheOptions := cacheBuilder.BuildCacheOptions()
 
 	// Create scheme and register all types before creating the manager
@@ -87,7 +91,7 @@ func (cm *ControllerManager) Setup() (manager.Manager, error) {
 	}
 
 	// Create ingress filter for watches
-	ingressFilter := ingress.NewFilter(cm.config.IngressClass, cm.config.WatchNamespaces, cm.config.ExcludeNamespaces, cm.config.ExcludeIngresses, cm.config.AnnotationEnabledKey)
+	ingressFilter := ingress.NewFilter(cm.config.IngressClassMappings, cm.config.WatchNamespaces, cm.config.ExcludeNamespaces, cm.config.ExcludeIngresses, cm.config.AnnotationEnabledKey, cm.config.AnnotationPriorityKey)
 
 	// Set up the controller using the provided reconciler
 	c, err := ctrlcontroller.New("coredns-ingress-sync", mgr, ctrlcontroller.Options{
@@ -198,8 +202,7 @@ func (cm *ControllerManager) setupHealthChecks(mgr manager.Manager) error {
 func (cm *ControllerManager) logStartupInfo(watchNamespaces []string) {
 	cm.logger.Info("Starting coredns-ingress-sync controller",
 		"leader_election", cm.config.LeaderElectionEnabled,
-		"ingress_class", cm.config.IngressClass,
-		"target_cname", cm.config.TargetCNAME,
+		"ingress_class_mappings", cm.config.IngressClassMappings,
 		"dynamic_configmap", cm.config.DynamicConfigMapName,
 		"coredns_configmap", fmt.Sprintf("%s/%s", cm.config.CoreDNSNamespace, cm.config.CoreDNSConfigMapName))
 

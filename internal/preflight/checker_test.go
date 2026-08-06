@@ -9,12 +9,14 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/rl-io/coredns-ingress-sync/internal/config"
 )
@@ -23,9 +25,9 @@ func TestChecker_CheckCoreDNSDeployment(t *testing.T) {
 	logger := zap.New(zap.UseDevMode(true))
 
 	tests := []struct {
-		name         string
-		deployment   *appsv1.Deployment
-		expectPassed bool
+		name          string
+		deployment    *appsv1.Deployment
+		expectPassed  bool
 		expectMessage string
 	}{
 		{
@@ -36,18 +38,18 @@ func TestChecker_CheckCoreDNSDeployment(t *testing.T) {
 					Namespace: "kube-system",
 				},
 			},
-			expectPassed: true,
+			expectPassed:  true,
 			expectMessage: "✅ CoreDNS deployment found",
 		},
 		{
-			name:         "CoreDNS deployment does not exist",
-			deployment:   nil,
-			expectPassed: false,
+			name:          "CoreDNS deployment does not exist",
+			deployment:    nil,
+			expectPassed:  false,
 			expectMessage: "❌ CoreDNS deployment not found in namespace kube-system",
 		},
 	}
 
-		for _, tt := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			scheme := runtime.NewScheme()
 			_ = appsv1.AddToScheme(scheme)
@@ -447,11 +449,11 @@ func TestChecker_CheckMountPathConflicts_ErrorCases(t *testing.T) {
 	logger := zap.New(zap.UseDevMode(true))
 
 	tests := []struct {
-		name           string
-		deployment     *appsv1.Deployment
-		config         Config
-		expectPassed   bool
-		expectMessage  string
+		name          string
+		deployment    *appsv1.Deployment
+		config        Config
+		expectPassed  bool
+		expectMessage string
 	}{
 		{
 			name: "CoreDNS deployment has no containers",
@@ -684,10 +686,10 @@ func TestChecker_CheckDuplicateControllers(t *testing.T) {
 	logger := zap.New(zap.UseDevMode(true))
 
 	tests := []struct {
-		name           string
-		objects        []runtime.Object
-		expectPassed   bool
-		expectWarning  bool
+		name          string
+		objects       []runtime.Object
+		expectPassed  bool
+		expectWarning bool
 	}{
 		{
 			name:          "No duplicate controllers",
@@ -708,7 +710,7 @@ func TestChecker_CheckDuplicateControllers(t *testing.T) {
 					},
 				},
 			},
-			expectPassed:  true,  // Function returns true with warning, not failure
+			expectPassed:  true, // Function returns true with warning, not failure
 			expectWarning: true,
 		},
 	}
@@ -784,10 +786,21 @@ func TestConfigFromEnv(t *testing.T) {
 	assert.Equal(t, "test-volume", result.VolumeName)
 	assert.Equal(t, "test-dynamic", result.DynamicConfigMapName)
 	assert.Equal(t, "/test/path", result.MountPath)
-	
+
 	// Check that other fields are properly mapped from the loaded config
 	assert.Equal(t, baseConfig.IngressClass, result.IngressClass)
 	assert.Equal(t, baseConfig.TargetCNAME, result.TargetCNAME)
+	assert.False(t, result.GatewayAPIEnabled, "GatewayAPIEnabled must default to false when no GATEWAY_CLASS_MAPPINGS/GATEWAY_CLASS env vars are set")
+}
+
+func TestConfigFromEnv_GatewayAPIEnabled(t *testing.T) {
+	t.Setenv("GATEWAY_CLASS", "traefik")
+	t.Setenv("GATEWAY_TARGET_CNAME", "traefik.traefik.svc.cluster.local.")
+
+	baseConfig := config.Load()
+	result := ConfigFromEnv(baseConfig)
+
+	assert.True(t, result.GatewayAPIEnabled)
 }
 
 // Test helper clients to simulate various error conditions
@@ -943,7 +956,7 @@ func TestChecker_CheckMountPathConflicts_GenericError(t *testing.T) {
 
 	config := Config{
 		CoreDNSNamespace: "kube-system",
-		MountPath:       "/etc/coredns/custom",
+		MountPath:        "/etc/coredns/custom",
 	}
 
 	checker := NewChecker(client, config, logger)
@@ -953,4 +966,214 @@ func TestChecker_CheckMountPathConflicts_GenericError(t *testing.T) {
 	assert.False(t, result.Passed)
 	assert.Contains(t, result.Message, "Could not retrieve CoreDNS deployment for mount path check")
 	assert.Equal(t, "error", result.Severity)
+}
+
+// gatewayAPIListErrorClient wraps a fake client and returns a configurable
+// error for List calls against Gateway/HTTPRoute types.
+type gatewayAPIListErrorClient struct {
+	client.Client
+	err error
+}
+
+func (g *gatewayAPIListErrorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	switch list.(type) {
+	case *gatewayv1.GatewayList, *gatewayv1.HTTPRouteList:
+		return g.err
+	}
+	return g.Client.List(ctx, list, opts...)
+}
+
+func gatewayAPIScheme() *runtime.Scheme {
+	scheme := runtime.NewScheme()
+	_ = gatewayv1.Install(scheme)
+	return scheme
+}
+
+func TestChecker_CheckGatewayAPI(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	fakeClient := fake.NewClientBuilder().WithScheme(gatewayAPIScheme()).Build()
+	config := Config{GatewayAPIEnabled: true}
+	checker := NewChecker(fakeClient, config, logger)
+
+	result, err := checker.checkGatewayAPI(context.Background())
+
+	assert.NoError(t, err)
+	assert.True(t, result.Passed)
+	assert.Contains(t, result.Message, "Gateway API CRDs")
+	assert.Equal(t, "info", result.Severity)
+}
+
+func TestChecker_CheckGatewayAPI_CRDNotInstalled(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	noMatchErr := &meta.NoKindMatchError{
+		GroupKind:        schema.GroupKind{Group: "gateway.networking.k8s.io", Kind: "Gateway"},
+		SearchedVersions: []string{"v1"},
+	}
+	wrapped := &gatewayAPIListErrorClient{
+		Client: fake.NewClientBuilder().WithScheme(gatewayAPIScheme()).Build(),
+		err:    noMatchErr,
+	}
+	config := Config{GatewayAPIEnabled: true}
+	checker := NewChecker(wrapped, config, logger)
+
+	result, err := checker.checkGatewayAPI(context.Background())
+
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
+	assert.Contains(t, result.Message, "CRD not found")
+	assert.Equal(t, "error", result.Severity)
+}
+
+func TestChecker_CheckGatewayAPI_Forbidden(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	forbiddenErr := errors.NewForbidden(
+		schema.GroupResource{Group: "gateway.networking.k8s.io", Resource: "gateways"},
+		"",
+		fmt.Errorf("gateways.gateway.networking.k8s.io is forbidden"),
+	)
+	wrapped := &gatewayAPIListErrorClient{
+		Client: fake.NewClientBuilder().WithScheme(gatewayAPIScheme()).Build(),
+		err:    forbiddenErr,
+	}
+	config := Config{GatewayAPIEnabled: true}
+	checker := NewChecker(wrapped, config, logger)
+
+	result, err := checker.checkGatewayAPI(context.Background())
+
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
+	assert.Contains(t, result.Message, "Permission denied")
+	assert.Equal(t, "error", result.Severity)
+}
+
+func TestChecker_CheckGatewayAPI_GenericError(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	wrapped := &gatewayAPIListErrorClient{
+		Client: fake.NewClientBuilder().WithScheme(gatewayAPIScheme()).Build(),
+		err:    fmt.Errorf("internal server error"),
+	}
+	config := Config{GatewayAPIEnabled: true}
+	checker := NewChecker(wrapped, config, logger)
+
+	result, err := checker.checkGatewayAPI(context.Background())
+
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
+	assert.Contains(t, result.Message, "Error accessing Gateway API")
+	assert.Equal(t, "error", result.Severity)
+}
+
+// httpRouteListErrorClient wraps a fake client and only fails List calls
+// against HTTPRouteList, letting GatewayList succeed -- this is the only way
+// to reach checkGatewayAPI's second List call (the HTTPRoute check), since a
+// failure on the first (Gateway) List returns early.
+type httpRouteListErrorClient struct {
+	client.Client
+	err error
+}
+
+func (h *httpRouteListErrorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*gatewayv1.HTTPRouteList); ok {
+		return h.err
+	}
+	return h.Client.List(ctx, list, opts...)
+}
+
+func TestChecker_CheckGatewayAPI_HTTPRouteListError(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	wrapped := &httpRouteListErrorClient{
+		Client: fake.NewClientBuilder().WithScheme(gatewayAPIScheme()).Build(),
+		err:    fmt.Errorf("internal server error"),
+	}
+	config := Config{GatewayAPIEnabled: true}
+	checker := NewChecker(wrapped, config, logger)
+
+	result, err := checker.checkGatewayAPI(context.Background())
+
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
+	assert.Contains(t, result.Message, "Error accessing Gateway API")
+	assert.Equal(t, "error", result.Severity)
+}
+
+func TestChecker_RunChecks_GatewayAPIEnabled(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = gatewayv1.Install(scheme)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+		}).
+		Build()
+
+	config := Config{
+		DeploymentName:       "test-deployment",
+		ReleaseInstance:      "test-instance",
+		MountPath:            "/etc/coredns/custom/test",
+		VolumeName:           "test-volume",
+		DynamicConfigMapName: "test-configmap",
+		CoreDNSNamespace:     "kube-system",
+		IngressClass:         "nginx",
+		TargetCNAME:          "ingress-nginx.ingress-nginx.svc.cluster.local.",
+		GatewayAPIEnabled:    true,
+	}
+
+	checker := NewChecker(fakeClient, config, logger)
+	results, err := checker.RunChecks(context.Background())
+
+	assert.NoError(t, err)
+	last := results[len(results)-1]
+	assert.Contains(t, last.Message, "Gateway API CRDs")
+	assert.True(t, last.Passed)
+}
+
+func TestChecker_RunChecks_GatewayAPIEnabled_Error(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = gatewayv1.Install(scheme)
+
+	wrapped := &gatewayAPIListErrorClient{
+		Client: fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithRuntimeObjects(&appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+			}).
+			Build(),
+		err: fmt.Errorf("boom"),
+	}
+
+	config := Config{
+		DeploymentName:       "test-deployment",
+		ReleaseInstance:      "test-instance",
+		MountPath:            "/etc/coredns/custom/test",
+		VolumeName:           "test-volume",
+		DynamicConfigMapName: "test-configmap",
+		CoreDNSNamespace:     "kube-system",
+		IngressClass:         "nginx",
+		TargetCNAME:          "ingress-nginx.ingress-nginx.svc.cluster.local.",
+		GatewayAPIEnabled:    true,
+	}
+
+	checker := NewChecker(wrapped, config, logger)
+	results, err := checker.RunChecks(context.Background())
+
+	// checkGatewayAPI itself never returns a non-nil error (List errors are
+	// captured in the CheckResult), so RunChecks should still succeed, with
+	// the Gateway API check reported as failed.
+	assert.NoError(t, err)
+	last := results[len(results)-1]
+	assert.False(t, last.Passed)
 }

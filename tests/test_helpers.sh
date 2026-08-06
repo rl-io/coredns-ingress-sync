@@ -40,6 +40,7 @@ check_kubecontext_safety() {
     local allowed_contexts=(
         "kind-test"
         "kind-coredns-test"
+        "coredns-ingress-sync-test"
         "minikube"
         "docker-desktop"
         "k3s-default"

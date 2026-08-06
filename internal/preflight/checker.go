@@ -10,8 +10,10 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/rl-io/coredns-ingress-sync/internal/config"
 )
@@ -26,6 +28,11 @@ type Config struct {
 	CoreDNSNamespace     string
 	IngressClass         string
 	TargetCNAME          string
+	// GatewayAPIEnabled gates the Gateway API preflight check. When false
+	// (no GatewayClassMappings configured), no List/Get calls are made
+	// against Gateway/HTTPRoute types, since their CRDs may not be
+	// installed in a pure-Ingress cluster.
+	GatewayAPIEnabled bool
 }
 
 // Checker performs preflight checks for deployment conflicts
@@ -102,6 +109,18 @@ func (c *Checker) RunChecks(ctx context.Context) ([]CheckResult, error) {
 	c.logger.Info("✓ Duplicate controllers check completed", "duration", time.Since(checkStart), "passed", result.Passed)
 	results = append(results, result)
 
+	// Check 5: Gateway API availability, only when configured -- no List/Get
+	// calls against Gateway/HTTPRoute types otherwise.
+	if c.config.GatewayAPIEnabled {
+		checkStart = time.Now()
+		result, err = c.checkGatewayAPI(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check Gateway API availability after %v: %w", time.Since(checkStart), err)
+		}
+		c.logger.Info("✓ Gateway API check completed", "duration", time.Since(checkStart), "passed", result.Passed)
+		results = append(results, result)
+	}
+
 	c.logger.Info("🎉 All preflight checks completed", "totalDuration", time.Since(start))
 	return results, nil
 }
@@ -123,7 +142,7 @@ func (c *Checker) checkCoreDNSDeployment(ctx context.Context) (CheckResult, erro
 				Severity: "error",
 			}, nil
 		}
-		
+
 		if errors.IsNotFound(err) {
 			return CheckResult{
 				Passed:   false,
@@ -131,7 +150,7 @@ func (c *Checker) checkCoreDNSDeployment(ctx context.Context) (CheckResult, erro
 				Severity: "error",
 			}, nil
 		}
-		
+
 		// Other errors
 		return CheckResult{
 			Passed:   false,
@@ -149,42 +168,42 @@ func (c *Checker) checkCoreDNSDeployment(ctx context.Context) (CheckResult, erro
 
 // checkCoreDNSDeploymentWithRetry performs the CoreDNS deployment check with retry for RBAC propagation
 func (c *Checker) checkCoreDNSDeploymentWithRetry(ctx context.Context) (CheckResult, error) {
-	const maxRetries = 2  // Reduced from 3 for faster failure
-	const retryDelay = 1 * time.Second  // Reduced from 2 seconds
-	
+	const maxRetries = 2               // Reduced from 3 for faster failure
+	const retryDelay = 1 * time.Second // Reduced from 2 seconds
+
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		attemptStart := time.Now()
 		c.logger.Info("Attempting CoreDNS deployment check", "attempt", attempt, "maxRetries", maxRetries)
-		
+
 		result, err := c.checkCoreDNSDeployment(ctx)
 		duration := time.Since(attemptStart)
-		
+
 		// If no error or not a permission error, return immediately
 		if err != nil || result.Passed || !strings.Contains(result.Message, "Permission denied") {
-			c.logger.Info("CoreDNS deployment check completed", 
-				"attempt", attempt, 
-				"duration", duration, 
-				"passed", result.Passed, 
+			c.logger.Info("CoreDNS deployment check completed",
+				"attempt", attempt,
+				"duration", duration,
+				"passed", result.Passed,
 				"error", err != nil)
 			return result, err
 		}
-		
+
 		// If it's a permission error and we have retries left, wait and retry
 		if attempt < maxRetries {
-			c.logger.Info("RBAC permissions not ready, retrying...", 
-				"attempt", attempt, 
+			c.logger.Info("RBAC permissions not ready, retrying...",
+				"attempt", attempt,
 				"maxRetries", maxRetries,
 				"duration", duration,
 				"retryDelay", retryDelay)
 			time.Sleep(retryDelay)
 			continue
 		}
-		
+
 		// Final attempt failed
 		c.logger.Info("All retry attempts exhausted", "totalAttempts", maxRetries, "finalDuration", duration)
 		return result, err
 	}
-	
+
 	// Should never reach here, but satisfy compiler
 	return CheckResult{Passed: false, Message: "Unexpected error in retry logic", Severity: "error"}, nil
 }
@@ -206,7 +225,7 @@ func (c *Checker) checkMountPathConflicts(ctx context.Context) (CheckResult, err
 				Severity: "error",
 			}, nil
 		}
-		
+
 		return CheckResult{
 			Passed:   false,
 			Message:  fmt.Sprintf("❌ Could not retrieve CoreDNS deployment for mount path check: %v", err),
@@ -226,8 +245,8 @@ func (c *Checker) checkMountPathConflicts(ctx context.Context) (CheckResult, err
 	for _, mount := range container.VolumeMounts {
 		if mount.MountPath == c.config.MountPath && mount.Name != c.config.VolumeName {
 			return CheckResult{
-				Passed:  false,
-				Message: fmt.Sprintf("❌ Mount path conflict detected!\n   Path: %s\n   Existing volume: %s\n   Our volume: %s\n\n💡 Suggested solutions:\n   1. Set a custom mount path in Helm values\n   2. Use a different deployment name\n   3. Remove the conflicting mount from CoreDNS", c.config.MountPath, mount.Name, c.config.VolumeName),
+				Passed:   false,
+				Message:  fmt.Sprintf("❌ Mount path conflict detected!\n   Path: %s\n   Existing volume: %s\n   Our volume: %s\n\n💡 Suggested solutions:\n   1. Set a custom mount path in Helm values\n   2. Use a different deployment name\n   3. Remove the conflicting mount from CoreDNS", c.config.MountPath, mount.Name, c.config.VolumeName),
 				Severity: "error",
 			}, nil
 		}
@@ -265,8 +284,8 @@ func (c *Checker) checkConfigMapConflicts(ctx context.Context) (CheckResult, err
 
 	if managedBy != "" && managedBy != c.config.ReleaseInstance {
 		return CheckResult{
-			Passed:  false,
-			Message: fmt.Sprintf("❌ ConfigMap conflict detected!\n   ConfigMap: %s\n   Managed by instance: %s\n   Our instance: %s\n\n💡 Suggested solutions:\n   1. Set a custom ConfigMap name in Helm values\n   2. Use a different release name", c.config.DynamicConfigMapName, managedBy, c.config.ReleaseInstance),
+			Passed:   false,
+			Message:  fmt.Sprintf("❌ ConfigMap conflict detected!\n   ConfigMap: %s\n   Managed by instance: %s\n   Our instance: %s\n\n💡 Suggested solutions:\n   1. Set a custom ConfigMap name in Helm values\n   2. Use a different release name", c.config.DynamicConfigMapName, managedBy, c.config.ReleaseInstance),
 			Severity: "error",
 		}, nil
 	}
@@ -324,6 +343,54 @@ func (c *Checker) checkDuplicateControllers(ctx context.Context) (CheckResult, e
 		Message:  "✅ No duplicate controllers detected",
 		Severity: "info",
 	}, nil
+}
+
+// checkGatewayAPI verifies the Gateway API CRDs (Gateway, HTTPRoute) are
+// installed and reachable. Callers must only invoke this when Gateway API
+// support is configured (GatewayAPIEnabled), since a bounded List against
+// these types is otherwise unnecessary and would fail on clusters that
+// don't have the CRDs installed at all.
+func (c *Checker) checkGatewayAPI(ctx context.Context) (CheckResult, error) {
+	var gatewayList gatewayv1.GatewayList
+	if err := c.client.List(ctx, &gatewayList, client.Limit(1)); err != nil {
+		return gatewayAPICheckFailure("Gateway", err), nil
+	}
+
+	var routeList gatewayv1.HTTPRouteList
+	if err := c.client.List(ctx, &routeList, client.Limit(1)); err != nil {
+		return gatewayAPICheckFailure("HTTPRoute", err), nil
+	}
+
+	return CheckResult{
+		Passed:   true,
+		Message:  "✅ Gateway API CRDs (Gateway, HTTPRoute) are installed and reachable",
+		Severity: "info",
+	}, nil
+}
+
+// gatewayAPICheckFailure builds a CheckResult for a failed Gateway API List
+// call, distinguishing "CRD not installed" from "insufficient RBAC" so the
+// operator knows which one to fix.
+func gatewayAPICheckFailure(kind string, err error) CheckResult {
+	if meta.IsNoMatchError(err) {
+		return CheckResult{
+			Passed:   false,
+			Message:  fmt.Sprintf("❌ Gateway API %s CRD not found in the cluster. Install the Gateway API CRDs (e.g. https://github.com/kubernetes-sigs/gateway-api releases) before enabling gatewayClassMappings, or clear gatewayClassMappings to disable Gateway API support.", kind),
+			Severity: "error",
+		}
+	}
+	if errors.IsForbidden(err) {
+		return CheckResult{
+			Passed:   false,
+			Message:  fmt.Sprintf("❌ Permission denied listing %s resources. RBAC for gateway.networking.k8s.io may not be ready yet, or the chart's RBAC template wasn't applied with gatewayClassMappings set.", kind),
+			Severity: "error",
+		}
+	}
+	return CheckResult{
+		Passed:   false,
+		Message:  fmt.Sprintf("❌ Error accessing Gateway API %s resources: %v", kind, err),
+		Severity: "error",
+	}
 }
 
 // PrintResults prints the check results in a formatted way
@@ -395,12 +462,13 @@ func HasErrors(results []CheckResult) bool {
 func ConfigFromEnv(cfg *config.Config) Config {
 	return Config{
 		DeploymentName:       cfg.ControllerNamespace, // This will be set by Helm
-		ReleaseInstance:      cfg.ControllerNamespace, // This will be set by Helm  
+		ReleaseInstance:      cfg.ControllerNamespace, // This will be set by Helm
 		MountPath:            cfg.MountPath,
 		VolumeName:           cfg.CoreDNSVolumeName,
 		DynamicConfigMapName: cfg.DynamicConfigMapName,
 		CoreDNSNamespace:     cfg.CoreDNSNamespace,
 		IngressClass:         cfg.IngressClass,
 		TargetCNAME:          cfg.TargetCNAME,
+		GatewayAPIEnabled:    len(cfg.GatewayClassMappings) > 0,
 	}
 }

@@ -38,14 +38,26 @@ spec:
           value: {{ .Values.controller.ingressClass | quote }}
         - name: TARGET_CNAME
           value: {{ .Values.controller.targetCNAME | quote }}
+        {{- if .Values.controller.ingressClassMappings }}
+        - name: INGRESS_CLASS_MAPPINGS
+          value: {{ .Values.controller.ingressClassMappings | toJson | quote }}
+        {{- end }}
+        {{- if .Values.controller.gatewayClassMappings }}
+        - name: GATEWAY_CLASS_MAPPINGS
+          value: {{ .Values.controller.gatewayClassMappings | toJson | quote }}
+        {{- end }}
         - name: WATCH_NAMESPACES
           value: {{ if .Values.controller.watchNamespaces }}{{ if kindIs "slice" .Values.controller.watchNamespaces }}{{ join "," .Values.controller.watchNamespaces | quote }}{{ else }}{{ .Values.controller.watchNamespaces | quote }}{{ end }}{{ else }}""{{ end }}
         - name: EXCLUDE_NAMESPACES
           value: {{ if .Values.controller.excludeNamespaces }}{{ if kindIs "slice" .Values.controller.excludeNamespaces }}{{ join "," .Values.controller.excludeNamespaces | quote }}{{ else }}{{ .Values.controller.excludeNamespaces | quote }}{{ end }}{{ else }}""{{ end }}
         - name: EXCLUDE_INGRESSES
           value: {{ if .Values.controller.excludeIngresses }}{{ if kindIs "slice" .Values.controller.excludeIngresses }}{{ join "," .Values.controller.excludeIngresses | quote }}{{ else }}{{ .Values.controller.excludeIngresses | quote }}{{ end }}{{ else }}""{{ end }}
+        - name: EXCLUDE_HTTPROUTES
+          value: {{ if .Values.controller.excludeHTTPRoutes }}{{ if kindIs "slice" .Values.controller.excludeHTTPRoutes }}{{ join "," .Values.controller.excludeHTTPRoutes | quote }}{{ else }}{{ .Values.controller.excludeHTTPRoutes | quote }}{{ end }}{{ else }}""{{ end }}
         - name: ANNOTATION_ENABLED_KEY
           value: {{ .Values.controller.annotationEnabledKey | quote }}
+        - name: ANNOTATION_PRIORITY_KEY
+          value: {{ .Values.controller.annotationPriorityKey | quote }}
         - name: DYNAMIC_CONFIGMAP_NAME
           value: {{ .Values.controller.dynamicConfigMap.name | quote }}
         - name: DYNAMIC_CONFIG_KEY

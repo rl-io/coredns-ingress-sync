@@ -7,8 +7,14 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	
+	"github.com/rl-io/coredns-ingress-sync/internal/config"
 	ingressfilter "github.com/rl-io/coredns-ingress-sync/internal/ingress"
 )
+
+// nginxClassMappings returns a single-class nginx mapping for integration tests.
+func nginxClassMappings() []config.IngressClassMapping {
+	return []config.IngressClassMapping{{IngressClass: "nginx", TargetCNAME: "ingress-nginx.svc.cluster.local."}}
+}
 
 func TestIsTargetIngressFunction(t *testing.T) {
 	tests := []struct {
@@ -56,7 +62,7 @@ func TestIsTargetIngressFunction(t *testing.T) {
 			}
 
 			// Create ingress filter and test IsTargetIngress
-			filter := ingressfilter.NewFilter("nginx", "", "", "", "")
+			filter := ingressfilter.NewFilter(nginxClassMappings(), "", "", "", "", "")
 			result := filter.IsTargetIngress(ingress)
 			assert.Equal(t, tt.expected, result, "IsTargetIngress for class '%s' should be %v", tt.ingressClass, tt.expected)
 		})
@@ -115,7 +121,7 @@ func TestExtractHostnamesFunction(t *testing.T) {
 			}
 
 			// Create ingress filter and test ExtractHostnames
-			filter := ingressfilter.NewFilter("nginx", "", "", "", "")
+			filter := ingressfilter.NewFilter(nginxClassMappings(), "", "", "", "", "")
 			hostnames := filter.ExtractHostnames(ingresses)
 			
 			// Convert to map for easy comparison since order doesn't matter
