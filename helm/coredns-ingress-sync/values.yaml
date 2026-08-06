@@ -102,6 +102,16 @@ controller:
   ingressClass: "nginx"
   # Target CNAME for DNS resolution
   targetCNAME: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
+
+  # Gateway API support (Gateway + HTTPRoute), additive to Ingress support
+  # above. An ordered list of GatewayClass -> target CNAME mappings, same
+  # tiebreak semantics as ingressClassMappings. Leave empty ([]) to disable
+  # Gateway API entirely -- no RBAC, watches, or CRD access are added when
+  # unset.
+  gatewayClassMappings: []
+  #  - gatewayClass: traefik
+  #    targetCNAME: "traefik.traefik.svc.cluster.local."
+
   # Namespace filtering - empty means watch all namespaces
   # Set to comma-separated list to watch specific namespaces: "default,production,staging"
   watchNamespaces: ""
@@ -110,6 +120,8 @@ controller:
   excludeNamespaces: ""
   # Ingresses to exclude (comma-separated). Supports name or namespace/name.
   excludeIngresses: ""
+  # HTTPRoutes to exclude (comma-separated). Supports name or namespace/name.
+  excludeHTTPRoutes: ""
   # Annotation key to enable syncing (set to false to disable on a given ingress)
   annotationEnabledKey: "coredns-ingress-sync-enabled"
   # Annotation key for per-ingress priority (integer, higher wins). When two

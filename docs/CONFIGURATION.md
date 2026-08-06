@@ -29,6 +29,14 @@ controller:
   # Target service for DNS resolution (where ingress hostnames should resolve)
   targetCNAME: "ingress-nginx-controller.ingress-nginx.svc.cluster.local."
 
+  # Gateway API support (Gateway + HTTPRoute), additive to Ingress support
+  # above. Same shape and tiebreak semantics as ingressClassMappings, but
+  # keyed on GatewayClass. Leave empty ([]) to disable Gateway API entirely --
+  # no RBAC, watches, or CRD access are added when unset.
+  gatewayClassMappings: []
+  #  - gatewayClass: traefik
+  #    targetCNAME: "traefik.traefik.svc.cluster.local."
+
   # Namespace filtering - controls which namespaces to monitor for ingresses
   # Empty string = watch all namespaces cluster-wide (default)
   # Comma-separated list = watch only specific namespaces
@@ -38,6 +46,8 @@ controller:
   excludeNamespaces: ""
   # Exclude specific ingresses by name or namespace/name
   excludeIngresses: ""
+  # Exclude specific HTTPRoutes by name or namespace/name
+  excludeHTTPRoutes: ""
   # Annotation-based exclusion: when set to a false-like value on an Ingress, it will be ignored
   # Examples of false-like values: "false", "0", "no", "off", "disabled"
   annotationEnabledKey: "coredns-ingress-sync-enabled"
@@ -188,9 +198,13 @@ The controller supports configuration through environment variables (set via Hel
 | `INGRESS_CLASS_MAPPINGS` | JSON array of `{"ingressClass","targetCNAME"}` mappings (preferred). When set, takes precedence over `INGRESS_CLASS`/`TARGET_CNAME`. Array order is the default priority tiebreak (first listed wins). | `""` (uses single-class shim) |
 | `INGRESS_CLASS` | IngressClass to watch (legacy single-class; used when `INGRESS_CLASS_MAPPINGS` is unset) | `nginx` |
 | `TARGET_CNAME` | Target service for DNS resolution (legacy single-class; used when `INGRESS_CLASS_MAPPINGS` is unset) | `ingress-nginx-controller.ingress-nginx.svc.cluster.local.` |
+| `GATEWAY_CLASS_MAPPINGS` | JSON array of `{"gatewayClass","targetCNAME"}` mappings, additive to Ingress support. Same tiebreak semantics as `INGRESS_CLASS_MAPPINGS`. When unset (and `GATEWAY_CLASS` is unset), Gateway API support is disabled entirely — no watches, RBAC, or CRD List/Get calls. | `""` (Gateway API disabled) |
+| `GATEWAY_CLASS` | GatewayClass to watch (legacy single-class; used when `GATEWAY_CLASS_MAPPINGS` is unset). Setting this enables Gateway API support. | `""` (Gateway API disabled) |
+| `GATEWAY_TARGET_CNAME` | Target service for DNS resolution for the legacy single-class Gateway config (used when `GATEWAY_CLASS_MAPPINGS` is unset) | `""` |
 | `WATCH_NAMESPACES` | Namespaces to monitor (empty = all) | `""` |
 | `EXCLUDE_NAMESPACES` | Namespaces to exclude (comma-separated) | `""` |
 | `EXCLUDE_INGRESSES` | Ingresses to exclude (name or namespace/name, comma-separated) | `""` |
+| `EXCLUDE_HTTPROUTES` | HTTPRoutes to exclude (name or namespace/name, comma-separated) | `""` |
 | `ANNOTATION_ENABLED_KEY` | Annotation key to control inclusion; false-like value disables | `coredns-ingress-sync-enabled` |
 | `ANNOTATION_PRIORITY_KEY` | Annotation key for per-ingress priority (integer, higher wins) when multiple ingresses share a hostname | `coredns-ingress-sync-priority` |
 | `COREDNS_NAMESPACE` | CoreDNS namespace | `kube-system` |
@@ -404,6 +418,40 @@ helm install coredns-ingress-sync ./helm/coredns-ingress-sync \
   --namespace coredns-ingress-sync \
   --create-namespace
 ```
+
+### Gateway API configuration
+
+Gateway API support (`Gateway` + `HTTPRoute`) is additive to Ingress support and off by default.
+Configure it the same way as multi-class Ingress, keyed on `GatewayClass` instead:
+
+```yaml
+controller:
+  gatewayClassMappings:
+    - gatewayClass: traefik
+      targetCNAME: "traefik.traefik.svc.cluster.local."
+```
+
+An HTTPRoute's class is resolved by looking up its `spec.parentRefs[].name` (and optional
+`.namespace`, defaulting to the HTTPRoute's own namespace) against the referenced `Gateway`'s
+`spec.gatewayClassName`. `sectionName`/`port` on parentRefs are ignored — matching is done at
+Gateway granularity, not listener granularity.
+
+Cross-source tiebreak, when an Ingress and an HTTPRoute claim the same hostname, uses the same
+`annotationPriorityKey` annotation and config-order rules as multi-class Ingress (see above), with
+**Ingress winning ties by default** — the incumbent stays authoritative during an Ingress → Gateway
+API migration, and can be promoted per-host via the priority annotation on the HTTPRoute.
+
+`excludeHTTPRoutes` / `EXCLUDE_HTTPROUTES` and `annotationEnabledKey` behave the same as their
+Ingress equivalents.
+
+**Known limitation**: HTTPRoute acceptance status
+(`status.parents[].conditions[type=Accepted]`) is not checked. A rejected or conflicting HTTPRoute
+(e.g. one that lost a hostname conflict at the Gateway) still produces a CoreDNS rewrite rule — this
+matches how Ingress spec is trusted without checking controller-side acceptance.
+
+When `gatewayClassMappings` (and the legacy `GATEWAY_CLASS`) are both unset, no Gateway/HTTPRoute
+watches, RBAC rules, or CRD List/Get calls are added — a preflight check will also fail fast with a
+clear message if Gateway API is enabled but the CRDs aren't installed or RBAC is missing.
 
 ### Custom Target Service
 

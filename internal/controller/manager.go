@@ -58,7 +58,11 @@ func (cm *ControllerManager) Setup() (manager.Manager, error) {
 	watchNamespaces := cache.ParseNamespaces(cm.config.WatchNamespaces)
 
 	// Build cache options
-	cacheBuilder := cache.NewConfigBuilder(watchNamespaces, cm.config.CoreDNSNamespace)
+	cacheBuilder := cache.NewConfigBuilder(cache.ConfigBuilderOptions{
+		WatchNamespaces:   watchNamespaces,
+		CoreDNSNamespace:  cm.config.CoreDNSNamespace,
+		GatewayAPIEnabled: len(cm.config.GatewayClassMappings) > 0,
+	})
 	cacheOptions := cacheBuilder.BuildCacheOptions()
 
 	// Create scheme and register all types before creating the manager

@@ -17,18 +17,20 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/rl-io/coredns-ingress-sync/internal/cache"
 	"github.com/rl-io/coredns-ingress-sync/internal/cleanup"
 	"github.com/rl-io/coredns-ingress-sync/internal/config"
 	ingresscontroller "github.com/rl-io/coredns-ingress-sync/internal/controller"
 	"github.com/rl-io/coredns-ingress-sync/internal/coredns"
+	"github.com/rl-io/coredns-ingress-sync/internal/gatewayapi"
 	"github.com/rl-io/coredns-ingress-sync/internal/ingress"
 	"github.com/rl-io/coredns-ingress-sync/internal/logging"
 	"github.com/rl-io/coredns-ingress-sync/internal/metrics"
@@ -73,8 +75,17 @@ func runController(logger logr.Logger) {
 	// Parse watch namespaces
 	watchNamespaces := cache.ParseNamespaces(cfg.WatchNamespaces)
 
+	// Gateway API support is enabled only when GatewayClassMappings are
+	// configured; this is checked before any cache/watch/scheme wiring below
+	// that touches Gateway/HTTPRoute types.
+	gatewayAPIEnabled := len(cfg.GatewayClassMappings) > 0
+
 	// Build cache options
-	cacheBuilder := cache.NewConfigBuilder(watchNamespaces, cfg.CoreDNSNamespace)
+	cacheBuilder := cache.NewConfigBuilder(cache.ConfigBuilderOptions{
+		WatchNamespaces:   watchNamespaces,
+		CoreDNSNamespace:  cfg.CoreDNSNamespace,
+		GatewayAPIEnabled: gatewayAPIEnabled,
+	})
 	cacheOptions := cacheBuilder.BuildCacheOptions()
 
 	// Create scheme and register all types before creating the manager
@@ -89,6 +100,13 @@ func runController(logger logr.Logger) {
 	}
 	if err := appsv1.AddToScheme(scheme); err != nil {
 		logger.Error(err, "Failed to add apps/v1 to scheme")
+		os.Exit(1)
+	}
+	// Gateway API types are registered unconditionally -- this is pure Go
+	// type registration with zero API-server interaction, so it's safe even
+	// when Gateway API support is disabled or the CRDs aren't installed.
+	if err := gatewayv1.Install(scheme); err != nil {
+		logger.Error(err, "Failed to add gateway-api/v1 to scheme")
 		os.Exit(1)
 	}
 
@@ -109,6 +127,13 @@ func runController(logger logr.Logger) {
 	// Create ingress filter
 	ingressFilter := ingress.NewFilter(cfg.IngressClassMappings, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeIngresses, cfg.AnnotationEnabledKey, cfg.AnnotationPriorityKey)
 
+	// Create Gateway API filter. gatewayFilter stays nil when disabled, so the
+	// reconciler makes no List/Get calls against Gateway/HTTPRoute types.
+	var gatewayFilter *gatewayapi.Filter
+	if gatewayAPIEnabled {
+		gatewayFilter = gatewayapi.NewFilter(cfg.GatewayClassMappings, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeHTTPRoutes, cfg.AnnotationEnabledKey, cfg.AnnotationPriorityKey)
+	}
+
 	// Create CoreDNS manager
 	coreDNSConfig := coredns.Config{
 		Namespace:            cfg.CoreDNSNamespace,
@@ -126,6 +151,7 @@ func runController(logger logr.Logger) {
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		ingressFilter,
+		gatewayFilter,
 		coreDNSManager,
 	)
 
@@ -175,6 +201,54 @@ func runController(logger logr.Logger) {
 		os.Exit(1)
 	}
 
+	// Watch for Gateway and HTTPRoute changes, only when Gateway API support
+	// is enabled -- otherwise these types may not even be installed as CRDs
+	// in the cluster.
+	if gatewayAPIEnabled {
+		// Cheaply determining whether a Gateway/HTTPRoute belongs to a
+		// configured GatewayClass requires resolving parentRefs against
+		// listed Gateways, which isn't available from the watched object
+		// alone. Reconciliation is cheap and idempotent (it re-lists
+		// everything), so we always trigger a reconcile instead.
+		if err := c.Watch(
+			source.Kind(mgr.GetCache(), &gatewayv1.Gateway{},
+				handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *gatewayv1.Gateway) []reconcile.Request {
+					return []reconcile.Request{{
+						NamespacedName: types.NamespacedName{
+							Name:      "global-ingress-reconcile",
+							Namespace: "default",
+						},
+					}}
+				}),
+				predicate.TypedFuncs[*gatewayv1.Gateway]{
+					CreateFunc: func(e event.TypedCreateEvent[*gatewayv1.Gateway]) bool { return true },
+					UpdateFunc: func(e event.TypedUpdateEvent[*gatewayv1.Gateway]) bool { return true },
+					DeleteFunc: func(e event.TypedDeleteEvent[*gatewayv1.Gateway]) bool { return true },
+				})); err != nil {
+			logger.Error(err, "Failed to set up gateway watch")
+			os.Exit(1)
+		}
+
+		if err := c.Watch(
+			source.Kind(mgr.GetCache(), &gatewayv1.HTTPRoute{},
+				handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *gatewayv1.HTTPRoute) []reconcile.Request {
+					return []reconcile.Request{{
+						NamespacedName: types.NamespacedName{
+							Name:      "global-ingress-reconcile",
+							Namespace: "default",
+						},
+					}}
+				}),
+				predicate.TypedFuncs[*gatewayv1.HTTPRoute]{
+					CreateFunc: func(e event.TypedCreateEvent[*gatewayv1.HTTPRoute]) bool { return true },
+					UpdateFunc: func(e event.TypedUpdateEvent[*gatewayv1.HTTPRoute]) bool { return true },
+					DeleteFunc: func(e event.TypedDeleteEvent[*gatewayv1.HTTPRoute]) bool { return true },
+				})); err != nil {
+			logger.Error(err, "Failed to set up httproute watch")
+			os.Exit(1)
+		}
+	}
+
 	// Watch for CoreDNS ConfigMap changes
 	watchManager := watches.NewManager()
 	if err := watchManager.AddConfigMapWatch(mgr.GetCache(), c, cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName, "coredns-configmap-reconcile"); err != nil {
@@ -191,6 +265,8 @@ func runController(logger logr.Logger) {
 	logger.Info("Starting coredns-ingress-sync controller",
 		"leader_election", cfg.LeaderElectionEnabled,
 		"ingress_class_mappings", cfg.IngressClassMappings,
+		"gateway_api_enabled", gatewayAPIEnabled,
+		"gateway_class_mappings", cfg.GatewayClassMappings,
 		"dynamic_configmap", cfg.DynamicConfigMapName,
 		"coredns_configmap", fmt.Sprintf("%s/%s", cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName),
 		"annotation_enabled_key", cfg.AnnotationEnabledKey,
@@ -276,6 +352,10 @@ func runPreflight(logger logr.Logger) {
 		logger.Error(err, "Failed to add core/v1 to scheme")
 		os.Exit(1)
 	}
+	if err := gatewayv1.Install(scheme); err != nil {
+		logger.Error(err, "Failed to add gateway-api/v1 to scheme")
+		os.Exit(1)
+	}
 
 	// Create direct Kubernetes client (not using manager/cache for one-shot operation)
 	kubeConfig := ctrl.GetConfigOrDie()
@@ -304,7 +384,7 @@ func runPreflight(logger logr.Logger) {
 	// Run preflight checks
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	
+
 	logger.Info("Starting preflight checks with timeout", "timeout", "90s")
 	results, err := checker.RunChecks(ctx)
 	if err != nil {

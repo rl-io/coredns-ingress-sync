@@ -4,7 +4,7 @@ inputs:
   go_version:
     description: 'Go version to use'
     required: false
-    default: '1.24'
+    default: '1.26'
   run_integration_tests:
     description: 'Whether to run integration tests'
     required: false
@@ -177,7 +177,34 @@ runs:
       uses: azure/setup-helm@v5
       with:
         version: v3.12.0
-        
+
+    - name: Install Gateway API CRDs
+      if: inputs.run_e2e_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::🌐 Installing Gateway API CRDs"
+        kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.1/standard-install.yaml
+        kubectl wait --for=condition=established --timeout=60s \
+          crd/gatewayclasses.gateway.networking.k8s.io \
+          crd/gateways.gateway.networking.k8s.io \
+          crd/httproutes.gateway.networking.k8s.io
+        echo "::endgroup::"
+
+    - name: Install Traefik (Gateway API provider)
+      if: inputs.run_e2e_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::🌐 Installing Traefik"
+        helm repo add traefik https://traefik.github.io/charts
+        helm repo update traefik
+        helm install traefik traefik/traefik \
+          --namespace traefik --create-namespace \
+          --set providers.kubernetesGateway.enabled=true \
+          --set gateway.enabled=false \
+          --wait --timeout=${{ inputs.cluster_timeout }}s
+        kubectl wait --namespace traefik --for=condition=available --timeout=${{ inputs.cluster_timeout }}s deployment/traefik
+        echo "::endgroup::"
+
     - name: Deploy controller for testing
       if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
       shell: bash
