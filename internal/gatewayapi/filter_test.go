@@ -218,6 +218,51 @@ func TestExtractHostnameCandidates_NonGatewayKindIgnored(t *testing.T) {
 	assert.Empty(t, candidates)
 }
 
+func TestExtractHostnameCandidates_MismatchedGroupIgnored(t *testing.T) {
+	filter := newSingleClassFilter("traefik", "", "", "", "")
+	refs := BuildGatewayClassByRef([]gatewayv1.Gateway{gw("gw1", "default", "traefik")})
+
+	route := routeWith("route1", "default", "gw1", "app.example.com", nil)
+	group := gatewayv1.Group("some-other-group.example.com")
+	route.Spec.ParentRefs[0].Group = &group
+
+	candidates := filter.ExtractHostnameCandidates([]gatewayv1.HTTPRoute{route}, refs)
+	assert.Empty(t, candidates)
+}
+
+func TestExtractHostnameCandidates_MatchingGroupAccepted(t *testing.T) {
+	filter := newSingleClassFilter("traefik", "", "", "", "")
+	refs := BuildGatewayClassByRef([]gatewayv1.Gateway{gw("gw1", "default", "traefik")})
+
+	route := routeWith("route1", "default", "gw1", "app.example.com", nil)
+	group := gatewayv1.Group(gatewayv1.GroupName)
+	route.Spec.ParentRefs[0].Group = &group
+
+	candidates := filter.ExtractHostnameCandidates([]gatewayv1.HTTPRoute{route}, refs)
+	assert.Len(t, candidates, 1)
+}
+
+func TestExtractHostnameCandidates_EmptyHostnameIgnored(t *testing.T) {
+	filter := newSingleClassFilter("traefik", "", "", "", "")
+	refs := BuildGatewayClassByRef([]gatewayv1.Gateway{gw("gw1", "default", "traefik")})
+
+	route := routeWith("route1", "default", "gw1", "app.example.com", nil)
+	route.Spec.Hostnames = append(route.Spec.Hostnames, gatewayv1.Hostname(""))
+
+	candidates := filter.ExtractHostnameCandidates([]gatewayv1.HTTPRoute{route}, refs)
+	assert.Len(t, candidates, 1)
+}
+
+func TestIsExcludedHTTPRoute_NilRoute(t *testing.T) {
+	filter := newSingleClassFilter("traefik", "", "", "excluded-route", "")
+	assert.False(t, filter.IsExcludedHTTPRoute(nil))
+}
+
+func TestShouldProcessHTTPRoute_NilRoute(t *testing.T) {
+	filter := newSingleClassFilter("traefik", "", "", "", "")
+	assert.False(t, filter.ShouldProcessHTTPRoute(nil))
+}
+
 func TestExtractHostnameCandidates_NamespaceFilteringAndExclusion(t *testing.T) {
 	filter := NewFilter(multiClassMappings(), "production,staging", "staging", "bad-route,production/skip-me", "", "")
 	refs := BuildGatewayClassByRef([]gatewayv1.Gateway{

@@ -197,12 +197,24 @@ runs:
         echo "::group::🌐 Installing Traefik"
         helm repo add traefik https://traefik.github.io/charts
         helm repo update traefik
-        helm install traefik traefik/traefik \
+        # Traefik's image pull + pod scheduling on a cold GitHub-hosted runner
+        # routinely takes longer than the shared cluster_timeout (120s) allows
+        # for other, lighter-weight steps, so give it its own longer budget.
+        if ! helm install traefik traefik/traefik \
           --namespace traefik --create-namespace \
           --set providers.kubernetesGateway.enabled=true \
           --set gateway.enabled=false \
-          --wait --timeout=${{ inputs.cluster_timeout }}s
-        kubectl wait --namespace traefik --for=condition=available --timeout=${{ inputs.cluster_timeout }}s deployment/traefik
+          --wait --timeout=240s; then
+
+          echo "::group::🔧 Traefik install failed, gathering debug information"
+          kubectl get pods -n traefik -o wide || true
+          kubectl describe pods -n traefik || true
+          kubectl get events -n traefik --sort-by='.lastTimestamp' || true
+          echo "::endgroup::"
+
+          exit 1
+        fi
+        kubectl wait --namespace traefik --for=condition=available --timeout=60s deployment/traefik
         echo "::endgroup::"
 
     - name: Deploy controller for testing

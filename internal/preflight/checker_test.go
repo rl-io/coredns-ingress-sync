@@ -1066,3 +1066,114 @@ func TestChecker_CheckGatewayAPI_GenericError(t *testing.T) {
 	assert.Contains(t, result.Message, "Error accessing Gateway API")
 	assert.Equal(t, "error", result.Severity)
 }
+
+// httpRouteListErrorClient wraps a fake client and only fails List calls
+// against HTTPRouteList, letting GatewayList succeed -- this is the only way
+// to reach checkGatewayAPI's second List call (the HTTPRoute check), since a
+// failure on the first (Gateway) List returns early.
+type httpRouteListErrorClient struct {
+	client.Client
+	err error
+}
+
+func (h *httpRouteListErrorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*gatewayv1.HTTPRouteList); ok {
+		return h.err
+	}
+	return h.Client.List(ctx, list, opts...)
+}
+
+func TestChecker_CheckGatewayAPI_HTTPRouteListError(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	wrapped := &httpRouteListErrorClient{
+		Client: fake.NewClientBuilder().WithScheme(gatewayAPIScheme()).Build(),
+		err:    fmt.Errorf("internal server error"),
+	}
+	config := Config{GatewayAPIEnabled: true}
+	checker := NewChecker(wrapped, config, logger)
+
+	result, err := checker.checkGatewayAPI(context.Background())
+
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
+	assert.Contains(t, result.Message, "Error accessing Gateway API")
+	assert.Equal(t, "error", result.Severity)
+}
+
+func TestChecker_RunChecks_GatewayAPIEnabled(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = gatewayv1.Install(scheme)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+		}).
+		Build()
+
+	config := Config{
+		DeploymentName:       "test-deployment",
+		ReleaseInstance:      "test-instance",
+		MountPath:            "/etc/coredns/custom/test",
+		VolumeName:           "test-volume",
+		DynamicConfigMapName: "test-configmap",
+		CoreDNSNamespace:     "kube-system",
+		IngressClass:         "nginx",
+		TargetCNAME:          "ingress-nginx.ingress-nginx.svc.cluster.local.",
+		GatewayAPIEnabled:    true,
+	}
+
+	checker := NewChecker(fakeClient, config, logger)
+	results, err := checker.RunChecks(context.Background())
+
+	assert.NoError(t, err)
+	last := results[len(results)-1]
+	assert.Contains(t, last.Message, "Gateway API CRDs")
+	assert.True(t, last.Passed)
+}
+
+func TestChecker_RunChecks_GatewayAPIEnabled_Error(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = gatewayv1.Install(scheme)
+
+	wrapped := &gatewayAPIListErrorClient{
+		Client: fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithRuntimeObjects(&appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+			}).
+			Build(),
+		err: fmt.Errorf("boom"),
+	}
+
+	config := Config{
+		DeploymentName:       "test-deployment",
+		ReleaseInstance:      "test-instance",
+		MountPath:            "/etc/coredns/custom/test",
+		VolumeName:           "test-volume",
+		DynamicConfigMapName: "test-configmap",
+		CoreDNSNamespace:     "kube-system",
+		IngressClass:         "nginx",
+		TargetCNAME:          "ingress-nginx.ingress-nginx.svc.cluster.local.",
+		GatewayAPIEnabled:    true,
+	}
+
+	checker := NewChecker(wrapped, config, logger)
+	results, err := checker.RunChecks(context.Background())
+
+	// checkGatewayAPI itself never returns a non-nil error (List errors are
+	// captured in the CheckResult), so RunChecks should still succeed, with
+	// the Gateway API check reported as failed.
+	assert.NoError(t, err)
+	last := results[len(results)-1]
+	assert.False(t, last.Passed)
+}
