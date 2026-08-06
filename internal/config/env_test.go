@@ -26,6 +26,10 @@ func TestLoad(t *testing.T) {
 		"ANNOTATION_ENABLED_KEY":  os.Getenv("ANNOTATION_ENABLED_KEY"),
 		"ANNOTATION_PRIORITY_KEY": os.Getenv("ANNOTATION_PRIORITY_KEY"),
 		"INGRESS_CLASS_MAPPINGS":  os.Getenv("INGRESS_CLASS_MAPPINGS"),
+		"GATEWAY_CLASS_MAPPINGS":  os.Getenv("GATEWAY_CLASS_MAPPINGS"),
+		"GATEWAY_CLASS":           os.Getenv("GATEWAY_CLASS"),
+		"GATEWAY_TARGET_CNAME":    os.Getenv("GATEWAY_TARGET_CNAME"),
+		"EXCLUDE_HTTPROUTES":      os.Getenv("EXCLUDE_HTTPROUTES"),
 	}
 
 	// Restore original environment after test
@@ -69,6 +73,9 @@ func TestLoad(t *testing.T) {
 			IngressClass: "nginx",
 			TargetCNAME:  "ingress-nginx-controller.ingress-nginx.svc.cluster.local.",
 		}}, config.IngressClassMappings)
+		// Gateway API support is disabled by default: nil, not an empty shim.
+		assert.Nil(t, config.GatewayClassMappings)
+		assert.Equal(t, "", config.ExcludeHTTPRoutes)
 	})
 
 	t.Run("environment overrides", func(t *testing.T) {
@@ -187,6 +194,121 @@ func TestLoadIngressClassMappings(t *testing.T) {
 		assert.Equal(t, []IngressClassMapping{
 			{IngressClass: "nginx", TargetCNAME: "nginx.example.com."},
 		}, cfg.IngressClassMappings)
+	})
+}
+
+func TestLoadGatewayClassMappings(t *testing.T) {
+	keys := []string{"GATEWAY_CLASS_MAPPINGS", "GATEWAY_CLASS", "GATEWAY_TARGET_CNAME", "EXCLUDE_HTTPROUTES"}
+	original := make(map[string]string, len(keys))
+	for _, k := range keys {
+		original[k] = os.Getenv(k)
+	}
+	defer func() {
+		for k, v := range original {
+			if v == "" {
+				os.Unsetenv(k)
+			} else {
+				os.Setenv(k, v)
+			}
+		}
+	}()
+
+	t.Run("unset means Gateway API disabled", func(t *testing.T) {
+		for _, k := range keys {
+			os.Unsetenv(k)
+		}
+
+		cfg := Load()
+
+		assert.Nil(t, cfg.GatewayClassMappings)
+	})
+
+	t.Run("legacy single-class vars form a mapping", func(t *testing.T) {
+		for _, k := range keys {
+			os.Unsetenv(k)
+		}
+		os.Setenv("GATEWAY_CLASS", "traefik")
+		os.Setenv("GATEWAY_TARGET_CNAME", "traefik.traefik.svc.cluster.local.")
+		os.Setenv("EXCLUDE_HTTPROUTES", "foo,bar/ns1")
+
+		cfg := Load()
+
+		assert.Equal(t, []GatewayClassMapping{
+			{GatewayClass: "traefik", TargetCNAME: "traefik.traefik.svc.cluster.local."},
+		}, cfg.GatewayClassMappings)
+		assert.Equal(t, "foo,bar/ns1", cfg.ExcludeHTTPRoutes)
+	})
+
+	t.Run("multi-class JSON takes precedence", func(t *testing.T) {
+		for _, k := range keys {
+			os.Unsetenv(k)
+		}
+		os.Setenv("GATEWAY_CLASS", "traefik")
+		os.Setenv("GATEWAY_TARGET_CNAME", "legacy.example.com.")
+		os.Setenv("GATEWAY_CLASS_MAPPINGS", `[
+			{"gatewayClass":"traefik","targetCNAME":"traefik.svc.cluster.local."},
+			{"gatewayClass":"istio","targetCNAME":"istio.svc.cluster.local."}
+		]`)
+
+		cfg := Load()
+
+		assert.Equal(t, []GatewayClassMapping{
+			{GatewayClass: "traefik", TargetCNAME: "traefik.svc.cluster.local."},
+			{GatewayClass: "istio", TargetCNAME: "istio.svc.cluster.local."},
+		}, cfg.GatewayClassMappings)
+	})
+
+	t.Run("invalid JSON falls back to legacy single-class vars", func(t *testing.T) {
+		for _, k := range keys {
+			os.Unsetenv(k)
+		}
+		os.Setenv("GATEWAY_CLASS", "traefik")
+		os.Setenv("GATEWAY_TARGET_CNAME", "traefik.example.com.")
+		os.Setenv("GATEWAY_CLASS_MAPPINGS", "{not json")
+
+		cfg := Load()
+
+		assert.Equal(t, []GatewayClassMapping{
+			{GatewayClass: "traefik", TargetCNAME: "traefik.example.com."},
+		}, cfg.GatewayClassMappings)
+	})
+
+	t.Run("invalid JSON with no legacy vars is disabled", func(t *testing.T) {
+		for _, k := range keys {
+			os.Unsetenv(k)
+		}
+		os.Setenv("GATEWAY_CLASS_MAPPINGS", "{not json")
+
+		cfg := Load()
+
+		assert.Nil(t, cfg.GatewayClassMappings)
+	})
+
+	t.Run("entries missing gatewayClass are dropped", func(t *testing.T) {
+		for _, k := range keys {
+			os.Unsetenv(k)
+		}
+		os.Setenv("GATEWAY_CLASS_MAPPINGS", `[
+			{"targetCNAME":"orphan.svc.cluster.local."},
+			{"gatewayClass":"traefik","targetCNAME":"traefik.svc.cluster.local."}
+		]`)
+
+		cfg := Load()
+
+		assert.Equal(t, []GatewayClassMapping{
+			{GatewayClass: "traefik", TargetCNAME: "traefik.svc.cluster.local."},
+		}, cfg.GatewayClassMappings)
+	})
+
+	t.Run("empty JSON array with no legacy vars is disabled", func(t *testing.T) {
+		for _, k := range keys {
+			os.Unsetenv(k)
+		}
+		os.Setenv("GATEWAY_CLASS_MAPPINGS", "[]")
+
+		cfg := Load()
+
+		assert.Nil(t, cfg.GatewayClassMappings)
 	})
 }
 

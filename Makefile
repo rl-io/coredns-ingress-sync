@@ -9,7 +9,7 @@ COMMIT := $(shell git rev-parse --short HEAD)
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Go variables
-GO_VERSION := 1.24
+GO_VERSION := 1.26
 GOARCH := amd64
 GOOS := linux
 CGO_ENABLED := 0
@@ -257,7 +257,7 @@ k8s-status: ## Show controller status
 ##@ Kind/Local Development
 .PHONY: kind-create
 kind-create: ## Create Kind cluster for testing
-	kind create cluster --name $(PROJECT_NAME)-test --config=- <<< 'kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes:\n- role: control-plane\n  kubeadmConfigPatches:\n  - |\n    kind: InitConfiguration\n    nodeRegistration:\n      kubeletExtraArgs:\n        node-labels: "ingress-ready=true"\n  extraPortMappings:\n  - containerPort: 80\n    hostPort: 80\n    protocol: TCP\n  - containerPort: 443\n    hostPort: 443\n    protocol: TCP'
+	kind create cluster --name $(PROJECT_NAME)-test --config=- <<< "$$(printf 'kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes:\n- role: control-plane\n  kubeadmConfigPatches:\n  - |\n    kind: InitConfiguration\n    nodeRegistration:\n      kubeletExtraArgs:\n        node-labels: "ingress-ready=true"\n  extraPortMappings:\n  - containerPort: 80\n    hostPort: 80\n    protocol: TCP\n  - containerPort: 443\n    hostPort: 443\n    protocol: TCP\n')"
 
 .PHONY: kind-delete
 kind-delete: ## Delete Kind cluster
@@ -271,6 +271,23 @@ kind-load: docker-build ## Load Docker image into Kind cluster
 kind-setup: kind-create kind-load ## Set up complete Kind environment
 	kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
 	kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
+
+.PHONY: kind-setup-gateway
+kind-setup-gateway: kind-setup ## Additionally install Gateway API CRDs + Traefik (for Gateway API e2e tests)
+	kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.1/standard-install.yaml
+	kubectl wait --for=condition=established --timeout=60s \
+		crd/gatewayclasses.gateway.networking.k8s.io \
+		crd/gateways.gateway.networking.k8s.io \
+		crd/httproutes.gateway.networking.k8s.io
+	helm repo add traefik https://traefik.github.io/charts >/dev/null 2>&1 || true
+	helm repo update traefik
+	helm install traefik traefik/traefik \
+		--namespace traefik --create-namespace \
+		--set providers.kubernetesGateway.enabled=true \
+		--set gateway.enabled=false \
+		--set service.spec.type=ClusterIP \
+		--wait --timeout=120s
+	kubectl wait --namespace traefik --for=condition=available --timeout=120s deployment/traefik
 
 ##@ Kind Multi-Version Testing (Local Only)
 .PHONY: kind-test-all-versions

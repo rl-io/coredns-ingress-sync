@@ -4,7 +4,7 @@ inputs:
   go_version:
     description: 'Go version to use'
     required: false
-    default: '1.24'
+    default: '1.26'
   run_integration_tests:
     description: 'Whether to run integration tests'
     required: false
@@ -177,7 +177,51 @@ runs:
       uses: azure/setup-helm@v5
       with:
         version: v3.12.0
-        
+
+    - name: Install Gateway API CRDs
+      if: inputs.run_e2e_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::🌐 Installing Gateway API CRDs"
+        kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.1/standard-install.yaml
+        kubectl wait --for=condition=established --timeout=60s \
+          crd/gatewayclasses.gateway.networking.k8s.io \
+          crd/gateways.gateway.networking.k8s.io \
+          crd/httproutes.gateway.networking.k8s.io
+        echo "::endgroup::"
+
+    - name: Install Traefik (Gateway API provider)
+      if: inputs.run_e2e_tests == 'true'
+      shell: bash
+      run: |
+        echo "::group::🌐 Installing Traefik"
+        helm repo add traefik https://traefik.github.io/charts
+        helm repo update traefik
+        # Traefik's chart defaults its Service to type LoadBalancer, and
+        # `helm install --wait` blocks until that Service has an external IP.
+        # Plain Kind has no LoadBalancer provisioner (no MetalLB /
+        # cloud-provider-kind), so that IP never arrives and --wait hangs for
+        # the full timeout on every run. CIS only ever targets the ClusterIP
+        # anyway, so force that instead -- --wait then just waits on the
+        # Deployment's pod readiness, which is fast.
+        if ! helm install traefik traefik/traefik \
+          --namespace traefik --create-namespace \
+          --set providers.kubernetesGateway.enabled=true \
+          --set gateway.enabled=false \
+          --set service.spec.type=ClusterIP \
+          --wait --timeout=120s; then
+
+          echo "::group::🔧 Traefik install failed, gathering debug information"
+          kubectl get pods -n traefik -o wide || true
+          kubectl describe pods -n traefik || true
+          kubectl get events -n traefik --sort-by='.lastTimestamp' || true
+          echo "::endgroup::"
+
+          exit 1
+        fi
+        kubectl wait --namespace traefik --for=condition=available --timeout=60s deployment/traefik
+        echo "::endgroup::"
+
     - name: Deploy controller for testing
       if: inputs.run_integration_tests == 'true' || inputs.run_e2e_tests == 'true'
       shell: bash

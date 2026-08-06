@@ -366,7 +366,22 @@ func TestUpdateDynamicConfigMap_NoUpdateNeeded(t *testing.T) {
 	err = fakeClient.Get(ctx, key, configMap)
 	require.NoError(t, err)
 
-	assert.Equal(t, expectedContent, configMap.Data["dynamic.server"])
+	// generateDynamicConfig embeds a "Last updated" timestamp that ticks
+	// every second, so strip it before comparing to avoid flaking when the
+	// two generateDynamicConfig calls straddle a second boundary.
+	assert.Equal(t, stripLastUpdatedLine(expectedContent), stripLastUpdatedLine(configMap.Data["dynamic.server"]))
+}
+
+func stripLastUpdatedLine(content string) string {
+	lines := strings.Split(content, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if strings.HasPrefix(l, "# Last updated:") {
+			continue
+		}
+		filtered = append(filtered, l)
+	}
+	return strings.Join(filtered, "\n")
 }
 
 func TestEnsureImport(t *testing.T) {

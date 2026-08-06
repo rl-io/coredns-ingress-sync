@@ -2,21 +2,22 @@
 
 [![codecov](https://codecov.io/github/rl-io/coredns-ingress-sync/graph/badge.svg?token=3IW3N6MURN)](https://codecov.io/github/rl-io/coredns-ingress-sync)
 
-A Kubernetes controller that dynamically updates CoreDNS configuration based on Ingress resources, enabling automatic internal DNS resolution for ingress hostnames to the ingress-nginx service.
+A Kubernetes controller that dynamically updates CoreDNS configuration based on Ingress and Gateway API (Gateway + HTTPRoute) resources, enabling automatic internal DNS resolution for ingress/route hostnames to the backing service.
 
 This eliminates the need to create internal ingress resources, manage private DNS zones, or manually update CoreDNS configurations - everything is handled automatically through a simple Helm chart deployment.
 
-This has been tested to work with [ingress-nginx](https://github.com/kubernetes/ingress-nginx) but should in theory work with any ingress controller that supports the `ingressClassName` field and has a stable service name.
+This has been tested to work with [ingress-nginx](https://github.com/kubernetes/ingress-nginx) but should in theory work with any ingress controller that supports the `ingressClassName` field and has a stable service name. Gateway API support is additive and opt-in (disabled by default) and has been tested with Traefik's `traefik` GatewayClass.
 
 **Important Note:** This requires the ingress controller to handle TLS termination (have valid TLS certificates) for the hostnames you want to resolve internally. If the ingress controller lacks proper TLS certificates, internal services attempting to connect to the rewritten hostnames will fail with TLS errors. This occurs because clients will attempt HTTPS connections to the hostname, and the DNS rewrite only changes where the hostname resolves—not the protocol used to connect.
 
 ## Features
 
 - **🚀 Zero Configuration**: Works out-of-the-box with automatic CoreDNS setup
-- **🔄 Event-driven**: Real-time response to ingress changes using controller-runtime
-- **🎯 Selective Processing**: Only handles ingresses with specified IngressClass
+- **🔄 Event-driven**: Real-time response to ingress/Gateway API changes using controller-runtime
+- **🎯 Selective Processing**: Only handles ingresses with specified IngressClass, and (optionally) HTTPRoutes with a specified GatewayClass
+- **🌐 Gateway API Support**: Optional, additive support for `Gateway`+`HTTPRoute` alongside Ingress — zero behavior change when left unconfigured
 - **📍 Namespace Filtering**: Monitor all namespaces or specific namespaces only
-- **⚡ Dynamic DNS**: Auto-generates CoreDNS rewrite rules for ingress hostnames
+- **⚡ Dynamic DNS**: Auto-generates CoreDNS rewrite rules for ingress/HTTPRoute hostnames
 - **🛡️ Defensive Configuration**: Protects against external configuration drift (Terraform-compatible)
 - **♻️ Clean Uninstall**: Automatic cleanup with proper Helm hooks
 - **🔐 Secure**: Minimal RBAC permissions with namespace isolation
@@ -177,13 +178,14 @@ EOF
 hosts := []string{
 ## How It Works
 
-The controller automatically discovers ingress hostnames and configures CoreDNS to resolve them internally:
+The controller automatically discovers ingress (and, optionally, Gateway API) hostnames and configures CoreDNS to resolve them internally:
 
 1. **Ingress Discovery**: Watches for ingresses with the specified IngressClass (default: `nginx`)
-2. **Hostname Extraction**: Collects all hostnames from matching ingress rules  
-3. **DNS Configuration**: Generates CoreDNS rewrite rules mapping hostnames to the target service
-4. **Automatic Updates**: Updates CoreDNS configuration in real-time as ingresses change
-5. **Defensive Protection**: Restores configuration if modified by external tools (Terraform-compatible)
+2. **Gateway API Discovery** (optional): When `controller.gatewayClassMappings` is set, also watches `Gateway`+`HTTPRoute` resources for the specified GatewayClass (e.g. `traefik`) — disabled entirely by default, with zero behavior change to Ingress-only deployments
+3. **Hostname Extraction**: Collects all hostnames from matching ingress rules and HTTPRoutes
+4. **DNS Configuration**: Generates CoreDNS rewrite rules mapping hostnames to the target service. If both an Ingress and an HTTPRoute claim the same hostname, Ingress wins by default (overridable per-host via a priority annotation)
+5. **Automatic Updates**: Updates CoreDNS configuration in real-time as ingresses/HTTPRoutes change
+6. **Defensive Protection**: Restores configuration if modified by external tools (Terraform-compatible)
 
 ### Example
 
@@ -227,6 +229,10 @@ When `autoConfigure=false`, the controller will:
 - ❌ NOT automatically enable DNS resolution
 
 This allows you to inspect the generated configuration before applying it to CoreDNS.
+
+To also sync Gateway API hostnames, set `controller.gatewayClassMappings` (see
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md#gateway-api-configuration) for details and migration
+guidance) — left unset, no Gateway API watches, RBAC, or CRD access are added.
 
 ### Metrics Configuration
 
