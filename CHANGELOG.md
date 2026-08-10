@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.19](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.18...coredns-ingress-sync-v0.1.19) (2026-08-10)
+
+
+### Bug Fixes
+
+* restore pre-upgrade hook on RBAC so rule changes apply on helm upgrade ([#87](https://github.com/rl-io/coredns-ingress-sync/issues/87)) ([9d57414](https://github.com/rl-io/coredns-ingress-sync/commit/9d5741493fd5e2618cec4472c373cb5508d0c8a0))
+
 ## [0.1.18](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.17...coredns-ingress-sync-v0.1.18) (2026-08-10)
 
 
