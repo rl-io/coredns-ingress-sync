@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.18](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.17...coredns-ingress-sync-v0.1.18) (2026-08-10)
+
+
+### Features
+
+* add Gateway API (Gateway + HTTPRoute) support alongside Ingress ([#85](https://github.com/rl-io/coredns-ingress-sync/issues/85)) ([dee5a43](https://github.com/rl-io/coredns-ingress-sync/commit/dee5a43856f03fd8cf01b98b49e15a58ebc3495a))
+
+
+### Miscellaneous
+
+* update Go dependencies ([#69](https://github.com/rl-io/coredns-ingress-sync/issues/69)) ([9934104](https://github.com/rl-io/coredns-ingress-sync/commit/9934104f0187c75337ccd4b15cb5c0a24821504e))
+
 ## [0.1.17](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.16...coredns-ingress-sync-v0.1.17) (2026-06-10)
 
 
