@@ -24,12 +24,13 @@ jobs:
       go-changes: ${{ steps.changes.outputs.go }}
       docker-changes: ${{ steps.changes.outputs.docker }}
       k8s-changes: ${{ steps.changes.outputs.k8s }}
+      tests-changes: ${{ steps.changes.outputs.tests }}
       docs-changes: ${{ steps.changes.outputs.docs }}
       cicd-changes: ${{ steps.changes.outputs.cicd }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v7
-      
+
     - name: Detect changes
       uses: dorny/paths-filter@v4
       id: changes
@@ -47,6 +48,8 @@ jobs:
           k8s:
             - 'helm/**'
             - 'scripts/**'
+          tests:
+            - 'tests/**'
           docs:
             - '**/*.md'
             - 'docs/**'
@@ -58,8 +61,12 @@ jobs:
     name: Build Docker Image
     runs-on: ubuntu-latest
     needs: changes
-    # Always run build for CI/CD testing, or when code changes
-    if: always() && (needs.changes.outputs.go-changes == 'true' || needs.changes.outputs.docker-changes == 'true' || needs.changes.outputs.cicd-changes == 'true' || github.event_name == 'pull_request')
+    # Skip the Docker build (and everything downstream of it: the k8s test
+    # matrix, security scan) when a PR only touches files that can't affect
+    # runtime behavior (docs, standalone scripts, etc). Any change to Go
+    # code, the Dockerfile, the Helm chart, the e2e/integration test suite,
+    # or the CI/CD workflows themselves still runs the full pipeline.
+    if: always() && (needs.changes.outputs.go-changes == 'true' || needs.changes.outputs.docker-changes == 'true' || needs.changes.outputs.k8s-changes == 'true' || needs.changes.outputs.tests-changes == 'true' || needs.changes.outputs.cicd-changes == 'true')
     outputs:
       image-tags: ${{ steps.docker_build.outputs.image_tags }}
       image-digest: ${{ steps.docker_build.outputs.image_digest }}
@@ -130,11 +137,15 @@ jobs:
     steps:
     - name: Verify all matrix test jobs passed
       run: |
-        if [ "${{ needs.test.result }}" != "success" ]; then
+        # "skipped" means `build` (and therefore `test`) was intentionally
+        # not run because this PR only touched files that can't affect
+        # runtime behavior -- see the `build` job's `if` condition. That's
+        # a pass, not a failure, for this required status check.
+        if [ "${{ needs.test.result }}" != "success" ] && [ "${{ needs.test.result }}" != "skipped" ]; then
           echo "One or more k8s matrix test jobs did not succeed: ${{ needs.test.result }}"
           exit 1
         fi
-        echo "All k8s matrix test jobs passed."
+        echo "Result: ${{ needs.test.result }}"
 
   security-scan:
     name: Security Scan
