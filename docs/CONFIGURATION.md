@@ -444,6 +444,11 @@ API migration, and can be promoted per-host via the priority annotation on the H
 `excludeHTTPRoutes` / `EXCLUDE_HTTPROUTES` and `annotationEnabledKey` behave the same as their
 Ingress equivalents.
 
+When a HTTPRoute doesn't set `spec.hostnames`, it inherits the hostname(s) declared on its parent
+`Gateway`'s listener(s), per the Gateway API spec. If the Gateway's listener also has no hostname
+(matching all hosts), that HTTPRoute contributes no CoreDNS rewrite rule — there's nothing
+host-specific to rewrite.
+
 **Known limitation**: HTTPRoute acceptance status
 (`status.parents[].conditions[type=Accepted]`) is not checked. A rejected or conflicting HTTPRoute
 (e.g. one that lost a hostname conflict at the Gateway) still produces a CoreDNS rewrite rule — this
