@@ -118,17 +118,46 @@ func (f *Filter) ShouldProcessHTTPRoute(route *gatewayv1.HTTPRoute) bool {
 	return true
 }
 
+// GatewayInfo holds the data ExtractHostnameCandidates needs from a
+// HTTPRoute's parent Gateway: its class (for matching against configured
+// GatewayClass mappings) and its listener hostnames (used as a fallback
+// when a HTTPRoute doesn't specify its own hostnames).
+type GatewayInfo struct {
+	ClassName string
+	Hostnames []string
+}
+
 // BuildGatewayClassByRef lists Gateway objects and builds a
-// namespace/name -> GatewayClassName lookup, used to resolve which
-// HTTPRoutes attach to a configured GatewayClass. Gateways are included
-// regardless of their class; class matching happens in
-// ExtractHostnameCandidates so unconfigured classes are simply ignored
-// there, mirroring how Ingress ignores unconfigured IngressClassNames.
-func BuildGatewayClassByRef(gateways []gatewayv1.Gateway) map[types.NamespacedName]string {
-	refs := make(map[types.NamespacedName]string, len(gateways))
+// namespace/name -> GatewayInfo lookup, used to resolve which HTTPRoutes
+// attach to a configured GatewayClass and, when a route omits
+// spec.hostnames, which listener hostname(s) it should inherit per the
+// Gateway API spec. Gateways are included regardless of their class; class
+// matching happens in ExtractHostnameCandidates so unconfigured classes are
+// simply ignored there, mirroring how Ingress ignores unconfigured
+// IngressClassNames.
+func BuildGatewayClassByRef(gateways []gatewayv1.Gateway) map[types.NamespacedName]GatewayInfo {
+	refs := make(map[types.NamespacedName]GatewayInfo, len(gateways))
 	for i := range gateways {
 		gw := &gateways[i]
-		refs[types.NamespacedName{Namespace: gw.Namespace, Name: gw.Name}] = string(gw.Spec.GatewayClassName)
+
+		seen := make(map[string]bool, len(gw.Spec.Listeners))
+		var hostnames []string
+		for _, listener := range gw.Spec.Listeners {
+			if listener.Hostname == nil {
+				continue
+			}
+			host := string(*listener.Hostname)
+			if host == "" || seen[host] {
+				continue
+			}
+			seen[host] = true
+			hostnames = append(hostnames, host)
+		}
+
+		refs[types.NamespacedName{Namespace: gw.Namespace, Name: gw.Name}] = GatewayInfo{
+			ClassName: string(gw.Spec.GatewayClassName),
+			Hostnames: hostnames,
+		}
 	}
 	return refs
 }
@@ -138,8 +167,11 @@ func BuildGatewayClassByRef(gateways []gatewayv1.Gateway) map[types.NamespacedNa
 // with a configured GatewayClass, per gatewayClassByRef (see
 // BuildGatewayClassByRef). SectionName and Port on parentRefs are
 // intentionally ignored: routes are matched at Gateway granularity, not
-// listener granularity.
-func (f *Filter) ExtractHostnameCandidates(routes []gatewayv1.HTTPRoute, gatewayClassByRef map[types.NamespacedName]string) []hostmap.Candidate {
+// listener granularity. When a HTTPRoute doesn't specify spec.hostnames, it
+// inherits the parent Gateway's listener hostname(s) per the Gateway API
+// spec; if the Gateway also has no listener hostname, the route contributes
+// no candidates (there is nothing host-specific to rewrite).
+func (f *Filter) ExtractHostnameCandidates(routes []gatewayv1.HTTPRoute, gatewayClassByRef map[types.NamespacedName]GatewayInfo) []hostmap.Candidate {
 	var candidates []hostmap.Candidate
 
 	for i := range routes {
@@ -167,17 +199,31 @@ func (f *Filter) ExtractHostnameCandidates(routes []gatewayv1.HTTPRoute, gateway
 			}
 			ref := types.NamespacedName{Namespace: ns, Name: string(parentRef.Name)}
 
-			gatewayClass, ok := gatewayClassByRef[ref]
+			gwInfo, ok := gatewayClassByRef[ref]
 			if !ok {
 				continue
 			}
-			index, ok := f.classToIndex[gatewayClass]
+			index, ok := f.classToIndex[gwInfo.ClassName]
 			if !ok {
 				continue
 			}
-			cname := f.classToCNAME[gatewayClass]
+			cname := f.classToCNAME[gwInfo.ClassName]
 
-			for _, hostname := range route.Spec.Hostnames {
+			hostnames := route.Spec.Hostnames
+			if len(hostnames) == 0 {
+				for _, host := range gwInfo.Hostnames {
+					candidates = append(candidates, hostmap.Candidate{
+						Host:       host,
+						CNAME:      cname,
+						Priority:   priority,
+						ClassIndex: index,
+						Source:     source,
+					})
+				}
+				continue
+			}
+
+			for _, hostname := range hostnames {
 				host := string(hostname)
 				if host == "" {
 					continue
