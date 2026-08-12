@@ -37,6 +37,34 @@ func gw(name, namespace, class string) gatewayv1.Gateway {
 	}
 }
 
+// gwWithListenerHostnames builds a Gateway with one listener per given
+// hostname, for testing HTTPRoute -> Gateway hostname inheritance.
+func gwWithListenerHostnames(name, namespace, class string, hostnames ...string) gatewayv1.Gateway {
+	g := gw(name, namespace, class)
+	for _, h := range hostnames {
+		host := gatewayv1.Hostname(h)
+		g.Spec.Listeners = append(g.Spec.Listeners, gatewayv1.Listener{
+			Hostname: &host,
+		})
+	}
+	return g
+}
+
+// routeWithNoHostnames builds a HTTPRoute with no spec.hostnames, to test
+// inheriting hostnames from the parent Gateway's listeners.
+func routeWithNoHostnames(name, namespace, parentName string) gatewayv1.HTTPRoute {
+	return gatewayv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec: gatewayv1.HTTPRouteSpec{
+			CommonRouteSpec: gatewayv1.CommonRouteSpec{
+				ParentRefs: []gatewayv1.ParentReference{
+					{Name: gatewayv1.ObjectName(parentName)},
+				},
+			},
+		},
+	}
+}
+
 func routeWith(name, namespace, parentName, host string, annotations map[string]string) gatewayv1.HTTPRoute {
 	return gatewayv1.HTTPRoute{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Annotations: annotations},
@@ -136,10 +164,32 @@ func TestBuildGatewayClassByRef(t *testing.T) {
 
 	refs := BuildGatewayClassByRef(gateways)
 
-	assert.Equal(t, map[types.NamespacedName]string{
-		{Namespace: "default", Name: "gw1"}:  "traefik",
-		{Namespace: "other-ns", Name: "gw2"}: "istio",
+	assert.Equal(t, map[types.NamespacedName]GatewayInfo{
+		{Namespace: "default", Name: "gw1"}:  {ClassName: "traefik"},
+		{Namespace: "other-ns", Name: "gw2"}: {ClassName: "istio"},
 	}, refs)
+}
+
+func TestBuildGatewayClassByRef_ListenerHostnames(t *testing.T) {
+	gateways := []gatewayv1.Gateway{
+		gwWithListenerHostnames("gw1", "default", "traefik", "a.example.com", "b.example.com", "a.example.com"),
+	}
+
+	refs := BuildGatewayClassByRef(gateways)
+
+	assert.Equal(t, GatewayInfo{
+		ClassName: "traefik",
+		Hostnames: []string{"a.example.com", "b.example.com"},
+	}, refs[types.NamespacedName{Namespace: "default", Name: "gw1"}])
+}
+
+func TestBuildGatewayClassByRef_ListenerWithoutHostnameIgnored(t *testing.T) {
+	g := gw("gw1", "default", "traefik")
+	g.Spec.Listeners = []gatewayv1.Listener{{}}
+
+	refs := BuildGatewayClassByRef([]gatewayv1.Gateway{g})
+
+	assert.Empty(t, refs[types.NamespacedName{Namespace: "default", Name: "gw1"}].Hostnames)
 }
 
 func TestExtractHostnameCandidates_Basic(t *testing.T) {
@@ -251,6 +301,62 @@ func TestExtractHostnameCandidates_EmptyHostnameIgnored(t *testing.T) {
 
 	candidates := filter.ExtractHostnameCandidates([]gatewayv1.HTTPRoute{route}, refs)
 	assert.Len(t, candidates, 1)
+}
+
+func TestExtractHostnameCandidates_InheritsGatewayListenerHostname(t *testing.T) {
+	filter := newSingleClassFilter("traefik", "", "", "", "")
+	refs := BuildGatewayClassByRef([]gatewayv1.Gateway{
+		gwWithListenerHostnames("gw1", "default", "traefik", "app.example.com"),
+	})
+
+	route := routeWithNoHostnames("route1", "default", "gw1")
+	candidates := filter.ExtractHostnameCandidates([]gatewayv1.HTTPRoute{route}, refs)
+
+	assert.Len(t, candidates, 1)
+	assert.Equal(t, "app.example.com", candidates[0].Host)
+	assert.Equal(t, "traefik.traefik.svc.cluster.local.", candidates[0].CNAME)
+	assert.Equal(t, "default/route1", candidates[0].Source)
+}
+
+func TestExtractHostnameCandidates_InheritsAllGatewayListenerHostnames(t *testing.T) {
+	filter := newSingleClassFilter("traefik", "", "", "", "")
+	refs := BuildGatewayClassByRef([]gatewayv1.Gateway{
+		gwWithListenerHostnames("gw1", "default", "traefik", "a.example.com", "b.example.com"),
+	})
+
+	route := routeWithNoHostnames("route1", "default", "gw1")
+	candidates := filter.ExtractHostnameCandidates([]gatewayv1.HTTPRoute{route}, refs)
+
+	hosts := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		hosts = append(hosts, c.Host)
+	}
+	assert.ElementsMatch(t, []string{"a.example.com", "b.example.com"}, hosts)
+}
+
+func TestExtractHostnameCandidates_NoRouteOrGatewayHostnameYieldsNoCandidates(t *testing.T) {
+	filter := newSingleClassFilter("traefik", "", "", "", "")
+	// Gateway listener has no hostname (matches all hosts) and the route
+	// doesn't specify one either -- there is nothing host-specific to rewrite.
+	refs := BuildGatewayClassByRef([]gatewayv1.Gateway{gw("gw1", "default", "traefik")})
+
+	route := routeWithNoHostnames("route1", "default", "gw1")
+	candidates := filter.ExtractHostnameCandidates([]gatewayv1.HTTPRoute{route}, refs)
+
+	assert.Empty(t, candidates)
+}
+
+func TestExtractHostnameCandidates_RouteHostnameTakesPrecedenceOverGateway(t *testing.T) {
+	filter := newSingleClassFilter("traefik", "", "", "", "")
+	refs := BuildGatewayClassByRef([]gatewayv1.Gateway{
+		gwWithListenerHostnames("gw1", "default", "traefik", "gateway.example.com"),
+	})
+
+	route := routeWith("route1", "default", "gw1", "route.example.com", nil)
+	candidates := filter.ExtractHostnameCandidates([]gatewayv1.HTTPRoute{route}, refs)
+
+	assert.Len(t, candidates, 1)
+	assert.Equal(t, "route.example.com", candidates[0].Host)
 }
 
 func TestIsExcludedHTTPRoute_NilRoute(t *testing.T) {
