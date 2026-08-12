@@ -1,6 +1,7 @@
 # Configuration Guide
 
 This document provides detailed configuration options for the coredns-ingress-sync controller.
+<!-- temp: verifying docs-only PRs skip build/test/security-scan in pr-tests.yml, see PR #95 -->
 
 ## Helm Chart Configuration
 
