@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.20](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.19...coredns-ingress-sync-v0.1.20) (2026-08-12)
+
+
+### Bug Fixes
+
+* inherit parent Gateway listener hostname when HTTPRoute omits spec.hostnames ([#93](https://github.com/rl-io/coredns-ingress-sync/issues/93)) ([f41aef2](https://github.com/rl-io/coredns-ingress-sync/commit/f41aef2898d26e31a4f1f5608c3daedda16cdf39))
+
+
+### Miscellaneous
+
+* update Go dependencies ([#89](https://github.com/rl-io/coredns-ingress-sync/issues/89)) ([8e9c028](https://github.com/rl-io/coredns-ingress-sync/commit/8e9c028d496cdbdd1e3f59987dab1f15adcf3214))
+
 ## [0.1.19](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.18...coredns-ingress-sync-v0.1.19) (2026-08-10)
 
 
