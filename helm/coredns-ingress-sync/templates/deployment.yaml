@@ -46,6 +46,10 @@ spec:
         - name: GATEWAY_CLASS_MAPPINGS
           value: {{ .Values.controller.gatewayClassMappings | toJson | quote }}
         {{- end }}
+        {{- if .Values.controller.ingressRouteTargetCNAME }}
+        - name: INGRESSROUTE_TARGET_CNAME
+          value: {{ .Values.controller.ingressRouteTargetCNAME | quote }}
+        {{- end }}
         - name: WATCH_NAMESPACES
           value: {{ if .Values.controller.watchNamespaces }}{{ if kindIs "slice" .Values.controller.watchNamespaces }}{{ join "," .Values.controller.watchNamespaces | quote }}{{ else }}{{ .Values.controller.watchNamespaces | quote }}{{ end }}{{ else }}""{{ end }}
         - name: EXCLUDE_NAMESPACES
@@ -54,6 +58,8 @@ spec:
           value: {{ if .Values.controller.excludeIngresses }}{{ if kindIs "slice" .Values.controller.excludeIngresses }}{{ join "," .Values.controller.excludeIngresses | quote }}{{ else }}{{ .Values.controller.excludeIngresses | quote }}{{ end }}{{ else }}""{{ end }}
         - name: EXCLUDE_HTTPROUTES
           value: {{ if .Values.controller.excludeHTTPRoutes }}{{ if kindIs "slice" .Values.controller.excludeHTTPRoutes }}{{ join "," .Values.controller.excludeHTTPRoutes | quote }}{{ else }}{{ .Values.controller.excludeHTTPRoutes | quote }}{{ end }}{{ else }}""{{ end }}
+        - name: EXCLUDE_INGRESSROUTES
+          value: {{ if .Values.controller.excludeIngressRoutes }}{{ if kindIs "slice" .Values.controller.excludeIngressRoutes }}{{ join "," .Values.controller.excludeIngressRoutes | quote }}{{ else }}{{ .Values.controller.excludeIngressRoutes | quote }}{{ end }}{{ else }}""{{ end }}
         - name: ANNOTATION_ENABLED_KEY
           value: {{ .Values.controller.annotationEnabledKey | quote }}
         - name: ANNOTATION_PRIORITY_KEY
