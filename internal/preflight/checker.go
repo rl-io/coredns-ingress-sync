@@ -16,6 +16,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/rl-io/coredns-ingress-sync/internal/config"
+	traefikv1alpha1 "github.com/rl-io/coredns-ingress-sync/internal/traefik/v1alpha1"
 )
 
 // Config holds the preflight check configuration
@@ -33,6 +34,11 @@ type Config struct {
 	// against Gateway/HTTPRoute types, since their CRDs may not be
 	// installed in a pure-Ingress cluster.
 	GatewayAPIEnabled bool
+	// IngressRouteEnabled gates the Traefik IngressRoute preflight check. When
+	// false (no IngressRouteTargetCNAME configured), no List/Get calls are
+	// made against IngressRoute types, since the CRD may not be installed in
+	// a cluster that doesn't use Traefik.
+	IngressRouteEnabled bool
 }
 
 // Checker performs preflight checks for deployment conflicts
@@ -118,6 +124,18 @@ func (c *Checker) RunChecks(ctx context.Context) ([]CheckResult, error) {
 			return nil, fmt.Errorf("failed to check Gateway API availability after %v: %w", time.Since(checkStart), err)
 		}
 		c.logger.Info("✓ Gateway API check completed", "duration", time.Since(checkStart), "passed", result.Passed)
+		results = append(results, result)
+	}
+
+	// Check 6: Traefik IngressRoute availability, only when configured -- no
+	// List/Get calls against IngressRoute types otherwise.
+	if c.config.IngressRouteEnabled {
+		checkStart = time.Now()
+		result, err = c.checkTraefikIngressRoute(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check Traefik IngressRoute availability after %v: %w", time.Since(checkStart), err)
+		}
+		c.logger.Info("✓ Traefik IngressRoute check completed", "duration", time.Since(checkStart), "passed", result.Passed)
 		results = append(results, result)
 	}
 
@@ -393,6 +411,49 @@ func gatewayAPICheckFailure(kind string, err error) CheckResult {
 	}
 }
 
+// checkTraefikIngressRoute verifies the Traefik IngressRoute CRD is installed
+// and reachable. Callers must only invoke this when IngressRoute support is
+// configured (IngressRouteEnabled), since a bounded List against this type
+// is otherwise unnecessary and would fail on clusters that don't have the
+// CRD installed at all.
+func (c *Checker) checkTraefikIngressRoute(ctx context.Context) (CheckResult, error) {
+	var routeList traefikv1alpha1.IngressRouteList
+	if err := c.client.List(ctx, &routeList, client.Limit(1)); err != nil {
+		return traefikIngressRouteCheckFailure("IngressRoute", err), nil
+	}
+
+	return CheckResult{
+		Passed:   true,
+		Message:  "✅ Traefik IngressRoute CRD is installed and reachable",
+		Severity: "info",
+	}, nil
+}
+
+// traefikIngressRouteCheckFailure builds a CheckResult for a failed
+// IngressRoute List call, distinguishing "CRD not installed" from
+// "insufficient RBAC" so the operator knows which one to fix.
+func traefikIngressRouteCheckFailure(kind string, err error) CheckResult {
+	if meta.IsNoMatchError(err) {
+		return CheckResult{
+			Passed:   false,
+			Message:  fmt.Sprintf("❌ Traefik %s CRD not found in the cluster. Install Traefik's CRDs before setting ingressRouteTargetCNAME, or clear ingressRouteTargetCNAME to disable IngressRoute support.", kind),
+			Severity: "error",
+		}
+	}
+	if errors.IsForbidden(err) {
+		return CheckResult{
+			Passed:   false,
+			Message:  fmt.Sprintf("❌ Permission denied listing %s resources. RBAC for traefik.io may not be ready yet, or the chart's RBAC template wasn't applied with ingressRouteTargetCNAME set.", kind),
+			Severity: "error",
+		}
+	}
+	return CheckResult{
+		Passed:   false,
+		Message:  fmt.Sprintf("❌ Error accessing Traefik %s resources: %v", kind, err),
+		Severity: "error",
+	}
+}
+
 // PrintResults prints the check results in a formatted way
 func (c *Checker) PrintResults(results []CheckResult) {
 	c.logger.Info("")
@@ -470,5 +531,6 @@ func ConfigFromEnv(cfg *config.Config) Config {
 		IngressClass:         cfg.IngressClass,
 		TargetCNAME:          cfg.TargetCNAME,
 		GatewayAPIEnabled:    len(cfg.GatewayClassMappings) > 0,
+		IngressRouteEnabled:  cfg.IngressRouteTargetCNAME != "",
 	}
 }

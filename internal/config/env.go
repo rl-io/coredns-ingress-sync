@@ -38,25 +38,32 @@ type Config struct {
 	// CNAME mappings the controller watches. Empty/nil means Gateway API
 	// support is disabled: no Gateway/HTTPRoute watches, caches, or List/Get
 	// calls are made.
-	GatewayClassMappings   []GatewayClassMapping
-	ExcludeHTTPRoutes      string // Comma-separated list of HTTPRoute names or namespace/name
-	DynamicConfigMapName   string
-	DynamicConfigKey       string
-	CoreDNSNamespace       string
-	CoreDNSConfigMapName   string
-	CoreDNSVolumeName      string
-	LeaderElectionEnabled  bool
-	WatchNamespaces        string
-	ExcludeNamespaces      string // Comma-separated list of namespaces to exclude
-	ExcludeIngresses       string // Comma-separated list of ingress names or namespace/name
-	AnnotationEnabledKey   string // Annotation key to enable/disable processing (false disables)
-	AnnotationPriorityKey  string // Annotation key to override per-ingress priority (integer, higher wins)
-	ExcludeAnnotationKey   string // Annotation key to trigger exclusion when present
-	ExcludeAnnotationValue string // Optional value to require for exclusion; empty means any value
-	ImportStatement        string
-	ControllerNamespace    string // Namespace where the controller is deployed
-	MountPath              string // Configurable mount path for the volume
-	ReleaseInstance        string // Helm release instance name
+	GatewayClassMappings []GatewayClassMapping
+	ExcludeHTTPRoutes    string // Comma-separated list of HTTPRoute names or namespace/name
+	// IngressRouteTargetCNAME is the single target CNAME every processable
+	// Traefik IngressRoute (traefik.io/v1alpha1) resolves to. IngressRoute has
+	// no class-like field, so unlike Ingress/Gateway API this is one value,
+	// not an ordered mapping list. Empty means Traefik IngressRoute support is
+	// disabled: no RBAC, watches, or CRD access are added.
+	IngressRouteTargetCNAME string
+	ExcludeIngressRoutes    string // Comma-separated list of IngressRoute names or namespace/name
+	DynamicConfigMapName    string
+	DynamicConfigKey        string
+	CoreDNSNamespace        string
+	CoreDNSConfigMapName    string
+	CoreDNSVolumeName       string
+	LeaderElectionEnabled   bool
+	WatchNamespaces         string
+	ExcludeNamespaces       string // Comma-separated list of namespaces to exclude
+	ExcludeIngresses        string // Comma-separated list of ingress names or namespace/name
+	AnnotationEnabledKey    string // Annotation key to enable/disable processing (false disables)
+	AnnotationPriorityKey   string // Annotation key to override per-ingress priority (integer, higher wins)
+	ExcludeAnnotationKey    string // Annotation key to trigger exclusion when present
+	ExcludeAnnotationValue  string // Optional value to require for exclusion; empty means any value
+	ImportStatement         string
+	ControllerNamespace     string // Namespace where the controller is deployed
+	MountPath               string // Configurable mount path for the volume
+	ReleaseInstance         string // Helm release instance name
 }
 
 // Load creates a new Config instance with values loaded from environment variables
@@ -78,28 +85,30 @@ func Load() *Config {
 	gatewayMappings := loadGatewayClassMappings()
 
 	return &Config{
-		IngressClass:           mappings[0].IngressClass,
-		TargetCNAME:            mappings[0].TargetCNAME,
-		IngressClassMappings:   mappings,
-		GatewayClassMappings:   gatewayMappings,
-		ExcludeHTTPRoutes:      getEnvOrDefault("EXCLUDE_HTTPROUTES", ""),
-		DynamicConfigMapName:   getEnvOrDefault("DYNAMIC_CONFIGMAP_NAME", "coredns-ingress-sync-rewrite-rules"),
-		DynamicConfigKey:       getEnvOrDefault("DYNAMIC_CONFIG_KEY", "dynamic.server"),
-		CoreDNSNamespace:       getEnvOrDefault("COREDNS_NAMESPACE", "kube-system"),
-		CoreDNSConfigMapName:   getEnvOrDefault("COREDNS_CONFIGMAP_NAME", "coredns"),
-		CoreDNSVolumeName:      getEnvOrDefault("COREDNS_VOLUME_NAME", "coredns-ingress-sync-volume"),
-		LeaderElectionEnabled:  getEnvOrDefault("LEADER_ELECTION_ENABLED", "true") == "true",
-		WatchNamespaces:        getEnvOrDefault("WATCH_NAMESPACES", ""), // Comma-separated list, empty = all namespaces
-		ExcludeNamespaces:      getEnvOrDefault("EXCLUDE_NAMESPACES", ""),
-		ExcludeIngresses:       getEnvOrDefault("EXCLUDE_INGRESSES", ""),
-		AnnotationEnabledKey:   getEnvOrDefault("ANNOTATION_ENABLED_KEY", "coredns-ingress-sync-enabled"),
-		AnnotationPriorityKey:  getEnvOrDefault("ANNOTATION_PRIORITY_KEY", "coredns-ingress-sync-priority"),
-		ExcludeAnnotationKey:   getEnvOrDefault("EXCLUDE_ANNOTATION_KEY", ""),
-		ExcludeAnnotationValue: getEnvOrDefault("EXCLUDE_ANNOTATION_VALUE", ""),
-		ImportStatement:        importStatement,
-		ControllerNamespace:    getEnvOrDefault("POD_NAMESPACE", "coredns-ingress-sync"), // Default fallback
-		MountPath:              mountPath,
-		ReleaseInstance:        getEnvOrDefault("RELEASE_INSTANCE", getEnvOrDefault("DEPLOYMENT_NAME", "coredns-ingress-sync")),
+		IngressClass:            mappings[0].IngressClass,
+		TargetCNAME:             mappings[0].TargetCNAME,
+		IngressClassMappings:    mappings,
+		GatewayClassMappings:    gatewayMappings,
+		ExcludeHTTPRoutes:       getEnvOrDefault("EXCLUDE_HTTPROUTES", ""),
+		IngressRouteTargetCNAME: getEnvOrDefault("INGRESSROUTE_TARGET_CNAME", ""),
+		ExcludeIngressRoutes:    getEnvOrDefault("EXCLUDE_INGRESSROUTES", ""),
+		DynamicConfigMapName:    getEnvOrDefault("DYNAMIC_CONFIGMAP_NAME", "coredns-ingress-sync-rewrite-rules"),
+		DynamicConfigKey:        getEnvOrDefault("DYNAMIC_CONFIG_KEY", "dynamic.server"),
+		CoreDNSNamespace:        getEnvOrDefault("COREDNS_NAMESPACE", "kube-system"),
+		CoreDNSConfigMapName:    getEnvOrDefault("COREDNS_CONFIGMAP_NAME", "coredns"),
+		CoreDNSVolumeName:       getEnvOrDefault("COREDNS_VOLUME_NAME", "coredns-ingress-sync-volume"),
+		LeaderElectionEnabled:   getEnvOrDefault("LEADER_ELECTION_ENABLED", "true") == "true",
+		WatchNamespaces:         getEnvOrDefault("WATCH_NAMESPACES", ""), // Comma-separated list, empty = all namespaces
+		ExcludeNamespaces:       getEnvOrDefault("EXCLUDE_NAMESPACES", ""),
+		ExcludeIngresses:        getEnvOrDefault("EXCLUDE_INGRESSES", ""),
+		AnnotationEnabledKey:    getEnvOrDefault("ANNOTATION_ENABLED_KEY", "coredns-ingress-sync-enabled"),
+		AnnotationPriorityKey:   getEnvOrDefault("ANNOTATION_PRIORITY_KEY", "coredns-ingress-sync-priority"),
+		ExcludeAnnotationKey:    getEnvOrDefault("EXCLUDE_ANNOTATION_KEY", ""),
+		ExcludeAnnotationValue:  getEnvOrDefault("EXCLUDE_ANNOTATION_VALUE", ""),
+		ImportStatement:         importStatement,
+		ControllerNamespace:     getEnvOrDefault("POD_NAMESPACE", "coredns-ingress-sync"), // Default fallback
+		MountPath:               mountPath,
+		ReleaseInstance:         getEnvOrDefault("RELEASE_INSTANCE", getEnvOrDefault("DEPLOYMENT_NAME", "coredns-ingress-sync")),
 	}
 }
 

@@ -10,26 +10,28 @@ import (
 func TestLoad(t *testing.T) {
 	// Save original environment
 	originalVars := map[string]string{
-		"INGRESS_CLASS":           os.Getenv("INGRESS_CLASS"),
-		"TARGET_CNAME":            os.Getenv("TARGET_CNAME"),
-		"DYNAMIC_CONFIGMAP_NAME":  os.Getenv("DYNAMIC_CONFIGMAP_NAME"),
-		"DYNAMIC_CONFIG_KEY":      os.Getenv("DYNAMIC_CONFIG_KEY"),
-		"COREDNS_NAMESPACE":       os.Getenv("COREDNS_NAMESPACE"),
-		"COREDNS_CONFIGMAP_NAME":  os.Getenv("COREDNS_CONFIGMAP_NAME"),
-		"LEADER_ELECTION_ENABLED": os.Getenv("LEADER_ELECTION_ENABLED"),
-		"WATCH_NAMESPACES":        os.Getenv("WATCH_NAMESPACES"),
-		"EXCLUDE_NAMESPACES":      os.Getenv("EXCLUDE_NAMESPACES"),
-		"EXCLUDE_INGRESSES":       os.Getenv("EXCLUDE_INGRESSES"),
-		"POD_NAMESPACE":           os.Getenv("POD_NAMESPACE"),
-		"DEPLOYMENT_NAME":         os.Getenv("DEPLOYMENT_NAME"),
-		"MOUNT_PATH":              os.Getenv("MOUNT_PATH"),
-		"ANNOTATION_ENABLED_KEY":  os.Getenv("ANNOTATION_ENABLED_KEY"),
-		"ANNOTATION_PRIORITY_KEY": os.Getenv("ANNOTATION_PRIORITY_KEY"),
-		"INGRESS_CLASS_MAPPINGS":  os.Getenv("INGRESS_CLASS_MAPPINGS"),
-		"GATEWAY_CLASS_MAPPINGS":  os.Getenv("GATEWAY_CLASS_MAPPINGS"),
-		"GATEWAY_CLASS":           os.Getenv("GATEWAY_CLASS"),
-		"GATEWAY_TARGET_CNAME":    os.Getenv("GATEWAY_TARGET_CNAME"),
-		"EXCLUDE_HTTPROUTES":      os.Getenv("EXCLUDE_HTTPROUTES"),
+		"INGRESS_CLASS":             os.Getenv("INGRESS_CLASS"),
+		"TARGET_CNAME":              os.Getenv("TARGET_CNAME"),
+		"DYNAMIC_CONFIGMAP_NAME":    os.Getenv("DYNAMIC_CONFIGMAP_NAME"),
+		"DYNAMIC_CONFIG_KEY":        os.Getenv("DYNAMIC_CONFIG_KEY"),
+		"COREDNS_NAMESPACE":         os.Getenv("COREDNS_NAMESPACE"),
+		"COREDNS_CONFIGMAP_NAME":    os.Getenv("COREDNS_CONFIGMAP_NAME"),
+		"LEADER_ELECTION_ENABLED":   os.Getenv("LEADER_ELECTION_ENABLED"),
+		"WATCH_NAMESPACES":          os.Getenv("WATCH_NAMESPACES"),
+		"EXCLUDE_NAMESPACES":        os.Getenv("EXCLUDE_NAMESPACES"),
+		"EXCLUDE_INGRESSES":         os.Getenv("EXCLUDE_INGRESSES"),
+		"POD_NAMESPACE":             os.Getenv("POD_NAMESPACE"),
+		"DEPLOYMENT_NAME":           os.Getenv("DEPLOYMENT_NAME"),
+		"MOUNT_PATH":                os.Getenv("MOUNT_PATH"),
+		"ANNOTATION_ENABLED_KEY":    os.Getenv("ANNOTATION_ENABLED_KEY"),
+		"ANNOTATION_PRIORITY_KEY":   os.Getenv("ANNOTATION_PRIORITY_KEY"),
+		"INGRESS_CLASS_MAPPINGS":    os.Getenv("INGRESS_CLASS_MAPPINGS"),
+		"GATEWAY_CLASS_MAPPINGS":    os.Getenv("GATEWAY_CLASS_MAPPINGS"),
+		"GATEWAY_CLASS":             os.Getenv("GATEWAY_CLASS"),
+		"GATEWAY_TARGET_CNAME":      os.Getenv("GATEWAY_TARGET_CNAME"),
+		"EXCLUDE_HTTPROUTES":        os.Getenv("EXCLUDE_HTTPROUTES"),
+		"INGRESSROUTE_TARGET_CNAME": os.Getenv("INGRESSROUTE_TARGET_CNAME"),
+		"EXCLUDE_INGRESSROUTES":     os.Getenv("EXCLUDE_INGRESSROUTES"),
 	}
 
 	// Restore original environment after test
@@ -76,6 +78,9 @@ func TestLoad(t *testing.T) {
 		// Gateway API support is disabled by default: nil, not an empty shim.
 		assert.Nil(t, config.GatewayClassMappings)
 		assert.Equal(t, "", config.ExcludeHTTPRoutes)
+		// Traefik IngressRoute support is disabled by default: empty target CNAME.
+		assert.Equal(t, "", config.IngressRouteTargetCNAME)
+		assert.Equal(t, "", config.ExcludeIngressRoutes)
 	})
 
 	t.Run("environment overrides", func(t *testing.T) {
