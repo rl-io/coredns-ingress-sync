@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/yaml"
 )
 
@@ -104,4 +105,66 @@ func TestIngressRouteDeepCopy(t *testing.T) {
 
 	clone.Spec.Routes[0].Match = "Host(`changed.com`)"
 	assert.Equal(t, "Host(`example.com`)", original.Spec.Routes[0].Match, "mutating the clone must not affect the original")
+}
+
+func TestIngressRouteDeepCopy_Nil(t *testing.T) {
+	var ir *IngressRoute
+	assert.Nil(t, ir.DeepCopy())
+
+	var list *IngressRouteList
+	assert.Nil(t, list.DeepCopy())
+}
+
+func TestIngressRouteDeepCopy_EmptyRoutes(t *testing.T) {
+	spec := IngressRouteSpec{}
+	assert.Equal(t, IngressRouteSpec{}, spec.DeepCopy())
+}
+
+func TestIngressRoute_DeepCopyObject(t *testing.T) {
+	original := &IngressRoute{Spec: IngressRouteSpec{Routes: []Route{{Match: "Host(`example.com`)"}}}}
+
+	obj := original.DeepCopyObject()
+
+	clone, ok := obj.(*IngressRoute)
+	require.True(t, ok, "DeepCopyObject must return a *IngressRoute")
+	assert.Equal(t, original, clone)
+	assert.NotSame(t, original, clone)
+}
+
+func TestIngressRouteList_DeepCopy(t *testing.T) {
+	original := &IngressRouteList{
+		Items: []IngressRoute{
+			{Spec: IngressRouteSpec{Routes: []Route{{Match: "Host(`a.com`)"}}}},
+			{Spec: IngressRouteSpec{Routes: []Route{{Match: "Host(`b.com`)"}}}},
+		},
+	}
+
+	clone := original.DeepCopy()
+	require.Equal(t, original, clone)
+
+	clone.Items[0].Spec.Routes[0].Match = "Host(`changed.com`)"
+	assert.Equal(t, "Host(`a.com`)", original.Items[0].Spec.Routes[0].Match, "mutating the clone must not affect the original")
+
+	empty := &IngressRouteList{}
+	assert.Nil(t, empty.DeepCopy().Items)
+}
+
+func TestIngressRouteList_DeepCopyObject(t *testing.T) {
+	original := &IngressRouteList{Items: []IngressRoute{{Spec: IngressRouteSpec{Routes: []Route{{Match: "Host(`a.com`)"}}}}}}
+
+	obj := original.DeepCopyObject()
+
+	clone, ok := obj.(*IngressRouteList)
+	require.True(t, ok, "DeepCopyObject must return a *IngressRouteList")
+	assert.Equal(t, original, clone)
+	assert.NotSame(t, original, clone)
+}
+
+func TestAddToScheme(t *testing.T) {
+	scheme := runtime.NewScheme()
+
+	require.NoError(t, AddToScheme(scheme))
+
+	assert.True(t, scheme.Recognizes(GroupVersion.WithKind("IngressRoute")))
+	assert.True(t, scheme.Recognizes(GroupVersion.WithKind("IngressRouteList")))
 }

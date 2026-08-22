@@ -121,6 +121,15 @@ func TestEnabled(t *testing.T) {
 	assert.True(t, newSingleClassFilter("traefik", "", "", "", "").Enabled())
 }
 
+func TestClassCount(t *testing.T) {
+	assert.Equal(t, 0, NewFilter(nil, "", "", "", "", "").ClassCount())
+	assert.Equal(t, 1, newSingleClassFilter("traefik", "", "", "", "").ClassCount())
+	assert.Equal(t, 2, NewFilter([]config.GatewayClassMapping{
+		{GatewayClass: "traefik", TargetCNAME: "traefik.example.com."},
+		{GatewayClass: "nginx", TargetCNAME: "nginx.example.com."},
+	}, "", "", "", "", "").ClassCount())
+}
+
 func TestShouldWatchNamespace(t *testing.T) {
 	tests := []struct {
 		name               string

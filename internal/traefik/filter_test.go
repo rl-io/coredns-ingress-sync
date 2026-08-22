@@ -25,6 +25,60 @@ func TestFilter_Enabled(t *testing.T) {
 	assert.True(t, NewFilter("traefik.traefik.svc.cluster.local.", "", "", "", "", "").Enabled())
 }
 
+func TestFilter_IsExcludedIngressRoute(t *testing.T) {
+	filter := NewFilter("traefik.traefik.svc.cluster.local.", "", "", "excluded-route,other-ns/other-route", "", "")
+
+	assert.False(t, filter.IsExcludedIngressRoute(nil))
+
+	excluded := ir("excluded-route", "default")
+	assert.True(t, filter.IsExcludedIngressRoute(&excluded))
+
+	excludedByNamespace := ir("other-route", "other-ns")
+	assert.True(t, filter.IsExcludedIngressRoute(&excludedByNamespace))
+
+	kept := ir("kept-route", "default")
+	assert.False(t, filter.IsExcludedIngressRoute(&kept))
+}
+
+func TestFilter_ShouldProcessIngressRoute(t *testing.T) {
+	t.Run("nil route", func(t *testing.T) {
+		filter := NewFilter("traefik.traefik.svc.cluster.local.", "", "", "", "", "")
+		assert.False(t, filter.ShouldProcessIngressRoute(nil))
+	})
+
+	t.Run("namespace not watched", func(t *testing.T) {
+		filter := NewFilter("traefik.traefik.svc.cluster.local.", "watched-ns", "", "", "", "")
+		route := ir("route", "other-ns")
+		assert.False(t, filter.ShouldProcessIngressRoute(&route))
+	})
+
+	t.Run("excluded by name", func(t *testing.T) {
+		filter := NewFilter("traefik.traefik.svc.cluster.local.", "", "", "excluded-route", "", "")
+		route := ir("excluded-route", "default")
+		assert.False(t, filter.ShouldProcessIngressRoute(&route))
+	})
+
+	t.Run("disabled via annotation", func(t *testing.T) {
+		filter := NewFilter("traefik.traefik.svc.cluster.local.", "", "", "", "coredns-ingress-sync-enabled", "")
+		route := ir("route", "default")
+		route.Annotations = map[string]string{"coredns-ingress-sync-enabled": "false"}
+		assert.False(t, filter.ShouldProcessIngressRoute(&route))
+	})
+
+	t.Run("annotation present but not false-like is processed", func(t *testing.T) {
+		filter := NewFilter("traefik.traefik.svc.cluster.local.", "", "", "", "coredns-ingress-sync-enabled", "")
+		route := ir("route", "default")
+		route.Annotations = map[string]string{"coredns-ingress-sync-enabled": "true"}
+		assert.True(t, filter.ShouldProcessIngressRoute(&route))
+	})
+
+	t.Run("no annotation key configured is processed", func(t *testing.T) {
+		filter := NewFilter("traefik.traefik.svc.cluster.local.", "", "", "", "", "")
+		route := ir("route", "default")
+		assert.True(t, filter.ShouldProcessIngressRoute(&route))
+	})
+}
+
 func TestExtractHosts(t *testing.T) {
 	tests := []struct {
 		name  string
