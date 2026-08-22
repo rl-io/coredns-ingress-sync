@@ -19,10 +19,12 @@ import (
 	"github.com/rl-io/coredns-ingress-sync/internal/hostmap"
 	"github.com/rl-io/coredns-ingress-sync/internal/ingress"
 	"github.com/rl-io/coredns-ingress-sync/internal/metrics"
+	"github.com/rl-io/coredns-ingress-sync/internal/traefik"
+	traefikv1alpha1 "github.com/rl-io/coredns-ingress-sync/internal/traefik/v1alpha1"
 )
 
-// IngressReconciler reconciles Ingress and Gateway API objects and updates
-// CoreDNS configuration.
+// IngressReconciler reconciles Ingress, Gateway API, and Traefik IngressRoute
+// objects and updates CoreDNS configuration.
 type IngressReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme
@@ -31,18 +33,23 @@ type IngressReconciler struct {
 	// GatewayClassMappings configured). When nil, Reconcile makes no List/Get
 	// calls of any kind against Gateway/HTTPRoute types, so pure-Ingress
 	// deployments are unaffected even if those CRDs aren't installed.
-	GatewayFilter  *gatewayapi.Filter
+	GatewayFilter *gatewayapi.Filter
+	// TraefikFilter is nil when Traefik IngressRoute support is disabled (no
+	// IngressRouteTargetCNAME configured). When nil, Reconcile makes no
+	// List/Get calls of any kind against IngressRoute types.
+	TraefikFilter  *traefik.Filter
 	CoreDNSManager *coredns.Manager
 }
 
-// NewIngressReconciler creates a new IngressReconciler. gatewayFilter may be
-// nil to disable Gateway API support entirely.
-func NewIngressReconciler(client client.Client, scheme *runtime.Scheme, ingressFilter *ingress.Filter, gatewayFilter *gatewayapi.Filter, coreDNSManager *coredns.Manager) *IngressReconciler {
+// NewIngressReconciler creates a new IngressReconciler. gatewayFilter and
+// traefikFilter may be nil to disable their respective support entirely.
+func NewIngressReconciler(client client.Client, scheme *runtime.Scheme, ingressFilter *ingress.Filter, gatewayFilter *gatewayapi.Filter, traefikFilter *traefik.Filter, coreDNSManager *coredns.Manager) *IngressReconciler {
 	return &IngressReconciler{
 		Client:         client,
 		Scheme:         scheme,
 		IngressFilter:  ingressFilter,
 		GatewayFilter:  gatewayFilter,
+		TraefikFilter:  traefikFilter,
 		CoreDNSManager: coreDNSManager,
 	}
 }
@@ -98,6 +105,16 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 			return reconcile.Result{RequeueAfter: time.Minute}, err
 		}
 		candidates = append(candidates, gatewayCandidates...)
+	}
+
+	if r.TraefikFilter != nil && r.TraefikFilter.Enabled() {
+		traefikCandidates, err := r.extractTraefikCandidates(ctx, logger)
+		if err != nil {
+			duration := time.Since(startTime).Seconds()
+			metrics.RecordReconciliationError(duration, "traefik_ingressroute_list")
+			return reconcile.Result{RequeueAfter: time.Minute}, err
+		}
+		candidates = append(candidates, traefikCandidates...)
 	}
 
 	hostCNAMEMap := hostmap.Resolve(candidates, logger)
@@ -203,6 +220,45 @@ func (r *IngressReconciler) extractGatewayCandidates(ctx context.Context, logger
 	candidates := r.GatewayFilter.ExtractHostnameCandidates(routeList.Items, refs)
 
 	offset := r.IngressFilter.ClassCount()
+	for i := range candidates {
+		candidates[i].ClassIndex += offset
+	}
+
+	return candidates, nil
+}
+
+// extractTraefikCandidates lists IngressRoute objects (namespace scoped per
+// r.TraefikFilter) and returns the resulting hostname candidates, with
+// ClassIndex offset by the number of configured Ingress class mappings plus
+// Gateway API GatewayClass mappings, so Ingress and then Gateway API win ties
+// by default when multiple sources claim the same hostname. Callers must
+// only invoke this when r.TraefikFilter is non-nil and enabled.
+func (r *IngressReconciler) extractTraefikCandidates(ctx context.Context, logger logr.Logger) ([]hostmap.Candidate, error) {
+	watchNamespaces := r.TraefikFilter.GetWatchNamespaces()
+
+	var routeList traefikv1alpha1.IngressRouteList
+	if r.TraefikFilter.WatchesAllNamespaces() {
+		if err := r.List(ctx, &routeList); err != nil {
+			logger.Error(err, "Failed to list ingressroutes")
+			return nil, err
+		}
+	} else {
+		for _, ns := range watchNamespaces {
+			var nsRouteList traefikv1alpha1.IngressRouteList
+			if err := r.List(ctx, &nsRouteList, client.InNamespace(ns)); err != nil {
+				logger.Error(err, "Failed to list ingressroutes in namespace", "namespace", ns)
+				continue
+			}
+			routeList.Items = append(routeList.Items, nsRouteList.Items...)
+		}
+	}
+
+	candidates := r.TraefikFilter.ExtractHostnameCandidates(routeList.Items)
+
+	offset := r.IngressFilter.ClassCount()
+	if r.GatewayFilter != nil {
+		offset += r.GatewayFilter.ClassCount()
+	}
 	for i := range candidates {
 		candidates[i].ClassIndex += offset
 	}

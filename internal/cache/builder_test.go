@@ -2,6 +2,8 @@ package cache
 
 import (
 	"testing"
+
+	traefikv1alpha1 "github.com/rl-io/coredns-ingress-sync/internal/traefik/v1alpha1"
 )
 
 func TestNewConfigBuilder(t *testing.T) {
@@ -103,6 +105,44 @@ func TestBuildCacheOptions_GatewayAPI(t *testing.T) {
 	}).BuildCacheOptions()
 	if len(enabled.ByObject) != 4 {
 		t.Errorf("expected 4 ByObject entries when Gateway API is enabled, got %d", len(enabled.ByObject))
+	}
+}
+
+func TestBuildCacheOptions_IngressRoute(t *testing.T) {
+	disabled := NewConfigBuilder(ConfigBuilderOptions{
+		WatchNamespaces:  []string{"production"},
+		CoreDNSNamespace: "kube-system",
+	}).BuildCacheOptions()
+	if len(disabled.ByObject) != 2 {
+		t.Errorf("expected 2 ByObject entries when IngressRoute is disabled, got %d", len(disabled.ByObject))
+	}
+
+	enabled := NewConfigBuilder(ConfigBuilderOptions{
+		WatchNamespaces:     []string{"production"},
+		CoreDNSNamespace:    "kube-system",
+		IngressRouteEnabled: true,
+	}).BuildCacheOptions()
+	if len(enabled.ByObject) != 3 {
+		t.Errorf("expected 3 ByObject entries when IngressRoute is enabled, got %d", len(enabled.ByObject))
+	}
+	foundIngressRoute := false
+	for obj := range enabled.ByObject {
+		if _, ok := obj.(*traefikv1alpha1.IngressRoute); ok {
+			foundIngressRoute = true
+		}
+	}
+	if !foundIngressRoute {
+		t.Error("expected IngressRoute entry in ByObject when IngressRoute is enabled")
+	}
+
+	both := NewConfigBuilder(ConfigBuilderOptions{
+		WatchNamespaces:     []string{"production"},
+		CoreDNSNamespace:    "kube-system",
+		GatewayAPIEnabled:   true,
+		IngressRouteEnabled: true,
+	}).BuildCacheOptions()
+	if len(both.ByObject) != 5 {
+		t.Errorf("expected 5 ByObject entries when Gateway API and IngressRoute are both enabled, got %d", len(both.ByObject))
 	}
 }
 

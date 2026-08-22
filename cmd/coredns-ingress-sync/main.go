@@ -35,6 +35,8 @@ import (
 	"github.com/rl-io/coredns-ingress-sync/internal/logging"
 	"github.com/rl-io/coredns-ingress-sync/internal/metrics"
 	"github.com/rl-io/coredns-ingress-sync/internal/preflight"
+	"github.com/rl-io/coredns-ingress-sync/internal/traefik"
+	traefikv1alpha1 "github.com/rl-io/coredns-ingress-sync/internal/traefik/v1alpha1"
 	"github.com/rl-io/coredns-ingress-sync/internal/watches"
 )
 
@@ -80,11 +82,17 @@ func runController(logger logr.Logger) {
 	// that touches Gateway/HTTPRoute types.
 	gatewayAPIEnabled := len(cfg.GatewayClassMappings) > 0
 
+	// Traefik IngressRoute support is enabled only when a target CNAME is
+	// configured; this is checked before any cache/watch/scheme wiring below
+	// that touches IngressRoute types.
+	ingressRouteEnabled := cfg.IngressRouteTargetCNAME != ""
+
 	// Build cache options
 	cacheBuilder := cache.NewConfigBuilder(cache.ConfigBuilderOptions{
-		WatchNamespaces:   watchNamespaces,
-		CoreDNSNamespace:  cfg.CoreDNSNamespace,
-		GatewayAPIEnabled: gatewayAPIEnabled,
+		WatchNamespaces:     watchNamespaces,
+		CoreDNSNamespace:    cfg.CoreDNSNamespace,
+		GatewayAPIEnabled:   gatewayAPIEnabled,
+		IngressRouteEnabled: ingressRouteEnabled,
 	})
 	cacheOptions := cacheBuilder.BuildCacheOptions()
 
@@ -107,6 +115,14 @@ func runController(logger logr.Logger) {
 	// when Gateway API support is disabled or the CRDs aren't installed.
 	if err := gatewayv1.Install(scheme); err != nil {
 		logger.Error(err, "Failed to add gateway-api/v1 to scheme")
+		os.Exit(1)
+	}
+	// Traefik IngressRoute types are registered unconditionally -- this is
+	// pure Go type registration with zero API-server interaction, so it's
+	// safe even when IngressRoute support is disabled or the CRD isn't
+	// installed.
+	if err := traefikv1alpha1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "Failed to add traefik.io/v1alpha1 to scheme")
 		os.Exit(1)
 	}
 
@@ -134,6 +150,14 @@ func runController(logger logr.Logger) {
 		gatewayFilter = gatewayapi.NewFilter(cfg.GatewayClassMappings, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeHTTPRoutes, cfg.AnnotationEnabledKey, cfg.AnnotationPriorityKey)
 	}
 
+	// Create Traefik IngressRoute filter. traefikFilter stays nil when
+	// disabled, so the reconciler makes no List/Get calls against
+	// IngressRoute types.
+	var traefikFilter *traefik.Filter
+	if ingressRouteEnabled {
+		traefikFilter = traefik.NewFilter(cfg.IngressRouteTargetCNAME, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeIngressRoutes, cfg.AnnotationEnabledKey, cfg.AnnotationPriorityKey)
+	}
+
 	// Create CoreDNS manager
 	coreDNSConfig := coredns.Config{
 		Namespace:            cfg.CoreDNSNamespace,
@@ -152,6 +176,7 @@ func runController(logger logr.Logger) {
 		mgr.GetScheme(),
 		ingressFilter,
 		gatewayFilter,
+		traefikFilter,
 		coreDNSManager,
 	)
 
@@ -249,6 +274,30 @@ func runController(logger logr.Logger) {
 		}
 	}
 
+	// Watch for Traefik IngressRoute changes, only when IngressRoute support
+	// is enabled -- otherwise this CRD may not even be installed in the
+	// cluster.
+	if ingressRouteEnabled {
+		if err := c.Watch(
+			source.Kind(mgr.GetCache(), &traefikv1alpha1.IngressRoute{},
+				handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *traefikv1alpha1.IngressRoute) []reconcile.Request {
+					return []reconcile.Request{{
+						NamespacedName: types.NamespacedName{
+							Name:      "global-ingress-reconcile",
+							Namespace: "default",
+						},
+					}}
+				}),
+				predicate.TypedFuncs[*traefikv1alpha1.IngressRoute]{
+					CreateFunc: func(e event.TypedCreateEvent[*traefikv1alpha1.IngressRoute]) bool { return true },
+					UpdateFunc: func(e event.TypedUpdateEvent[*traefikv1alpha1.IngressRoute]) bool { return true },
+					DeleteFunc: func(e event.TypedDeleteEvent[*traefikv1alpha1.IngressRoute]) bool { return true },
+				})); err != nil {
+			logger.Error(err, "Failed to set up ingressroute watch")
+			os.Exit(1)
+		}
+	}
+
 	// Watch for CoreDNS ConfigMap changes
 	watchManager := watches.NewManager()
 	if err := watchManager.AddConfigMapWatch(mgr.GetCache(), c, cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName, "coredns-configmap-reconcile"); err != nil {
@@ -267,6 +316,8 @@ func runController(logger logr.Logger) {
 		"ingress_class_mappings", cfg.IngressClassMappings,
 		"gateway_api_enabled", gatewayAPIEnabled,
 		"gateway_class_mappings", cfg.GatewayClassMappings,
+		"ingressroute_enabled", ingressRouteEnabled,
+		"ingressroute_target_cname", cfg.IngressRouteTargetCNAME,
 		"dynamic_configmap", cfg.DynamicConfigMapName,
 		"coredns_configmap", fmt.Sprintf("%s/%s", cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName),
 		"annotation_enabled_key", cfg.AnnotationEnabledKey,
@@ -354,6 +405,10 @@ func runPreflight(logger logr.Logger) {
 	}
 	if err := gatewayv1.Install(scheme); err != nil {
 		logger.Error(err, "Failed to add gateway-api/v1 to scheme")
+		os.Exit(1)
+	}
+	if err := traefikv1alpha1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "Failed to add traefik.io/v1alpha1 to scheme")
 		os.Exit(1)
 	}
 

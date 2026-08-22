@@ -9,31 +9,36 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+
+	traefikv1alpha1 "github.com/rl-io/coredns-ingress-sync/internal/traefik/v1alpha1"
 )
 
 // ConfigBuilder helps build cache configuration
 type ConfigBuilder struct {
-	watchNamespaces   []string
-	coreDNSNamespace  string
-	gatewayAPIEnabled bool
+	watchNamespaces     []string
+	coreDNSNamespace    string
+	gatewayAPIEnabled   bool
+	ingressRouteEnabled bool
 }
 
 // ConfigBuilderOptions configures a ConfigBuilder. GatewayAPIEnabled controls
 // whether Gateway/HTTPRoute are added to the cache's ByObject scoping --
 // leave false for pure-Ingress deployments so no Gateway API types are ever
-// touched.
+// touched. IngressRouteEnabled does the same for Traefik IngressRoute.
 type ConfigBuilderOptions struct {
-	WatchNamespaces   []string
-	CoreDNSNamespace  string
-	GatewayAPIEnabled bool
+	WatchNamespaces     []string
+	CoreDNSNamespace    string
+	GatewayAPIEnabled   bool
+	IngressRouteEnabled bool
 }
 
 // NewConfigBuilder creates a new cache config builder
 func NewConfigBuilder(opts ConfigBuilderOptions) *ConfigBuilder {
 	return &ConfigBuilder{
-		watchNamespaces:   opts.WatchNamespaces,
-		coreDNSNamespace:  opts.CoreDNSNamespace,
-		gatewayAPIEnabled: opts.GatewayAPIEnabled,
+		watchNamespaces:     opts.WatchNamespaces,
+		coreDNSNamespace:    opts.CoreDNSNamespace,
+		gatewayAPIEnabled:   opts.GatewayAPIEnabled,
+		ingressRouteEnabled: opts.IngressRouteEnabled,
 	}
 }
 
@@ -80,6 +85,12 @@ func (cb *ConfigBuilder) BuildCacheOptions() cache.Options {
 				Namespaces: ingressNamespaceMap,
 			}
 			cacheOptions.ByObject[&gatewayv1.HTTPRoute{}] = cache.ByObject{
+				Namespaces: ingressNamespaceMap,
+			}
+		}
+
+		if cb.ingressRouteEnabled {
+			cacheOptions.ByObject[&traefikv1alpha1.IngressRoute{}] = cache.ByObject{
 				Namespaces: ingressNamespaceMap,
 			}
 		}

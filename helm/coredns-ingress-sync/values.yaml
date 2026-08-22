@@ -112,6 +112,14 @@ controller:
   #  - gatewayClass: traefik
   #    targetCNAME: "traefik.traefik.svc.cluster.local."
 
+  # Traefik IngressRoute support (traefik.io/v1alpha1), additive to Ingress and
+  # Gateway API support above. IngressRoute has no class-like field, so unlike
+  # ingressClassMappings/gatewayClassMappings this is a single target CNAME.
+  # Set a target CNAME to enable; empty (default) disables it entirely -- no
+  # RBAC, watches, or CRD access are added.
+  ingressRouteTargetCNAME: ""
+  #  ingressRouteTargetCNAME: "traefik.traefik.svc.cluster.local."
+
   # Namespace filtering - empty means watch all namespaces
   # Set to comma-separated list to watch specific namespaces: "default,production,staging"
   watchNamespaces: ""
@@ -122,6 +130,8 @@ controller:
   excludeIngresses: ""
   # HTTPRoutes to exclude (comma-separated). Supports name or namespace/name.
   excludeHTTPRoutes: ""
+  # IngressRoutes to exclude (comma-separated). Supports name or namespace/name.
+  excludeIngressRoutes: ""
   # Annotation key to enable syncing (set to false to disable on a given ingress)
   annotationEnabledKey: "coredns-ingress-sync-enabled"
   # Annotation key for per-ingress priority (integer, higher wins). When two

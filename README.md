@@ -2,11 +2,11 @@
 
 [![codecov](https://codecov.io/github/rl-io/coredns-ingress-sync/graph/badge.svg?token=3IW3N6MURN)](https://codecov.io/github/rl-io/coredns-ingress-sync)
 
-A Kubernetes controller that dynamically updates CoreDNS configuration based on Ingress and Gateway API (Gateway + HTTPRoute) resources, enabling automatic internal DNS resolution for ingress/route hostnames to the backing service.
+A Kubernetes controller that dynamically updates CoreDNS configuration based on Ingress, Gateway API (Gateway + HTTPRoute), and Traefik IngressRoute resources, enabling automatic internal DNS resolution for ingress/route hostnames to the backing service.
 
 This eliminates the need to create internal ingress resources, manage private DNS zones, or manually update CoreDNS configurations - everything is handled automatically through a simple Helm chart deployment.
 
-This has been tested to work with [ingress-nginx](https://github.com/kubernetes/ingress-nginx) but should in theory work with any ingress controller that supports the `ingressClassName` field and has a stable service name. Gateway API support is additive and opt-in (disabled by default) and has been tested with Traefik's `traefik` GatewayClass.
+This has been tested to work with [ingress-nginx](https://github.com/kubernetes/ingress-nginx) but should in theory work with any ingress controller that supports the `ingressClassName` field and has a stable service name. Gateway API support is additive and opt-in (disabled by default) and has been tested with Traefik's `traefik` GatewayClass. Traefik `IngressRoute` (`traefik.io/v1alpha1`) support is likewise additive and opt-in, for deployments using Traefik's native CRD instead of Gateway API.
 
 **Important Note:** This requires the ingress controller to handle TLS termination (have valid TLS certificates) for the hostnames you want to resolve internally. If the ingress controller lacks proper TLS certificates, internal services attempting to connect to the rewritten hostnames will fail with TLS errors. This occurs because clients will attempt HTTPS connections to the hostname, and the DNS rewrite only changes where the hostname resolves—not the protocol used to connect.
 
@@ -16,8 +16,9 @@ This has been tested to work with [ingress-nginx](https://github.com/kubernetes/
 - **🔄 Event-driven**: Real-time response to ingress/Gateway API changes using controller-runtime
 - **🎯 Selective Processing**: Only handles ingresses with specified IngressClass, and (optionally) HTTPRoutes with a specified GatewayClass
 - **🌐 Gateway API Support**: Optional, additive support for `Gateway`+`HTTPRoute` alongside Ingress — zero behavior change when left unconfigured
+- **🛤️ Traefik IngressRoute Support**: Optional, additive support for Traefik's native `IngressRoute` CRD alongside Ingress and Gateway API — zero behavior change when left unconfigured
 - **📍 Namespace Filtering**: Monitor all namespaces or specific namespaces only
-- **⚡ Dynamic DNS**: Auto-generates CoreDNS rewrite rules for ingress/HTTPRoute hostnames
+- **⚡ Dynamic DNS**: Auto-generates CoreDNS rewrite rules for ingress/HTTPRoute/IngressRoute hostnames
 - **🛡️ Defensive Configuration**: Protects against external configuration drift (Terraform-compatible)
 - **♻️ Clean Uninstall**: Automatic cleanup with proper Helm hooks
 - **🔐 Secure**: Minimal RBAC permissions with namespace isolation
@@ -178,13 +179,14 @@ EOF
 hosts := []string{
 ## How It Works
 
-The controller automatically discovers ingress (and, optionally, Gateway API) hostnames and configures CoreDNS to resolve them internally:
+The controller automatically discovers ingress (and, optionally, Gateway API and Traefik IngressRoute) hostnames and configures CoreDNS to resolve them internally:
 
 1. **Ingress Discovery**: Watches for ingresses with the specified IngressClass (default: `nginx`)
 2. **Gateway API Discovery** (optional): When `controller.gatewayClassMappings` is set, also watches `Gateway`+`HTTPRoute` resources for the specified GatewayClass (e.g. `traefik`) — disabled entirely by default, with zero behavior change to Ingress-only deployments
-3. **Hostname Extraction**: Collects all hostnames from matching ingress rules and HTTPRoutes
-4. **DNS Configuration**: Generates CoreDNS rewrite rules mapping hostnames to the target service. If both an Ingress and an HTTPRoute claim the same hostname, Ingress wins by default (overridable per-host via a priority annotation)
-5. **Automatic Updates**: Updates CoreDNS configuration in real-time as ingresses/HTTPRoutes change
+3. **Traefik IngressRoute Discovery** (optional): When `controller.ingressRouteTargetCNAME` is set, also watches Traefik's native `IngressRoute` resources, extracting hostnames from their `Host(...)` router-rule matchers — disabled entirely by default, with zero behavior change otherwise
+4. **Hostname Extraction**: Collects all hostnames from matching ingress rules, HTTPRoutes, and IngressRoutes
+5. **DNS Configuration**: Generates CoreDNS rewrite rules mapping hostnames to the target service. When multiple sources claim the same hostname, Ingress wins by default, then Gateway API, then IngressRoute (overridable per-host via a priority annotation)
+6. **Automatic Updates**: Updates CoreDNS configuration in real-time as ingresses/HTTPRoutes/IngressRoutes change
 6. **Defensive Protection**: Restores configuration if modified by external tools (Terraform-compatible)
 
 ### Example
@@ -233,6 +235,10 @@ This allows you to inspect the generated configuration before applying it to Cor
 To also sync Gateway API hostnames, set `controller.gatewayClassMappings` (see
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md#gateway-api-configuration) for details and migration
 guidance) — left unset, no Gateway API watches, RBAC, or CRD access are added.
+
+To also sync Traefik `IngressRoute` hostnames, set `controller.ingressRouteTargetCNAME` (see
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md#traefik-ingressroute-configuration) for details and
+known limitations) — left unset, no IngressRoute watches, RBAC, or CRD access are added.
 
 ### Metrics Configuration
 

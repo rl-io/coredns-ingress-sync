@@ -68,6 +68,14 @@ func (f *Filter) Enabled() bool {
 	return len(f.classMappings) > 0
 }
 
+// ClassCount returns the number of configured GatewayClass mappings. The
+// reconciler uses this to offset Traefik IngressRoute candidates' ClassIndex
+// when merging candidates from all sources into one hostmap.Resolve call, so
+// ties between an HTTPRoute and an IngressRoute default to HTTPRoute winning.
+func (f *Filter) ClassCount() int {
+	return len(f.classMappings)
+}
+
 // ShouldWatchNamespace checks if we should process objects in the given namespace.
 func (f *Filter) ShouldWatchNamespace(namespace string) bool {
 	return f.nsScope.ShouldWatch(namespace)

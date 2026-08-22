@@ -19,6 +19,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/rl-io/coredns-ingress-sync/internal/config"
+	traefikv1alpha1 "github.com/rl-io/coredns-ingress-sync/internal/traefik/v1alpha1"
 )
 
 func TestChecker_CheckCoreDNSDeployment(t *testing.T) {
@@ -1173,6 +1174,182 @@ func TestChecker_RunChecks_GatewayAPIEnabled_Error(t *testing.T) {
 	// checkGatewayAPI itself never returns a non-nil error (List errors are
 	// captured in the CheckResult), so RunChecks should still succeed, with
 	// the Gateway API check reported as failed.
+	assert.NoError(t, err)
+	last := results[len(results)-1]
+	assert.False(t, last.Passed)
+}
+
+// traefikIngressRouteListErrorClient wraps a fake client and fails List calls
+// against IngressRouteList, letting checkTraefikIngressRoute's single List
+// call return a controlled error.
+type traefikIngressRouteListErrorClient struct {
+	client.Client
+	err error
+}
+
+func (t *traefikIngressRouteListErrorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*traefikv1alpha1.IngressRouteList); ok {
+		return t.err
+	}
+	return t.Client.List(ctx, list, opts...)
+}
+
+func traefikScheme() *runtime.Scheme {
+	scheme := runtime.NewScheme()
+	_ = traefikv1alpha1.AddToScheme(scheme)
+	return scheme
+}
+
+func TestChecker_CheckTraefikIngressRoute(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	fakeClient := fake.NewClientBuilder().WithScheme(traefikScheme()).Build()
+	config := Config{IngressRouteEnabled: true}
+	checker := NewChecker(fakeClient, config, logger)
+
+	result, err := checker.checkTraefikIngressRoute(context.Background())
+
+	assert.NoError(t, err)
+	assert.True(t, result.Passed)
+	assert.Contains(t, result.Message, "Traefik IngressRoute CRD")
+	assert.Equal(t, "info", result.Severity)
+}
+
+func TestChecker_CheckTraefikIngressRoute_CRDNotInstalled(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	noMatchErr := &meta.NoKindMatchError{
+		GroupKind:        schema.GroupKind{Group: "traefik.io", Kind: "IngressRoute"},
+		SearchedVersions: []string{"v1alpha1"},
+	}
+	wrapped := &traefikIngressRouteListErrorClient{
+		Client: fake.NewClientBuilder().WithScheme(traefikScheme()).Build(),
+		err:    noMatchErr,
+	}
+	config := Config{IngressRouteEnabled: true}
+	checker := NewChecker(wrapped, config, logger)
+
+	result, err := checker.checkTraefikIngressRoute(context.Background())
+
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
+	assert.Contains(t, result.Message, "CRD not found")
+	assert.Equal(t, "error", result.Severity)
+}
+
+func TestChecker_CheckTraefikIngressRoute_Forbidden(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	forbiddenErr := errors.NewForbidden(
+		schema.GroupResource{Group: "traefik.io", Resource: "ingressroutes"},
+		"",
+		fmt.Errorf("ingressroutes.traefik.io is forbidden"),
+	)
+	wrapped := &traefikIngressRouteListErrorClient{
+		Client: fake.NewClientBuilder().WithScheme(traefikScheme()).Build(),
+		err:    forbiddenErr,
+	}
+	config := Config{IngressRouteEnabled: true}
+	checker := NewChecker(wrapped, config, logger)
+
+	result, err := checker.checkTraefikIngressRoute(context.Background())
+
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
+	assert.Contains(t, result.Message, "Permission denied")
+	assert.Equal(t, "error", result.Severity)
+}
+
+func TestChecker_CheckTraefikIngressRoute_GenericError(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	wrapped := &traefikIngressRouteListErrorClient{
+		Client: fake.NewClientBuilder().WithScheme(traefikScheme()).Build(),
+		err:    fmt.Errorf("internal server error"),
+	}
+	config := Config{IngressRouteEnabled: true}
+	checker := NewChecker(wrapped, config, logger)
+
+	result, err := checker.checkTraefikIngressRoute(context.Background())
+
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
+	assert.Contains(t, result.Message, "Error accessing Traefik")
+	assert.Equal(t, "error", result.Severity)
+}
+
+func TestChecker_RunChecks_IngressRouteEnabled(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = traefikv1alpha1.AddToScheme(scheme)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+		}).
+		Build()
+
+	config := Config{
+		DeploymentName:       "test-deployment",
+		ReleaseInstance:      "test-instance",
+		MountPath:            "/etc/coredns/custom/test",
+		VolumeName:           "test-volume",
+		DynamicConfigMapName: "test-configmap",
+		CoreDNSNamespace:     "kube-system",
+		IngressClass:         "nginx",
+		TargetCNAME:          "ingress-nginx.ingress-nginx.svc.cluster.local.",
+		IngressRouteEnabled:  true,
+	}
+
+	checker := NewChecker(fakeClient, config, logger)
+	results, err := checker.RunChecks(context.Background())
+
+	assert.NoError(t, err)
+	last := results[len(results)-1]
+	assert.Contains(t, last.Message, "Traefik IngressRoute CRD")
+	assert.True(t, last.Passed)
+}
+
+func TestChecker_RunChecks_IngressRouteEnabled_Error(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = traefikv1alpha1.AddToScheme(scheme)
+
+	wrapped := &traefikIngressRouteListErrorClient{
+		Client: fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithRuntimeObjects(&appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+			}).
+			Build(),
+		err: fmt.Errorf("boom"),
+	}
+
+	config := Config{
+		DeploymentName:       "test-deployment",
+		ReleaseInstance:      "test-instance",
+		MountPath:            "/etc/coredns/custom/test",
+		VolumeName:           "test-volume",
+		DynamicConfigMapName: "test-configmap",
+		CoreDNSNamespace:     "kube-system",
+		IngressClass:         "nginx",
+		TargetCNAME:          "ingress-nginx.ingress-nginx.svc.cluster.local.",
+		IngressRouteEnabled:  true,
+	}
+
+	checker := NewChecker(wrapped, config, logger)
+	results, err := checker.RunChecks(context.Background())
+
+	// checkTraefikIngressRoute itself never returns a non-nil error (List
+	// errors are captured in the CheckResult), so RunChecks should still
+	// succeed, with the IngressRoute check reported as failed.
 	assert.NoError(t, err)
 	last := results[len(results)-1]
 	assert.False(t, last.Passed)

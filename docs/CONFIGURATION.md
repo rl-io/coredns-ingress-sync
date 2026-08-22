@@ -37,6 +37,14 @@ controller:
   #  - gatewayClass: traefik
   #    targetCNAME: "traefik.traefik.svc.cluster.local."
 
+  # Traefik IngressRoute support (traefik.io/v1alpha1), additive to Ingress and
+  # Gateway API support above. IngressRoute has no class-like field, so unlike
+  # the mappings above this is a single target CNAME. Leave empty ("") to
+  # disable IngressRoute support entirely -- no RBAC, watches, or CRD access
+  # are added when unset.
+  ingressRouteTargetCNAME: ""
+  #  ingressRouteTargetCNAME: "traefik.traefik.svc.cluster.local."
+
   # Namespace filtering - controls which namespaces to monitor for ingresses
   # Empty string = watch all namespaces cluster-wide (default)
   # Comma-separated list = watch only specific namespaces
@@ -201,10 +209,12 @@ The controller supports configuration through environment variables (set via Hel
 | `GATEWAY_CLASS_MAPPINGS` | JSON array of `{"gatewayClass","targetCNAME"}` mappings, additive to Ingress support. Same tiebreak semantics as `INGRESS_CLASS_MAPPINGS`. When unset (and `GATEWAY_CLASS` is unset), Gateway API support is disabled entirely — no watches, RBAC, or CRD List/Get calls. | `""` (Gateway API disabled) |
 | `GATEWAY_CLASS` | GatewayClass to watch (legacy single-class; used when `GATEWAY_CLASS_MAPPINGS` is unset). Setting this enables Gateway API support. | `""` (Gateway API disabled) |
 | `GATEWAY_TARGET_CNAME` | Target service for DNS resolution for the legacy single-class Gateway config (used when `GATEWAY_CLASS_MAPPINGS` is unset) | `""` |
+| `INGRESSROUTE_TARGET_CNAME` | Single target CNAME every processable Traefik `IngressRoute` (`traefik.io/v1alpha1`) resolves to, additive to Ingress and Gateway API support. Unlike the mapping lists above, `IngressRoute` has no class-like field, so this is one value, not an ordered list. When unset, IngressRoute support is disabled entirely — no watches, RBAC, or CRD List/Get calls. | `""` (IngressRoute support disabled) |
 | `WATCH_NAMESPACES` | Namespaces to monitor (empty = all) | `""` |
 | `EXCLUDE_NAMESPACES` | Namespaces to exclude (comma-separated) | `""` |
 | `EXCLUDE_INGRESSES` | Ingresses to exclude (name or namespace/name, comma-separated) | `""` |
 | `EXCLUDE_HTTPROUTES` | HTTPRoutes to exclude (name or namespace/name, comma-separated) | `""` |
+| `EXCLUDE_INGRESSROUTES` | IngressRoutes to exclude (name or namespace/name, comma-separated) | `""` |
 | `ANNOTATION_ENABLED_KEY` | Annotation key to control inclusion; false-like value disables | `coredns-ingress-sync-enabled` |
 | `ANNOTATION_PRIORITY_KEY` | Annotation key for per-ingress priority (integer, higher wins) when multiple ingresses share a hostname | `coredns-ingress-sync-priority` |
 | `COREDNS_NAMESPACE` | CoreDNS namespace | `kube-system` |
@@ -457,6 +467,45 @@ matches how Ingress spec is trusted without checking controller-side acceptance.
 When `gatewayClassMappings` (and the legacy `GATEWAY_CLASS`) are both unset, no Gateway/HTTPRoute
 watches, RBAC rules, or CRD List/Get calls are added — a preflight check will also fail fast with a
 clear message if Gateway API is enabled but the CRDs aren't installed or RBAC is missing.
+
+### Traefik IngressRoute configuration
+
+Traefik's native `IngressRoute` CRD (`traefik.io/v1alpha1`) support is additive to Ingress and
+Gateway API support and off by default. Unlike those, `IngressRoute` has no class-like field, so
+it's configured with a single target CNAME rather than an ordered mapping list:
+
+```yaml
+controller:
+  ingressRouteTargetCNAME: "traefik.traefik.svc.cluster.local."
+```
+
+`IngressRoute` doesn't carry its hostname in a structured field — it's embedded in each
+`spec.routes[].match` entry, a router-rule DSL string such as
+`` Host(`api.example.com`) && PathPrefix(`/api`) ``. Literal, backtick-quoted arguments to `Host()`
+matchers are extracted via regex (including comma-separated multi-host `Host(\`a.com\`,\`b.com\`)`
+OR syntax); hosts are deduplicated within one `IngressRoute` across its `spec.routes[]` entries.
+
+Cross-source tiebreak, when multiple sources claim the same hostname, uses the same
+`annotationPriorityKey` annotation and config-order rules as multi-class Ingress and Gateway API
+(see above), with **Ingress winning ties by default, then Gateway API, then IngressRoute** — the
+incumbent stays authoritative during a migration, and any source can be promoted per-host via the
+priority annotation.
+
+`excludeIngressRoutes` / `EXCLUDE_INGRESSROUTES` and `annotationEnabledKey` behave the same as their
+Ingress/HTTPRoute equivalents.
+
+**Known limitations**:
+- Only literal, backtick-quoted `Host(...)` matcher arguments are parsed. `HostRegexp`, `HostSNI`,
+  and other matchers are not evaluated and contribute no candidates.
+- The match expression's boolean structure (`&&`, `||`, negation like `` !Host(`x`) ``) is not
+  evaluated — every `Host()` matcher found contributes a candidate regardless of whether it's
+  actually reachable per the rule's logic. This matches how Ingress/HTTPRoute specs are trusted
+  without evaluating controller-side acceptance or matching semantics.
+- `IngressRouteTCP` and `IngressRouteUDP` (separate CRDs, no HTTP host semantics) are out of scope.
+
+When `ingressRouteTargetCNAME` is unset, no `IngressRoute` watches, RBAC rules, or CRD List/Get
+calls are added — a preflight check will also fail fast with a clear message if IngressRoute support
+is enabled but the CRD isn't installed or RBAC is missing.
 
 ### Custom Target Service
 

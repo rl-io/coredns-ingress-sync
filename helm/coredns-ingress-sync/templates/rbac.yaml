@@ -20,6 +20,11 @@ rules:
   resources: ["gateways", "httproutes"]
   verbs: ["get", "list", "watch"]
 {{- end }}
+{{- if .Values.controller.ingressRouteTargetCNAME }}
+- apiGroups: ["traefik.io"]
+  resources: ["ingressroutes"]
+  verbs: ["get", "list", "watch"]
+{{- end }}
 - apiGroups: [""]
   resources: ["configmaps"]
   verbs: ["get", "list", "watch", "create", "update", "patch"]
@@ -75,6 +80,11 @@ rules:
 {{- if $.Values.controller.gatewayClassMappings }}
 - apiGroups: ["gateway.networking.k8s.io"]
   resources: ["gateways", "httproutes"]
+  verbs: ["get", "list", "watch"]
+{{- end }}
+{{- if $.Values.controller.ingressRouteTargetCNAME }}
+- apiGroups: ["traefik.io"]
+  resources: ["ingressroutes"]
   verbs: ["get", "list", "watch"]
 {{- end }}
 ---
