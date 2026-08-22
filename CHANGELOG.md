@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.21](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.20...coredns-ingress-sync-v0.1.21) (2026-08-22)
+
+
+### Features
+
+* add support for Traefik IngressRoute (traefik.io/v1alpha1) ([#99](https://github.com/rl-io/coredns-ingress-sync/issues/99)) ([5762fba](https://github.com/rl-io/coredns-ingress-sync/commit/5762fba9c173a84570ae5ad2de1a383022e4abea))
+
+
+### Miscellaneous
+
+* update Go dependencies ([#97](https://github.com/rl-io/coredns-ingress-sync/issues/97)) ([57b629d](https://github.com/rl-io/coredns-ingress-sync/commit/57b629d1ffe891c8b8149aa109fae35593d573ad))
+
 ## [0.1.20](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.19...coredns-ingress-sync-v0.1.20) (2026-08-12)
 
 
