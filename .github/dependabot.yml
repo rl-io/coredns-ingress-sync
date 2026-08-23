@@ -16,7 +16,6 @@ updates:
       - "rl-io"
     commit-message:
       prefix: "chore(deps)"
-      include: "scope"
     labels:
       - "dependencies"
       - "go"
@@ -47,7 +46,6 @@ updates:
       - "rl-io"
     commit-message:
       prefix: "chore(docker)"
-      include: "scope"
     labels:
       - "dependencies"
       - "docker"
@@ -66,7 +64,6 @@ updates:
       - "rl-io"
     commit-message:
       prefix: "chore(ci)"
-      include: "scope"
     labels:
       - "dependencies"
       - "github-actions"
