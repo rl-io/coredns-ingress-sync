@@ -80,7 +80,7 @@ func TestUpdateDynamicConfigMap_Create(t *testing.T) {
 	domains := []string{"example.com"}
 	hosts := map[string]string{"app1.example.com": "ingress.example.com."}
 
-	err := manager.UpdateDynamicConfigMap(ctx, domains, hosts)
+	err := manager.UpdateDynamicConfigMap(ctx, domains, hosts, nil)
 	require.NoError(t, err)
 
 	// Verify ConfigMap was created
@@ -304,7 +304,7 @@ func TestUpdateDynamicConfigMap_Update(t *testing.T) {
 		"app2.example.com": "ingress.example.com.",
 	}
 
-	err := manager.UpdateDynamicConfigMap(ctx, domains, hosts)
+	err := manager.UpdateDynamicConfigMap(ctx, domains, hosts, nil)
 	require.NoError(t, err)
 
 	// Verify ConfigMap was updated
@@ -354,7 +354,7 @@ func TestUpdateDynamicConfigMap_NoUpdateNeeded(t *testing.T) {
 	manager.client = fakeClient
 
 	ctx := context.Background()
-	err := manager.UpdateDynamicConfigMap(ctx, domains, hosts)
+	err := manager.UpdateDynamicConfigMap(ctx, domains, hosts, nil)
 	require.NoError(t, err)
 
 	// ConfigMap should remain unchanged
@@ -382,6 +382,92 @@ func stripLastUpdatedLine(content string) string {
 		filtered = append(filtered, l)
 	}
 	return strings.Join(filtered, "\n")
+}
+
+func TestUpdateDynamicConfigMap_TargetChangedSameHostname(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+
+	// Existing rewrite rule for a hostname that is about to be repointed at a
+	// new target CNAME (e.g. an IngressRoute's backend Service changed) while
+	// the hostname itself stays the same -- this must surface as a "changed"
+	// entry, not be silently missed as added=0/removed=0.
+	existingConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "coredns-ingress-sync-rewrite-rules",
+			Namespace: "kube-system",
+		},
+		Data: map[string]string{
+			"dynamic.server": "# Old content\nrewrite name exact api.example.com old-target.example.com.\n",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(existingConfigMap).Build()
+	config := Config{
+		Namespace:            "kube-system",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
+		DynamicConfigKey:     "dynamic.server",
+		VolumeName:           "coredns-ingress-sync-volume",
+	}
+	manager := NewManager(fakeClient, config)
+
+	ctx := context.Background()
+	domains := []string{"example.com"}
+	hosts := map[string]string{"api.example.com": "new-target.example.com."}
+	sources := map[string]string{"api.example.com": "IngressRoute:default/api-route"}
+
+	err := manager.UpdateDynamicConfigMap(ctx, domains, hosts, sources)
+	require.NoError(t, err)
+
+	configMap := &corev1.ConfigMap{}
+	key := types.NamespacedName{Name: "coredns-ingress-sync-rewrite-rules", Namespace: "kube-system"}
+	err = fakeClient.Get(ctx, key, configMap)
+	require.NoError(t, err)
+
+	dynamicConfig := configMap.Data["dynamic.server"]
+	assert.Contains(t, dynamicConfig, "rewrite name exact api.example.com new-target.example.com.")
+	assert.NotContains(t, dynamicConfig, "old-target.example.com")
+}
+
+func TestDiffHostCNAMEs(t *testing.T) {
+	oldHostCNAMEs := map[string]string{
+		"unchanged.example.com": "target-a.example.com.",
+		"removed.example.com":   "target-b.example.com.",
+		"changed.example.com":   "old-target.example.com.",
+	}
+	newHostCNAMEs := map[string]string{
+		"unchanged.example.com": "target-a.example.com.",
+		"added.example.com":     "target-c.example.com.",
+		"changed.example.com":   "new-target.example.com.",
+	}
+
+	added, removed, changed := diffHostCNAMEs(oldHostCNAMEs, newHostCNAMEs)
+
+	assert.Equal(t, []string{"added.example.com"}, added)
+	assert.Equal(t, []string{"removed.example.com"}, removed)
+	assert.Equal(t, []string{"changed.example.com"}, changed)
+}
+
+func TestSampleHostChanges(t *testing.T) {
+	oldHostCNAMEs := map[string]string{"changed.example.com": "old-target.example.com."}
+	newHostCNAMEs := map[string]string{
+		"added.example.com":   "new.example.com.",
+		"changed.example.com": "new-target.example.com.",
+	}
+	sources := map[string]string{
+		"added.example.com":   "IngressRoute:default/api-route",
+		"changed.example.com": "Ingress:default/legacy-ingress",
+	}
+
+	added := sampleHostChanges([]string{"added.example.com"}, oldHostCNAMEs, newHostCNAMEs, sources, 5)
+	assert.Equal(t, []string{"added.example.com -> new.example.com. (source: IngressRoute:default/api-route)"}, added)
+
+	changed := sampleHostChanges([]string{"changed.example.com"}, oldHostCNAMEs, newHostCNAMEs, sources, 5)
+	assert.Equal(t, []string{"changed.example.com: old-target.example.com. -> new-target.example.com. (source: Ingress:default/legacy-ingress)"}, changed)
+
+	// Missing source info (e.g. hostSources was nil) should fall back to "unknown" rather than an empty string.
+	unknownSource := sampleHostChanges([]string{"added.example.com"}, oldHostCNAMEs, newHostCNAMEs, nil, 5)
+	assert.Equal(t, []string{"added.example.com -> new.example.com. (source: unknown)"}, unknownSource)
 }
 
 func TestEnsureImport(t *testing.T) {

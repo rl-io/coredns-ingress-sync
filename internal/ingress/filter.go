@@ -129,7 +129,7 @@ func (f *Filter) ExtractHostnameCandidates(ingresses []networkingv1.Ingress) []h
 		cname := f.classToCNAME[class]
 		priority := resolvePriority(ing, f.annotationPriorityKey)
 		index := f.classToIndex[class]
-		source := ing.Namespace + "/" + ing.Name
+		source := "Ingress:" + ing.Namespace + "/" + ing.Name
 
 		for _, rule := range ing.Spec.Rules {
 			if rule.Host == "" {

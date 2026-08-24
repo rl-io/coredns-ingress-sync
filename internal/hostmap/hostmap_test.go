@@ -92,3 +92,21 @@ func TestResolve_Empty(t *testing.T) {
 		t.Errorf("expected empty result for no candidates, got %v", got)
 	}
 }
+
+func TestResolveCandidates_PreservesWinnerSource(t *testing.T) {
+	// Callers (e.g. the reconciler) rely on ResolveCandidates to expose which
+	// object won a hostname, so change logging can report a cause like
+	// "IngressRoute:default/api-route" instead of just the bare hostname.
+	got := ResolveCandidates([]Candidate{
+		{Host: "shared.example.com", CNAME: "ingress-target", Priority: 0, ClassIndex: 0, Source: "Ingress:default/legacy"},
+		{Host: "shared.example.com", CNAME: "ingressroute-target", Priority: 100, ClassIndex: 1, Source: "IngressRoute:default/api-route"},
+	}, logr.Discard())
+
+	winner, ok := got["shared.example.com"]
+	if !ok {
+		t.Fatalf("expected a winner for shared.example.com")
+	}
+	if winner.CNAME != "ingressroute-target" || winner.Source != "IngressRoute:default/api-route" {
+		t.Errorf("expected higher-priority IngressRoute candidate to win with its Source preserved, got %+v", winner)
+	}
+}

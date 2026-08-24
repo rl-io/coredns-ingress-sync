@@ -213,7 +213,7 @@ func TestExtractHostnameCandidates_Basic(t *testing.T) {
 	assert.Len(t, candidates, 1)
 	assert.Equal(t, "app.example.com", candidates[0].Host)
 	assert.Equal(t, "traefik.traefik.svc.cluster.local.", candidates[0].CNAME)
-	assert.Equal(t, "default/route1", candidates[0].Source)
+	assert.Equal(t, "HTTPRoute:default/route1", candidates[0].Source)
 }
 
 func TestExtractHostnameCandidates_UnknownGatewayClassIgnored(t *testing.T) {
@@ -324,7 +324,7 @@ func TestExtractHostnameCandidates_InheritsGatewayListenerHostname(t *testing.T)
 	assert.Len(t, candidates, 1)
 	assert.Equal(t, "app.example.com", candidates[0].Host)
 	assert.Equal(t, "traefik.traefik.svc.cluster.local.", candidates[0].CNAME)
-	assert.Equal(t, "default/route1", candidates[0].Source)
+	assert.Equal(t, "HTTPRoute:default/route1", candidates[0].Source)
 }
 
 func TestExtractHostnameCandidates_InheritsAllGatewayListenerHostnames(t *testing.T) {

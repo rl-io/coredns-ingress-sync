@@ -188,7 +188,7 @@ func (f *Filter) ExtractHostnameCandidates(routes []gatewayv1.HTTPRoute, gateway
 			continue
 		}
 
-		source := route.Namespace + "/" + route.Name
+		source := "HTTPRoute:" + route.Namespace + "/" + route.Name
 		priority := filterutil.ResolvePriority(route.Annotations, f.annotationPriorityKey)
 
 		for _, parentRef := range route.Spec.ParentRefs {
