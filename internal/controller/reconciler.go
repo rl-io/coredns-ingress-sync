@@ -117,7 +117,16 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 		candidates = append(candidates, traefikCandidates...)
 	}
 
-	hostCNAMEMap := hostmap.Resolve(candidates, logger)
+	winners := hostmap.ResolveCandidates(candidates, logger)
+	hostCNAMEMap := make(map[string]string, len(winners))
+	// hostSources records which object won each hostname, so CoreDNSManager
+	// can report the cause of a rewrite-rule change (e.g. "IngressRoute
+	// default/api-route") rather than just the bare hostname.
+	hostSources := make(map[string]string, len(winners))
+	for host, winner := range winners {
+		hostCNAMEMap[host] = winner.CNAME
+		hostSources[host] = winner.Source
+	}
 
 	// Collect hostnames for domain extraction and metrics.
 	hosts := make([]string, 0, len(hostCNAMEMap))
@@ -148,7 +157,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 	}
 
 	// Update dynamic ConfigMap with discovered domains
-	if err := r.CoreDNSManager.UpdateDynamicConfigMap(ctx, domains, hostCNAMEMap); err != nil {
+	if err := r.CoreDNSManager.UpdateDynamicConfigMap(ctx, domains, hostCNAMEMap, hostSources); err != nil {
 		logger.Error(err, "Failed to update dynamic ConfigMap")
 		duration := time.Since(startTime).Seconds()
 		metrics.RecordReconciliationError(duration, "dns_update")

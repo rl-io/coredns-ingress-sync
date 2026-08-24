@@ -42,11 +42,13 @@ func (c Candidate) beats(b Candidate) bool {
 	return c.CNAME < b.CNAME
 }
 
-// Resolve returns a map of hostname -> target CNAME, picking the winning
-// candidate for each hostname via Candidate.beats. logger is used to record
-// (at V(1)) cases where two candidates with different CNAMEs contend for the
-// same hostname; pass logr.Discard() if logging isn't needed.
-func Resolve(candidates []Candidate, logger logr.Logger) map[string]string {
+// ResolveCandidates returns the winning Candidate for each hostname, picking
+// via Candidate.beats. Unlike Resolve, it preserves the winning candidate's
+// Source, which callers can use to report which object caused a hostname to
+// be added or repointed. logger is used to record (at V(1)) cases where two
+// candidates with different CNAMEs contend for the same hostname; pass
+// logr.Discard() if logging isn't needed.
+func ResolveCandidates(candidates []Candidate, logger logr.Logger) map[string]Candidate {
 	winners := make(map[string]Candidate)
 
 	for _, candidate := range candidates {
@@ -67,6 +69,16 @@ func Resolve(candidates []Candidate, logger logr.Logger) map[string]string {
 			winners[candidate.Host] = candidate
 		}
 	}
+
+	return winners
+}
+
+// Resolve returns a map of hostname -> target CNAME, picking the winning
+// candidate for each hostname via Candidate.beats. logger is used to record
+// (at V(1)) cases where two candidates with different CNAMEs contend for the
+// same hostname; pass logr.Discard() if logging isn't needed.
+func Resolve(candidates []Candidate, logger logr.Logger) map[string]string {
+	winners := ResolveCandidates(candidates, logger)
 
 	result := make(map[string]string, len(winners))
 	for host, w := range winners {

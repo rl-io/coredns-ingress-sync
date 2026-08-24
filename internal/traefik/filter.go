@@ -156,7 +156,7 @@ func (f *Filter) ExtractHostnameCandidates(routes []traefikv1alpha1.IngressRoute
 			continue
 		}
 
-		source := ir.Namespace + "/" + ir.Name
+		source := "IngressRoute:" + ir.Namespace + "/" + ir.Name
 		priority := filterutil.ResolvePriority(ir.Annotations, f.annotationPriorityKey)
 
 		seen := make(map[string]bool)

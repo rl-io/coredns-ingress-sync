@@ -64,8 +64,11 @@ func NewManager(client client.Client, config Config) *Manager {
 }
 
 // UpdateDynamicConfigMap creates or updates the dynamic configuration ConfigMap.
-// hostCNAMEMap maps each hostname to the target CNAME it should be rewritten to.
-func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, hostCNAMEMap map[string]string) error {
+// hostCNAMEMap maps each hostname to the target CNAME it should be rewritten
+// to. hostSources maps each hostname to the object that won it (e.g.
+// "IngressRoute:default/api-route"), used only to enrich change logging; pass
+// nil if that detail isn't available.
+func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, hostCNAMEMap map[string]string, hostSources map[string]string) error {
 	startTime := time.Now()
 	configMapName := types.NamespacedName{
 		Name:      m.config.DynamicConfigMapName,
@@ -122,18 +125,22 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 			return nil
 		}
 
-		// If content changed, compute a small diff for logging (added/removed hosts)
-		var added, removed []string
+		// If content changed, compute a small diff for logging (hosts added,
+		// removed, or kept but repointed at a different target CNAME -- e.g.
+		// an IngressRoute/Ingress/HTTPRoute updated in place without its
+		// hostname changing).
 		if existingConfig, exists := configMap.Data[m.config.DynamicConfigKey]; exists {
-			oldHosts := extractHostsFromDynamicConfig(existingConfig)
-			newHosts := extractHostsFromDynamicConfig(dynamicConfig)
-			added, removed = diffHostSets(oldHosts, newHosts)
-			// Log concise change summary with small samples
+			oldHostCNAMEs := extractHostCNAMEsFromDynamicConfig(existingConfig)
+			added, removed, changed := diffHostCNAMEs(oldHostCNAMEs, hostCNAMEMap)
+			// Log concise change summary with small samples, including which
+			// object caused each added/changed entry when known.
 			m.logger.Info("Detected CoreDNS rewrite changes",
 				"added", len(added),
 				"removed", len(removed),
-				"sampleAdded", sampleStrings(added, 5),
+				"changed", len(changed),
+				"sampleAdded", sampleHostChanges(added, oldHostCNAMEs, hostCNAMEMap, hostSources, 5),
 				"sampleRemoved", sampleStrings(removed, 5),
+				"sampleChanged", sampleHostChanges(changed, oldHostCNAMEs, hostCNAMEMap, hostSources, 5),
 			)
 		}
 
@@ -197,9 +204,10 @@ func (m *Manager) generateDynamicConfig(domains []string, hostCNAMEMap map[strin
 	return config.String()
 }
 
-// extractHostsFromDynamicConfig parses rewrite rules and extracts hostnames
-func extractHostsFromDynamicConfig(content string) []string {
-	var hosts []string
+// extractHostCNAMEsFromDynamicConfig parses rewrite rules and returns a map
+// of hostname -> target CNAME.
+func extractHostCNAMEsFromDynamicConfig(content string) map[string]string {
+	hostCNAMEs := make(map[string]string)
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -208,28 +216,61 @@ func extractHostsFromDynamicConfig(content string) []string {
 		// Expected form: rewrite name exact <host> <target>
 		fields := strings.Fields(line)
 		if len(fields) >= 5 && fields[0] == "rewrite" && fields[1] == "name" && fields[2] == "exact" {
-			hosts = append(hosts, fields[3])
+			hostCNAMEs[fields[3]] = fields[4]
 		}
 	}
-	return hosts
+	return hostCNAMEs
 }
 
-// diffHostSets returns hosts added and removed comparing old vs new
-func diffHostSets(oldHosts, newHosts []string) ([]string, []string) {
-	oldSet := make(map[string]bool, len(oldHosts))
-	newSet := make(map[string]bool, len(newHosts))
-	for _, h := range oldHosts { oldSet[h] = true }
-	for _, h := range newHosts { newSet[h] = true }
-	var added, removed []string
-	for h := range newSet { if !oldSet[h] { added = append(added, h) } }
-	for h := range oldSet { if !newSet[h] { removed = append(removed, h) } }
-	return added, removed
+// diffHostCNAMEs compares old and new host -> target CNAME maps, returning
+// hosts that were added, removed, or kept but repointed at a different
+// target CNAME (e.g. the object owning that hostname changed its backend
+// without the hostname itself changing).
+func diffHostCNAMEs(oldHostCNAMEs, newHostCNAMEs map[string]string) (added, removed, changed []string) {
+	for host, newCNAME := range newHostCNAMEs {
+		oldCNAME, existed := oldHostCNAMEs[host]
+		switch {
+		case !existed:
+			added = append(added, host)
+		case oldCNAME != newCNAME:
+			changed = append(changed, host)
+		}
+	}
+	for host := range oldHostCNAMEs {
+		if _, stillPresent := newHostCNAMEs[host]; !stillPresent {
+			removed = append(removed, host)
+		}
+	}
+	return added, removed, changed
 }
 
 // sampleStrings returns up to n items for logging
 func sampleStrings(in []string, n int) []string {
 	if len(in) <= n { return in }
 	return in[:n]
+}
+
+// sampleHostChanges formats up to n hosts as human-readable change
+// descriptions for logging, including the resolved target and (when known)
+// the object that won the hostname. It covers both newly added hosts (absent
+// from oldHostCNAMEs) and hosts whose target CNAME changed in place.
+func sampleHostChanges(hosts []string, oldHostCNAMEs, newHostCNAMEs, hostSources map[string]string, n int) []string {
+	if len(hosts) > n {
+		hosts = hosts[:n]
+	}
+	out := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		source := hostSources[host]
+		if source == "" {
+			source = "unknown"
+		}
+		if oldCNAME, existed := oldHostCNAMEs[host]; existed {
+			out = append(out, fmt.Sprintf("%s: %s -> %s (source: %s)", host, oldCNAME, newHostCNAMEs[host], source))
+		} else {
+			out = append(out, fmt.Sprintf("%s -> %s (source: %s)", host, newHostCNAMEs[host], source))
+		}
+	}
+	return out
 }
 
 // EnsureConfiguration ensures CoreDNS is properly configured
