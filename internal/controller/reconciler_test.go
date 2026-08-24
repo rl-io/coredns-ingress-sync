@@ -1287,3 +1287,72 @@ func TestReconcile_IngressRouteListError_PerNamespace_Continues(t *testing.T) {
 		t.Errorf("expected ns-b's IngressRoute host to still resolve despite ns-a's List failing, got:\n%s", cm.Data["dynamic.server"])
 	}
 }
+
+// dynamicConfigMapWriteErrorClient wraps a client.Client and fails Create
+// (and Update, for the same name) against a specific ConfigMap, so tests can
+// exercise Reconcile's "Failed to update dynamic ConfigMap" error path.
+type dynamicConfigMapWriteErrorClient struct {
+	client.Client
+	name string
+	err  error
+}
+
+func (c *dynamicConfigMapWriteErrorClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	if cm, ok := obj.(*corev1.ConfigMap); ok && cm.Name == c.name {
+		return c.err
+	}
+	return c.Client.Create(ctx, obj, opts...)
+}
+
+func (c *dynamicConfigMapWriteErrorClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+	if cm, ok := obj.(*corev1.ConfigMap); ok && cm.Name == c.name {
+		return c.err
+	}
+	return c.Client.Update(ctx, obj, opts...)
+}
+
+// TestReconcile_UpdateDynamicConfigMapError covers Reconcile's dns_update
+// error branch: when CoreDNSManager.UpdateDynamicConfigMap can't persist the
+// rewrite-rules ConfigMap (e.g. a create/update conflict that outlasts its
+// retries), Reconcile must surface the error and request a retry rather than
+// reporting success.
+func TestReconcile_UpdateDynamicConfigMapError(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = networkingv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	ingressClassName := "nginx"
+	ing := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: &ingressClassName,
+			Rules:            []networkingv1.IngressRule{{Host: "app.example.com"}},
+		},
+	}
+	coreDNSConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+		Data:       map[string]string{"Corefile": ".:53 {\n    forward . /etc/resolv.conf\n}\n"},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ing, coreDNSConfigMap).Build()
+	wrappedClient := &dynamicConfigMapWriteErrorClient{
+		Client: fakeClient,
+		name:   "coredns-ingress-sync-rewrite-rules",
+		err:    fmt.Errorf("configmap write boom"),
+	}
+
+	coreDNSManager := coredns.NewManager(wrappedClient, coredns.Config{
+		Namespace:            "kube-system",
+		ConfigMapName:        "coredns",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
+		DynamicConfigKey:     "dynamic.server",
+		ImportStatement:      "import /etc/coredns/custom/*.server",
+	})
+
+	reconciler := NewIngressReconciler(wrappedClient, scheme, nginxFilter(""), nil, nil, coreDNSManager)
+
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
+	if _, err := reconciler.Reconcile(context.Background(), req); err == nil {
+		t.Fatal("expected reconcile to return an error when updating the dynamic ConfigMap fails")
+	}
+}

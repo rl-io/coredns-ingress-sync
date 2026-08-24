@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
@@ -410,6 +411,8 @@ func TestUpdateDynamicConfigMap_TargetChangedSameHostname(t *testing.T) {
 		VolumeName:           "coredns-ingress-sync-volume",
 	}
 	manager := NewManager(fakeClient, config)
+	sink := &recordingSink{}
+	manager.logger = logr.New(sink)
 
 	ctx := context.Background()
 	domains := []string{"example.com"}
@@ -427,6 +430,64 @@ func TestUpdateDynamicConfigMap_TargetChangedSameHostname(t *testing.T) {
 	dynamicConfig := configMap.Data["dynamic.server"]
 	assert.Contains(t, dynamicConfig, "rewrite name exact api.example.com new-target.example.com.")
 	assert.NotContains(t, dynamicConfig, "old-target.example.com")
+
+	// Verify the actual structured log output, not just the resulting
+	// ConfigMap content -- a regression that emitted changed:0, dropped
+	// sampleChanged, or failed to thread hostSources through would still
+	// leave the ConfigMap correct but the log misleading.
+	entry, ok := sink.find("Detected CoreDNS rewrite changes")
+	require.True(t, ok, "expected a \"Detected CoreDNS rewrite changes\" log entry")
+
+	changedCount, ok := entry.value("changed")
+	require.True(t, ok)
+	assert.Equal(t, 1, changedCount)
+
+	addedCount, ok := entry.value("added")
+	require.True(t, ok)
+	assert.Equal(t, 0, addedCount)
+
+	sampleChanged, ok := entry.value("sampleChanged")
+	require.True(t, ok)
+	assert.Equal(t, []string{"api.example.com: old-target.example.com. -> new-target.example.com. (source: IngressRoute:default/api-route)"}, sampleChanged)
+}
+
+// recordingSink is a minimal logr.LogSink that captures Info calls so tests
+// can assert on the actual structured log output, not just side effects.
+type recordingSink struct {
+	infos []logEntry
+}
+
+type logEntry struct {
+	msg string
+	kvs []interface{}
+}
+
+func (e logEntry) value(key string) (interface{}, bool) {
+	for i := 0; i+1 < len(e.kvs); i += 2 {
+		if k, ok := e.kvs[i].(string); ok && k == key {
+			return e.kvs[i+1], true
+		}
+	}
+	return nil, false
+}
+
+func (s *recordingSink) find(msg string) (logEntry, bool) {
+	for _, entry := range s.infos {
+		if entry.msg == msg {
+			return entry, true
+		}
+	}
+	return logEntry{}, false
+}
+
+func (s *recordingSink) Init(info logr.RuntimeInfo)                      {}
+func (s *recordingSink) Enabled(level int) bool                          { return true }
+func (s *recordingSink) Error(err error, msg string, kvs ...interface{}) {}
+func (s *recordingSink) WithValues(kvs ...interface{}) logr.LogSink      { return s }
+func (s *recordingSink) WithName(name string) logr.LogSink              { return s }
+
+func (s *recordingSink) Info(level int, msg string, kvs ...interface{}) {
+	s.infos = append(s.infos, logEntry{msg: msg, kvs: kvs})
 }
 
 func TestDiffHostCNAMEs(t *testing.T) {
@@ -468,6 +529,26 @@ func TestSampleHostChanges(t *testing.T) {
 	// Missing source info (e.g. hostSources was nil) should fall back to "unknown" rather than an empty string.
 	unknownSource := sampleHostChanges([]string{"added.example.com"}, oldHostCNAMEs, newHostCNAMEs, nil, 5)
 	assert.Equal(t, []string{"added.example.com -> new.example.com. (source: unknown)"}, unknownSource)
+}
+
+func TestSampleHostChanges_Truncates(t *testing.T) {
+	// With more hosts than the requested sample size, only the first n should
+	// be formatted -- exercising the truncation branch directly.
+	hosts := []string{"a.example.com", "b.example.com", "c.example.com", "d.example.com"}
+	newHostCNAMEs := map[string]string{
+		"a.example.com": "target.example.com.",
+		"b.example.com": "target.example.com.",
+		"c.example.com": "target.example.com.",
+		"d.example.com": "target.example.com.",
+	}
+
+	got := sampleHostChanges(hosts, nil, newHostCNAMEs, nil, 2)
+
+	assert.Len(t, got, 2)
+	assert.Equal(t, []string{
+		"a.example.com -> target.example.com. (source: unknown)",
+		"b.example.com -> target.example.com. (source: unknown)",
+	}, got)
 }
 
 func TestEnsureImport(t *testing.T) {
