@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.21](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.20...coredns-ingress-sync-v0.1.21) (2026-08-24)
+
+
+### Features
+
+* add support for Traefik IngressRoute (traefik.io/v1alpha1) ([#99](https://github.com/rl-io/coredns-ingress-sync/issues/99)) ([5762fba](https://github.com/rl-io/coredns-ingress-sync/commit/5762fba9c173a84570ae5ad2de1a383022e4abea))
+
+
+### Bug Fixes
+
+* **ci:** remove duplicate scope from dependabot commit messages ([7e57fb2](https://github.com/rl-io/coredns-ingress-sync/commit/7e57fb2d7d8e128148c3fb3d355f12318cb8bca7))
+
+
+### Miscellaneous
+
+* **docker:** bump golang from 1.26-alpine to 1.27-alpine ([#102](https://github.com/rl-io/coredns-ingress-sync/issues/102)) ([74d7fa9](https://github.com/rl-io/coredns-ingress-sync/commit/74d7fa991c012bcc957c8cb37f88eb13d20cdf32))
+* update Go dependencies ([#101](https://github.com/rl-io/coredns-ingress-sync/issues/101)) ([892e862](https://github.com/rl-io/coredns-ingress-sync/commit/892e86205153bf46adf0adad675ef68ad6f835e6))
+* update Go dependencies ([#97](https://github.com/rl-io/coredns-ingress-sync/issues/97)) ([57b629d](https://github.com/rl-io/coredns-ingress-sync/commit/57b629d1ffe891c8b8149aa109fae35593d573ad))
+
 ## [0.1.20](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.19...coredns-ingress-sync-v0.1.20) (2026-08-12)
 
 
