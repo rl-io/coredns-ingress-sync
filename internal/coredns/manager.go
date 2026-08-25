@@ -116,33 +116,34 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 			return nil
 		}
 
-		// Check if content has actually changed to avoid unnecessary updates
-		if existingConfig, exists := configMap.Data[m.config.DynamicConfigKey]; exists && existingConfig == dynamicConfig {
-			m.logger.V(1).Info("Dynamic ConfigMap is already up to date", 
+		// Compare the actual host -> CNAME mappings, not the raw rendered
+		// content: generateDynamicConfig embeds a "Last updated" timestamp
+		// that changes on every call, so a raw string comparison here would
+		// almost always report a change and rewrite the ConfigMap (and log a
+		// misleading "changed" summary) on every reconcile even when no
+		// hostname or target actually changed.
+		existingConfig := configMap.Data[m.config.DynamicConfigKey]
+		oldHostCNAMEs := extractHostCNAMEsFromDynamicConfig(existingConfig)
+		added, removed, changed := diffHostCNAMEs(oldHostCNAMEs, hostCNAMEMap)
+
+		if len(added) == 0 && len(removed) == 0 && len(changed) == 0 {
+			m.logger.V(1).Info("Dynamic ConfigMap is already up to date",
 				"configmap", m.config.DynamicConfigMapName)
 			duration := time.Since(startTime).Seconds()
 			metrics.RecordCoreDNSConfigUpdate(duration, true)
 			return nil
 		}
 
-		// If content changed, compute a small diff for logging (hosts added,
-		// removed, or kept but repointed at a different target CNAME -- e.g.
-		// an IngressRoute/Ingress/HTTPRoute updated in place without its
-		// hostname changing).
-		if existingConfig, exists := configMap.Data[m.config.DynamicConfigKey]; exists {
-			oldHostCNAMEs := extractHostCNAMEsFromDynamicConfig(existingConfig)
-			added, removed, changed := diffHostCNAMEs(oldHostCNAMEs, hostCNAMEMap)
-			// Log concise change summary with small samples, including which
-			// object caused each added/changed entry when known.
-			m.logger.Info("Detected CoreDNS rewrite changes",
-				"added", len(added),
-				"removed", len(removed),
-				"changed", len(changed),
-				"sampleAdded", sampleHostChanges(added, oldHostCNAMEs, hostCNAMEMap, hostSources, 5),
-				"sampleRemoved", sampleStrings(removed, 5),
-				"sampleChanged", sampleHostChanges(changed, oldHostCNAMEs, hostCNAMEMap, hostSources, 5),
-			)
-		}
+		// Log concise change summary with small samples, including which
+		// object caused each added/changed entry when known.
+		m.logger.Info("Detected CoreDNS rewrite changes",
+			"added", len(added),
+			"removed", len(removed),
+			"changed", len(changed),
+			"sampleAdded", sampleHostChanges(added, oldHostCNAMEs, hostCNAMEMap, hostSources, 5),
+			"sampleRemoved", sampleStrings(removed, 5),
+			"sampleChanged", sampleHostChanges(changed, oldHostCNAMEs, hostCNAMEMap, hostSources, 5),
+		)
 
 		// Update ConfigMap with fresh data
 		configMap.Data[m.config.DynamicConfigKey] = dynamicConfig
