@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.22](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.21...coredns-ingress-sync-v0.1.22) (2026-08-24)
+
+
+### Features
+
+* detect target-CNAME changes and log rewrite-rule change source ([#103](https://github.com/rl-io/coredns-ingress-sync/issues/103)) ([da3ea43](https://github.com/rl-io/coredns-ingress-sync/commit/da3ea434d558ca29e48782ec7b5178ad9a385c23))
+
 ## [0.1.21](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.20...coredns-ingress-sync-v0.1.21) (2026-08-24)
 
 
