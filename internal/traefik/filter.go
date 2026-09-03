@@ -73,6 +73,13 @@ func (f *Filter) WatchesAllNamespaces() bool {
 	return f.nsScope.WatchesAllNamespaces()
 }
 
+// ClassCount reports this source's tier width in the cross-source ClassIndex
+// offset chain (Ingress -> Gateway API -> IngressRoute -> Service).
+// IngressRoute has no class-like field, so it's always exactly one tier.
+func (f *Filter) ClassCount() int {
+	return 1
+}
+
 // IsExcludedIngressRoute returns true if the given IngressRoute should be
 // excluded by name/namespace.
 func (f *Filter) IsExcludedIngressRoute(ir *traefikv1alpha1.IngressRoute) bool {

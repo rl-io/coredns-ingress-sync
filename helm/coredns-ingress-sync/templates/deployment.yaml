@@ -50,6 +50,12 @@ spec:
         - name: INGRESSROUTE_TARGET_CNAME
           value: {{ .Values.controller.ingressRouteTargetCNAME | quote }}
         {{- end }}
+        - name: SERVICE_ANNOTATIONS_ENABLED
+          value: {{ .Values.controller.serviceAnnotationsEnabled | quote }}
+        - name: SERVICE_HOSTNAME_ANNOTATION_KEY
+          value: {{ .Values.controller.serviceHostnameAnnotationKey | quote }}
+        - name: CLUSTER_DOMAIN
+          value: {{ .Values.controller.clusterDomain | quote }}
         - name: WATCH_NAMESPACES
           value: {{ if .Values.controller.watchNamespaces }}{{ if kindIs "slice" .Values.controller.watchNamespaces }}{{ join "," .Values.controller.watchNamespaces | quote }}{{ else }}{{ .Values.controller.watchNamespaces | quote }}{{ end }}{{ else }}""{{ end }}
         - name: EXCLUDE_NAMESPACES
@@ -60,6 +66,8 @@ spec:
           value: {{ if .Values.controller.excludeHTTPRoutes }}{{ if kindIs "slice" .Values.controller.excludeHTTPRoutes }}{{ join "," .Values.controller.excludeHTTPRoutes | quote }}{{ else }}{{ .Values.controller.excludeHTTPRoutes | quote }}{{ end }}{{ else }}""{{ end }}
         - name: EXCLUDE_INGRESSROUTES
           value: {{ if .Values.controller.excludeIngressRoutes }}{{ if kindIs "slice" .Values.controller.excludeIngressRoutes }}{{ join "," .Values.controller.excludeIngressRoutes | quote }}{{ else }}{{ .Values.controller.excludeIngressRoutes | quote }}{{ end }}{{ else }}""{{ end }}
+        - name: EXCLUDE_SERVICES
+          value: {{ if .Values.controller.excludeServices }}{{ if kindIs "slice" .Values.controller.excludeServices }}{{ join "," .Values.controller.excludeServices | quote }}{{ else }}{{ .Values.controller.excludeServices | quote }}{{ end }}{{ else }}""{{ end }}
         - name: ANNOTATION_ENABLED_KEY
           value: {{ .Values.controller.annotationEnabledKey | quote }}
         - name: ANNOTATION_PRIORITY_KEY
