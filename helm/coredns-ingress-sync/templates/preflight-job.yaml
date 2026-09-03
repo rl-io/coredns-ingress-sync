@@ -64,6 +64,20 @@ spec:
           value: {{ if .Values.controller.mountPath }}{{ .Values.controller.mountPath | quote }}{{ else }}{{ printf "/etc/coredns/custom/%s" (include "coredns-ingress-sync.fullname" .) | quote }}{{ end }}
         - name: RELEASE_INSTANCE
           value: {{ include "coredns-ingress-sync.fullname" . | quote }}
+        {{- if .Values.controller.gatewayClassMappings }}
+        - name: GATEWAY_CLASS_MAPPINGS
+          value: {{ .Values.controller.gatewayClassMappings | toJson | quote }}
+        {{- end }}
+        {{- if .Values.controller.ingressRouteTargetCNAME }}
+        - name: INGRESSROUTE_TARGET_CNAME
+          value: {{ .Values.controller.ingressRouteTargetCNAME | quote }}
+        {{- end }}
+        - name: SERVICE_ANNOTATIONS_ENABLED
+          value: {{ .Values.controller.serviceAnnotationsEnabled | quote }}
+        - name: WATCH_NAMESPACES
+          value: {{ if .Values.controller.watchNamespaces }}{{ if kindIs "slice" .Values.controller.watchNamespaces }}{{ join "," .Values.controller.watchNamespaces | quote }}{{ else }}{{ .Values.controller.watchNamespaces | quote }}{{ end }}{{ else }}""{{ end }}
+        - name: EXCLUDE_NAMESPACES
+          value: {{ if .Values.controller.excludeNamespaces }}{{ if kindIs "slice" .Values.controller.excludeNamespaces }}{{ join "," .Values.controller.excludeNamespaces | quote }}{{ else }}{{ .Values.controller.excludeNamespaces | quote }}{{ end }}{{ else }}""{{ end }}
         resources:
           limits:
             cpu: 100m

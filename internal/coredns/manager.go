@@ -116,22 +116,32 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 			return nil
 		}
 
-		// Check if content has actually changed to avoid unnecessary updates
-		if existingConfig, exists := configMap.Data[m.config.DynamicConfigKey]; exists && existingConfig == dynamicConfig {
-			m.logger.V(1).Info("Dynamic ConfigMap is already up to date", 
+		// Compare rendered content with the "Last updated" timestamp line
+		// stripped out, not the parsed host -> CNAME map: the map is
+		// last-write-wins on duplicate host lines, but CoreDNS's rewrite
+		// plugin is first-match-wins, so a map diff can miss a real content
+		// change (e.g. a duplicate or malformed line) that parses to the
+		// same map. The map is still used below, purely to build the
+		// human-readable added/removed/changed log summary.
+		existingConfig := configMap.Data[m.config.DynamicConfigKey]
+
+		if stripLastUpdated(existingConfig) == stripLastUpdated(dynamicConfig) {
+			m.logger.V(1).Info("Dynamic ConfigMap is already up to date",
 				"configmap", m.config.DynamicConfigMapName)
 			duration := time.Since(startTime).Seconds()
 			metrics.RecordCoreDNSConfigUpdate(duration, true)
 			return nil
 		}
 
-		// If content changed, compute a small diff for logging (hosts added,
-		// removed, or kept but repointed at a different target CNAME -- e.g.
-		// an IngressRoute/Ingress/HTTPRoute updated in place without its
-		// hostname changing).
-		if existingConfig, exists := configMap.Data[m.config.DynamicConfigKey]; exists {
-			oldHostCNAMEs := extractHostCNAMEsFromDynamicConfig(existingConfig)
-			added, removed, changed := diffHostCNAMEs(oldHostCNAMEs, hostCNAMEMap)
+		oldHostCNAMEs := extractHostCNAMEsFromDynamicConfig(existingConfig)
+		added, removed, changed := diffHostCNAMEs(oldHostCNAMEs, hostCNAMEMap)
+
+		// Content can differ even when the parsed map doesn't (e.g. repairing
+		// a stale duplicate/malformed rewrite line), so only log the change
+		// summary when it reflects an actual host-level diff -- otherwise
+		// this would emit the same misleading all-zero summary this PR
+		// otherwise suppresses.
+		if len(added) > 0 || len(removed) > 0 || len(changed) > 0 {
 			// Log concise change summary with small samples, including which
 			// object caused each added/changed entry when known.
 			m.logger.Info("Detected CoreDNS rewrite changes",
@@ -142,6 +152,9 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 				"sampleRemoved", sampleStrings(removed, 5),
 				"sampleChanged", sampleHostChanges(changed, oldHostCNAMEs, hostCNAMEMap, hostSources, 5),
 			)
+		} else {
+			m.logger.V(1).Info("Repairing dynamic ConfigMap content with no host-level rewrite changes",
+				"configmap", m.config.DynamicConfigMapName)
 		}
 
 		// Update ConfigMap with fresh data
@@ -202,6 +215,20 @@ func (m *Manager) generateDynamicConfig(domains []string, hostCNAMEMap map[strin
 	}
 
 	return config.String()
+}
+
+// stripLastUpdated drops the "# Last updated: ..." line generateDynamicConfig
+// embeds, so two renders that differ only by timestamp compare equal.
+func stripLastUpdated(content string) string {
+	lines := strings.Split(content, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "# Last updated:") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
 }
 
 // extractHostCNAMEsFromDynamicConfig parses rewrite rules and returns a map

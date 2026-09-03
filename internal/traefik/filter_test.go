@@ -25,6 +25,10 @@ func TestFilter_Enabled(t *testing.T) {
 	assert.True(t, NewFilter("traefik.traefik.svc.cluster.local.", "", "", "", "", "").Enabled())
 }
 
+func TestFilter_ClassCount(t *testing.T) {
+	assert.Equal(t, 1, NewFilter("traefik.traefik.svc.cluster.local.", "", "", "", "", "").ClassCount())
+}
+
 func TestFilter_IsExcludedIngressRoute(t *testing.T) {
 	filter := NewFilter("traefik.traefik.svc.cluster.local.", "", "", "excluded-route,other-ns/other-route", "", "")
 

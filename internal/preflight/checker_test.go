@@ -1354,3 +1354,251 @@ func TestChecker_RunChecks_IngressRouteEnabled_Error(t *testing.T) {
 	last := results[len(results)-1]
 	assert.False(t, last.Passed)
 }
+
+// serviceListErrorClient wraps a fake client and fails List calls against
+// ServiceList, letting checkServiceWatch's single List call return a
+// controlled error.
+type serviceListErrorClient struct {
+	client.Client
+	err error
+}
+
+func (s *serviceListErrorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*corev1.ServiceList); ok {
+		return s.err
+	}
+	return s.Client.List(ctx, list, opts...)
+}
+
+func TestChecker_CheckServiceWatch(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	config := Config{ServicesEnabled: true}
+	checker := NewChecker(fakeClient, config, logger)
+
+	result, err := checker.checkServiceWatch(context.Background())
+
+	assert.NoError(t, err)
+	assert.True(t, result.Passed)
+	assert.Contains(t, result.Message, "Service")
+	assert.Equal(t, "info", result.Severity)
+}
+
+func TestChecker_CheckServiceWatch_Forbidden(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	forbiddenErr := errors.NewForbidden(
+		schema.GroupResource{Group: "", Resource: "services"},
+		"",
+		fmt.Errorf("services is forbidden"),
+	)
+	wrapped := &serviceListErrorClient{
+		Client: fake.NewClientBuilder().WithScheme(scheme).Build(),
+		err:    forbiddenErr,
+	}
+	config := Config{ServicesEnabled: true}
+	checker := NewChecker(wrapped, config, logger)
+
+	result, err := checker.checkServiceWatch(context.Background())
+
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
+	assert.Contains(t, result.Message, "Permission denied")
+	assert.Equal(t, "error", result.Severity)
+}
+
+func TestChecker_CheckServiceWatch_GenericError(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	wrapped := &serviceListErrorClient{
+		Client: fake.NewClientBuilder().WithScheme(scheme).Build(),
+		err:    fmt.Errorf("internal server error"),
+	}
+	config := Config{ServicesEnabled: true}
+	checker := NewChecker(wrapped, config, logger)
+
+	result, err := checker.checkServiceWatch(context.Background())
+
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
+	assert.Contains(t, result.Message, "Error accessing Service")
+	assert.Equal(t, "error", result.Severity)
+}
+
+func TestChecker_RunChecks_ServicesEnabled(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+		}).
+		Build()
+
+	config := Config{
+		DeploymentName:       "test-deployment",
+		ReleaseInstance:      "test-instance",
+		MountPath:            "/etc/coredns/custom/test",
+		VolumeName:           "test-volume",
+		DynamicConfigMapName: "test-configmap",
+		CoreDNSNamespace:     "kube-system",
+		IngressClass:         "nginx",
+		TargetCNAME:          "ingress-nginx.ingress-nginx.svc.cluster.local.",
+		ServicesEnabled:      true,
+	}
+
+	checker := NewChecker(fakeClient, config, logger)
+	results, err := checker.RunChecks(context.Background())
+
+	assert.NoError(t, err)
+	last := results[len(results)-1]
+	assert.Contains(t, last.Message, "Service")
+	assert.True(t, last.Passed)
+}
+
+func TestChecker_RunChecks_ServicesEnabled_Error(t *testing.T) {
+	logger := zap.New(zap.UseDevMode(true))
+
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	wrapped := &serviceListErrorClient{
+		Client: fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithRuntimeObjects(&appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+			}).
+			Build(),
+		err: fmt.Errorf("boom"),
+	}
+
+	config := Config{
+		DeploymentName:       "test-deployment",
+		ReleaseInstance:      "test-instance",
+		MountPath:            "/etc/coredns/custom/test",
+		VolumeName:           "test-volume",
+		DynamicConfigMapName: "test-configmap",
+		CoreDNSNamespace:     "kube-system",
+		IngressClass:         "nginx",
+		TargetCNAME:          "ingress-nginx.ingress-nginx.svc.cluster.local.",
+		ServicesEnabled:      true,
+	}
+
+	checker := NewChecker(wrapped, config, logger)
+	results, err := checker.RunChecks(context.Background())
+
+	// checkServiceWatch itself never returns a non-nil error (List errors are
+	// captured in the CheckResult), so RunChecks should still succeed, with
+	// the Service check reported as failed.
+	assert.NoError(t, err)
+	last := results[len(results)-1]
+	assert.False(t, last.Passed)
+}
+
+// namespaceRecordingClient wraps a fake client and records the Namespace
+// field of every List call's resolved options, in call order -- "" means an
+// unscoped (cluster-wide) List.
+type namespaceRecordingClient struct {
+	client.Client
+	namespaces []string
+}
+
+func (n *namespaceRecordingClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	listOpts := &client.ListOptions{}
+	for _, opt := range opts {
+		opt.ApplyToList(listOpts)
+	}
+	n.namespaces = append(n.namespaces, listOpts.Namespace)
+	return n.Client.List(ctx, list, opts...)
+}
+
+func TestChecker_ListNamespaceScoped_AllNamespaces(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	recording := &namespaceRecordingClient{Client: fake.NewClientBuilder().WithScheme(scheme).Build()}
+	checker := NewChecker(recording, Config{}, zap.New(zap.UseDevMode(true)))
+
+	err := checker.listNamespaceScoped(context.Background(), func() client.ObjectList { return &corev1.ServiceList{} })
+
+	assert.NoError(t, err)
+	assert.Equal(t, []string{""}, recording.namespaces, "nil WatchNamespaces must produce a single unscoped List")
+}
+
+func TestChecker_ListNamespaceScoped_PerNamespace(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	recording := &namespaceRecordingClient{Client: fake.NewClientBuilder().WithScheme(scheme).Build()}
+	checker := NewChecker(recording, Config{WatchNamespaces: []string{"ns1", "ns2"}}, zap.New(zap.UseDevMode(true)))
+
+	err := checker.listNamespaceScoped(context.Background(), func() client.ObjectList { return &corev1.ServiceList{} })
+
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"ns1", "ns2"}, recording.namespaces, "an explicit WatchNamespaces list must produce one List per namespace, matching the per-namespace Roles the chart grants")
+}
+
+// namespaceErrorClient wraps a fake client and fails a per-namespace List
+// once it reaches a specific namespace, recording every namespace attempted
+// up to and including the failure.
+type namespaceErrorClient struct {
+	client.Client
+	failOn string
+	err    error
+	seen   []string
+}
+
+func (n *namespaceErrorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	listOpts := &client.ListOptions{}
+	for _, opt := range opts {
+		opt.ApplyToList(listOpts)
+	}
+	n.seen = append(n.seen, listOpts.Namespace)
+	if listOpts.Namespace == n.failOn {
+		return n.err
+	}
+	return n.Client.List(ctx, list, opts...)
+}
+
+func TestChecker_ListNamespaceScoped_PerNamespaceError(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	failing := &namespaceErrorClient{
+		Client: fake.NewClientBuilder().WithScheme(scheme).Build(),
+		failOn: "ns2",
+		err:    fmt.Errorf("boom"),
+	}
+	checker := NewChecker(failing, Config{WatchNamespaces: []string{"ns1", "ns2", "ns3"}}, zap.New(zap.UseDevMode(true)))
+
+	err := checker.listNamespaceScoped(context.Background(), func() client.ObjectList { return &corev1.ServiceList{} })
+
+	assert.EqualError(t, err, "boom")
+	assert.Equal(t, []string{"ns1", "ns2"}, failing.seen, "must stop at the first namespace error, not continue to ns3")
+}
+
+func TestConfigFromEnv_WatchNamespaces(t *testing.T) {
+	t.Setenv("WATCH_NAMESPACES", "ns1,ns2,ns3")
+	t.Setenv("EXCLUDE_NAMESPACES", "ns2")
+
+	baseConfig := config.Load()
+	result := ConfigFromEnv(baseConfig)
+
+	assert.Equal(t, []string{"ns1", "ns3"}, result.WatchNamespaces, "an excluded namespace must be dropped from the derived watch list")
+}
+
+func TestConfigFromEnv_WatchNamespaces_DefaultsToNil(t *testing.T) {
+	baseConfig := config.Load()
+	result := ConfigFromEnv(baseConfig)
+
+	assert.Nil(t, result.WatchNamespaces, "no WATCH_NAMESPACES set must mean watch all namespaces (nil), matching the chart's cluster-wide RBAC default")
+}

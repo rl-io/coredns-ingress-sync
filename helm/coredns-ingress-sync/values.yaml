@@ -120,6 +120,21 @@ controller:
   ingressRouteTargetCNAME: ""
   #  ingressRouteTargetCNAME: "traefik.traefik.svc.cluster.local."
 
+  # Annotation-driven Service support: lets a plain Service (no Ingress/
+  # HTTPRoute/IngressRoute) declare an internal-only hostname via annotation.
+  # Off by default -- watching all cluster Services is a broader RBAC/cache
+  # footprint than the CRD-based sources above, so this must be explicitly
+  # enabled. Strongly recommend setting watchNamespaces alongside this, since
+  # the cluster-wide watch caches every Service in the cluster, not just
+  # annotated ones.
+  serviceAnnotationsEnabled: false
+  serviceHostnameAnnotationKey: "coredns-ingress-sync-hostname"
+  excludeServices: ""
+  # clusterDomain: only needed if your cluster's kubelet --cluster-domain
+  # isn't the Kubernetes default. Used to build each annotated Service's
+  # target CNAME (<service>.<namespace>.svc.<clusterDomain>.).
+  clusterDomain: "cluster.local"
+
   # Namespace filtering - empty means watch all namespaces
   # Set to comma-separated list to watch specific namespaces: "default,production,staging"
   watchNamespaces: ""

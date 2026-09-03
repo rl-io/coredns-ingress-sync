@@ -25,6 +25,11 @@ rules:
   resources: ["ingressroutes"]
   verbs: ["get", "list", "watch"]
 {{- end }}
+{{- if .Values.controller.serviceAnnotationsEnabled }}
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list", "watch"]
+{{- end }}
 - apiGroups: [""]
   resources: ["configmaps"]
   verbs: ["get", "list", "watch", "create", "update", "patch"]
@@ -85,6 +90,11 @@ rules:
 {{- if $.Values.controller.ingressRouteTargetCNAME }}
 - apiGroups: ["traefik.io"]
   resources: ["ingressroutes"]
+  verbs: ["get", "list", "watch"]
+{{- end }}
+{{- if $.Values.controller.serviceAnnotationsEnabled }}
+- apiGroups: [""]
+  resources: ["services"]
   verbs: ["get", "list", "watch"]
 {{- end }}
 ---

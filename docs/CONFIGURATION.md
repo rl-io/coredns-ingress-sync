@@ -45,6 +45,21 @@ controller:
   ingressRouteTargetCNAME: ""
   #  ingressRouteTargetCNAME: "traefik.traefik.svc.cluster.local."
 
+  # Annotation-driven Service support: lets a plain Service (no Ingress/
+  # HTTPRoute/IngressRoute) declare an internal-only hostname via annotation,
+  # for services that have no routing resource at all. Off by default --
+  # watching all cluster Services is a broader RBAC/cache footprint than the
+  # CRD-based sources above, so this must be explicitly enabled. Strongly
+  # recommend setting watchNamespaces alongside this, since the cluster-wide
+  # watch caches every Service in the cluster, not just annotated ones.
+  serviceAnnotationsEnabled: false
+  serviceHostnameAnnotationKey: "coredns-ingress-sync-hostname"
+  excludeServices: ""
+  # clusterDomain: only needed if your cluster's kubelet --cluster-domain
+  # isn't the Kubernetes default. Used to build each annotated Service's
+  # target CNAME (<service>.<namespace>.svc.<clusterDomain>.).
+  clusterDomain: "cluster.local"
+
   # Namespace filtering - controls which namespaces to monitor for ingresses
   # Empty string = watch all namespaces cluster-wide (default)
   # Comma-separated list = watch only specific namespaces
@@ -210,11 +225,15 @@ The controller supports configuration through environment variables (set via Hel
 | `GATEWAY_CLASS` | GatewayClass to watch (legacy single-class; used when `GATEWAY_CLASS_MAPPINGS` is unset). Setting this enables Gateway API support. | `""` (Gateway API disabled) |
 | `GATEWAY_TARGET_CNAME` | Target service for DNS resolution for the legacy single-class Gateway config (used when `GATEWAY_CLASS_MAPPINGS` is unset) | `""` |
 | `INGRESSROUTE_TARGET_CNAME` | Single target CNAME every processable Traefik `IngressRoute` (`traefik.io/v1alpha1`) resolves to, additive to Ingress and Gateway API support. Unlike the mapping lists above, `IngressRoute` has no class-like field, so this is one value, not an ordered list. When unset, IngressRoute support is disabled entirely — no watches, RBAC, or CRD List/Get calls. | `""` (IngressRoute support disabled) |
+| `SERVICE_ANNOTATIONS_ENABLED` | Enables annotation-driven Service support, additive to the three sources above. When `false`, no Service watches, RBAC, or List calls are added. | `false` |
+| `SERVICE_HOSTNAME_ANNOTATION_KEY` | Annotation key on a Service whose value is the hostname it should answer to; its presence is what makes the Service a candidate | `coredns-ingress-sync-hostname` |
+| `CLUSTER_DOMAIN` | Cluster domain used to build each annotated Service's target CNAME (`<service>.<namespace>.svc.<CLUSTER_DOMAIN>.`) | `cluster.local` |
 | `WATCH_NAMESPACES` | Namespaces to monitor (empty = all) | `""` |
 | `EXCLUDE_NAMESPACES` | Namespaces to exclude (comma-separated) | `""` |
 | `EXCLUDE_INGRESSES` | Ingresses to exclude (name or namespace/name, comma-separated) | `""` |
 | `EXCLUDE_HTTPROUTES` | HTTPRoutes to exclude (name or namespace/name, comma-separated) | `""` |
 | `EXCLUDE_INGRESSROUTES` | IngressRoutes to exclude (name or namespace/name, comma-separated) | `""` |
+| `EXCLUDE_SERVICES` | Services to exclude (name or namespace/name, comma-separated) | `""` |
 | `ANNOTATION_ENABLED_KEY` | Annotation key to control inclusion; false-like value disables | `coredns-ingress-sync-enabled` |
 | `ANNOTATION_PRIORITY_KEY` | Annotation key for per-ingress priority (integer, higher wins) when multiple ingresses share a hostname | `coredns-ingress-sync-priority` |
 | `COREDNS_NAMESPACE` | CoreDNS namespace | `kube-system` |
@@ -487,8 +506,8 @@ OR syntax); hosts are deduplicated within one `IngressRoute` across its `spec.ro
 
 Cross-source tiebreak, when multiple sources claim the same hostname, uses the same
 `annotationPriorityKey` annotation and config-order rules as multi-class Ingress and Gateway API
-(see above), with **Ingress winning ties by default, then Gateway API, then IngressRoute** — the
-incumbent stays authoritative during a migration, and any source can be promoted per-host via the
+(see above), with **Ingress winning ties by default, then Gateway API, then IngressRoute → Service** —
+the incumbent stays authoritative during a migration, and any source can be promoted per-host via the
 priority annotation.
 
 `excludeIngressRoutes` / `EXCLUDE_INGRESSROUTES` and `annotationEnabledKey` behave the same as their
@@ -506,6 +525,62 @@ Ingress/HTTPRoute equivalents.
 When `ingressRouteTargetCNAME` is unset, no `IngressRoute` watches, RBAC rules, or CRD List/Get
 calls are added — a preflight check will also fail fast with a clear message if IngressRoute support
 is enabled but the CRD isn't installed or RBAC is missing.
+
+### Service annotation configuration
+
+Annotation-driven Service support lets a plain `Service` — one with no Ingress, HTTPRoute, or
+IngressRoute at all — declare an internal-only hostname directly, additive to the three sources
+above and off by default. Unlike those sources, there's no shared per-class target CNAME to
+configure: each annotated Service is its own target
+(`<service>.<namespace>.svc.<clusterDomain>.`).
+
+```yaml
+controller:
+  serviceAnnotationsEnabled: true
+  serviceHostnameAnnotationKey: "coredns-ingress-sync-hostname"
+  clusterDomain: "cluster.local"
+```
+
+The hostname annotation's presence is what makes a Service a candidate — there's no separate
+"enabled" annotation, mirroring how `ingressClassName`/`gatewayClassName` being set (or an
+`IngressRoute` simply existing) signals participation for the other sources:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: student-usage-reports
+  namespace: broadcast
+  annotations:
+    coredns-ingress-sync-hostname: "student-usage-reports.blake-staging.com"
+spec:
+  selector:
+    app: student-usage-reports
+  ports:
+    - port: 80
+```
+
+This resolves `student-usage-reports.blake-staging.com` internally to
+`student-usage-reports.broadcast.svc.cluster.local.` — no Ingress/HTTPRoute/IngressRoute required.
+
+Cross-source tiebreak works the same way as the other sources: **Ingress wins by default, then
+Gateway API, then IngressRoute, then Service** (the newest/most-implicit source), overridable
+per-object via `annotationPriorityKey`. `excludeServices` / `EXCLUDE_SERVICES` and
+`annotationEnabledKey` behave the same as their Ingress equivalents (opt a Service back out with a
+false-like value on `annotationEnabledKey`, even if the hostname annotation is present).
+
+**Known limitations**:
+- One literal hostname per Service annotation — no wildcard or multi-host support (each Service is
+  its own single CNAME target).
+- No readiness/endpoint gating — annotation presence alone determines candidacy, regardless of
+  whether the Service has any ready backing Pods.
+- Cluster-wide deployments (`watchNamespaces: ""`) cache every Service in the cluster once this is
+  enabled, not just annotated ones — set `watchNamespaces` alongside this flag to bound the cache.
+- `clusterDomain` must match the cluster's actual kubelet `--cluster-domain`, or the generated
+  CNAMEs will be wrong.
+
+When `serviceAnnotationsEnabled` is `false` (the default), no Service watches, RBAC rules, or List
+calls are added.
 
 ### Custom Target Service
 

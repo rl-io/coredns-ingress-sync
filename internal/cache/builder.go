@@ -19,17 +19,20 @@ type ConfigBuilder struct {
 	coreDNSNamespace    string
 	gatewayAPIEnabled   bool
 	ingressRouteEnabled bool
+	servicesEnabled     bool
 }
 
 // ConfigBuilderOptions configures a ConfigBuilder. GatewayAPIEnabled controls
 // whether Gateway/HTTPRoute are added to the cache's ByObject scoping --
 // leave false for pure-Ingress deployments so no Gateway API types are ever
 // touched. IngressRouteEnabled does the same for Traefik IngressRoute.
+// ServicesEnabled does the same for annotation-driven Service support.
 type ConfigBuilderOptions struct {
 	WatchNamespaces     []string
 	CoreDNSNamespace    string
 	GatewayAPIEnabled   bool
 	IngressRouteEnabled bool
+	ServicesEnabled     bool
 }
 
 // NewConfigBuilder creates a new cache config builder
@@ -39,6 +42,7 @@ func NewConfigBuilder(opts ConfigBuilderOptions) *ConfigBuilder {
 		coreDNSNamespace:    opts.CoreDNSNamespace,
 		gatewayAPIEnabled:   opts.GatewayAPIEnabled,
 		ingressRouteEnabled: opts.IngressRouteEnabled,
+		servicesEnabled:     opts.ServicesEnabled,
 	}
 }
 
@@ -91,6 +95,12 @@ func (cb *ConfigBuilder) BuildCacheOptions() cache.Options {
 
 		if cb.ingressRouteEnabled {
 			cacheOptions.ByObject[&traefikv1alpha1.IngressRoute{}] = cache.ByObject{
+				Namespaces: ingressNamespaceMap,
+			}
+		}
+
+		if cb.servicesEnabled {
+			cacheOptions.ByObject[&corev1.Service{}] = cache.ByObject{
 				Namespaces: ingressNamespaceMap,
 			}
 		}
