@@ -8,7 +8,7 @@ This eliminates the need to create internal ingress resources, manage private DN
 
 This has been tested to work with [ingress-nginx](https://github.com/kubernetes/ingress-nginx) but should in theory work with any ingress controller that supports the `ingressClassName` field and has a stable service name. Gateway API support is additive and opt-in (disabled by default) and has been tested with Traefik's `traefik` GatewayClass. Traefik `IngressRoute` (`traefik.io/v1alpha1`) support is likewise additive and opt-in, for deployments using Traefik's native CRD instead of Gateway API. Annotation-driven Service support is also additive and opt-in, for internal-only services with no routing resource at all — a plain Service declares its own hostname via annotation.
 
-**Important Note:** This requires the ingress controller to handle TLS termination (have valid TLS certificates) for the hostnames you want to resolve internally. If the ingress controller lacks proper TLS certificates, internal services attempting to connect to the rewritten hostnames will fail with TLS errors. This occurs because clients will attempt HTTPS connections to the hostname, and the DNS rewrite only changes where the hostname resolves—not the protocol used to connect.
+**Important Note:** For hostnames sourced from Ingress, Gateway API, or IngressRoute, the target controller must handle TLS termination with valid certificates; otherwise HTTPS clients will fail because DNS rewriting changes only the destination, not the protocol. Annotation-driven Service records resolve directly to the Service, so clients must use a protocol and TLS configuration supported by that Service.
 
 ## Features
 
