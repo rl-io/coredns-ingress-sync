@@ -90,12 +90,18 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 			return reconcile.Result{RequeueAfter: time.Minute}, err
 		}
 	} else {
-		// List ingresses from specific namespaces
+		// List ingresses from specific namespaces. A per-namespace failure
+		// must abort the reconcile rather than be skipped: silently treating
+		// it as "no ingresses in this namespace" would make that namespace's
+		// real rewrite rules look removed once the (incomplete) result is
+		// written to the ConfigMap.
 		for _, ns := range watchNamespaces {
 			var nsIngressList networkingv1.IngressList
 			if err := r.List(ctx, &nsIngressList, client.InNamespace(ns)); err != nil {
 				logger.Error(err, "Failed to list ingresses in namespace", "namespace", ns)
-				continue
+				duration := time.Since(startTime).Seconds()
+				metrics.RecordReconciliationError(duration, "ingress_list")
+				return reconcile.Result{RequeueAfter: time.Minute}, err
 			}
 			ingressList.Items = append(ingressList.Items, nsIngressList.Items...)
 		}
@@ -217,11 +223,15 @@ func (r *IngressReconciler) extractGatewayCandidates(ctx context.Context, logger
 			return nil, err
 		}
 	} else {
+		// A per-namespace failure must abort rather than be skipped: treating
+		// it as "no gateways in this namespace" would make that namespace's
+		// real rewrite rules look removed once the (incomplete) result is
+		// written to the ConfigMap.
 		for _, ns := range watchNamespaces {
 			var nsGatewayList gatewayv1.GatewayList
 			if err := r.List(ctx, &nsGatewayList, client.InNamespace(ns)); err != nil {
 				logger.Error(err, "Failed to list gateways in namespace", "namespace", ns)
-				continue
+				return nil, err
 			}
 			gatewayList.Items = append(gatewayList.Items, nsGatewayList.Items...)
 		}
@@ -238,7 +248,7 @@ func (r *IngressReconciler) extractGatewayCandidates(ctx context.Context, logger
 			var nsRouteList gatewayv1.HTTPRouteList
 			if err := r.List(ctx, &nsRouteList, client.InNamespace(ns)); err != nil {
 				logger.Error(err, "Failed to list httproutes in namespace", "namespace", ns)
-				continue
+				return nil, err
 			}
 			routeList.Items = append(routeList.Items, nsRouteList.Items...)
 		}
@@ -271,11 +281,15 @@ func (r *IngressReconciler) extractTraefikCandidates(ctx context.Context, logger
 			return nil, err
 		}
 	} else {
+		// A per-namespace failure must abort rather than be skipped: treating
+		// it as "no ingressroutes in this namespace" would make that
+		// namespace's real rewrite rules look removed once the (incomplete)
+		// result is written to the ConfigMap.
 		for _, ns := range watchNamespaces {
 			var nsRouteList traefikv1alpha1.IngressRouteList
 			if err := r.List(ctx, &nsRouteList, client.InNamespace(ns)); err != nil {
 				logger.Error(err, "Failed to list ingressroutes in namespace", "namespace", ns)
-				continue
+				return nil, err
 			}
 			routeList.Items = append(routeList.Items, nsRouteList.Items...)
 		}
@@ -311,11 +325,15 @@ func (r *IngressReconciler) extractServiceCandidates(ctx context.Context, logger
 			return nil, err
 		}
 	} else {
+		// A per-namespace failure must abort rather than be skipped: treating
+		// it as "no services in this namespace" would make that namespace's
+		// real rewrite rules look removed once the (incomplete) result is
+		// written to the ConfigMap.
 		for _, ns := range watchNamespaces {
 			var nsServiceList corev1.ServiceList
 			if err := r.List(ctx, &nsServiceList, client.InNamespace(ns)); err != nil {
 				logger.Error(err, "Failed to list services in namespace", "namespace", ns)
-				continue
+				return nil, err
 			}
 			serviceList.Items = append(serviceList.Items, nsServiceList.Items...)
 		}

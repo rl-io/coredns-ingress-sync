@@ -1308,7 +1308,7 @@ func TestReconcile_HTTPRouteListError_WatchAll(t *testing.T) {
 	}
 }
 
-func TestReconcile_GatewayListError_PerNamespace_Continues(t *testing.T) {
+func TestReconcile_GatewayListError_PerNamespace_Aborts(t *testing.T) {
 	gw := &gatewayv1.Gateway{
 		ObjectMeta: metav1.ObjectMeta{Name: "traefik-gw", Namespace: "ns-b"},
 		Spec:       gatewayv1.GatewaySpec{GatewayClassName: "traefik"},
@@ -1323,13 +1323,20 @@ func TestReconcile_GatewayListError_PerNamespace_Continues(t *testing.T) {
 		},
 	}
 
-	reconciler, c := gatewayReconcilerFixture(t, "ns-a,ns-b", []client.Object{gw, route}, func(c client.Client) client.Client {
-		return &gatewayAPIListErrorClient{Client: c, failGatewayList: true, failNamespace: "ns-a", err: fmt.Errorf("gateway list boom in ns-a")}
-	})
+	reconciler, c := gatewayReconcilerFixture(t, "ns-a,ns-b", []client.Object{gw, route}, nil)
 
 	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
 	if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
-		t.Fatalf("expected reconcile to continue past a single namespace's List error, got: %v", err)
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	// A subsequent per-namespace List failure must abort the reconcile
+	// rather than silently proceed with an incomplete candidate set --
+	// otherwise ns-b's already-published host would be dropped from the
+	// ConfigMap just because ns-a's List call failed transiently.
+	reconciler.Client = &gatewayAPIListErrorClient{Client: c, failGatewayList: true, failNamespace: "ns-a", err: fmt.Errorf("gateway list boom in ns-a")}
+	if _, err := reconciler.Reconcile(context.Background(), req); err == nil {
+		t.Fatal("expected reconcile to return an error when a namespace-scoped Gateway List fails")
 	}
 
 	var cm corev1.ConfigMap
@@ -1337,11 +1344,11 @@ func TestReconcile_GatewayListError_PerNamespace_Continues(t *testing.T) {
 		t.Fatalf("failed to read dynamic ConfigMap: %v", err)
 	}
 	if !contains(cm.Data["dynamic.server"], "rewrite name exact scoped.example.com traefik.traefik.svc.cluster.local.") {
-		t.Errorf("expected ns-b's HTTPRoute host to still resolve despite ns-a's Gateway List failing, got:\n%s", cm.Data["dynamic.server"])
+		t.Errorf("expected ns-b's previously-written HTTPRoute host to be preserved despite ns-a's Gateway List failing, got:\n%s", cm.Data["dynamic.server"])
 	}
 }
 
-func TestReconcile_HTTPRouteListError_PerNamespace_Continues(t *testing.T) {
+func TestReconcile_HTTPRouteListError_PerNamespace_Aborts(t *testing.T) {
 	gw := &gatewayv1.Gateway{
 		ObjectMeta: metav1.ObjectMeta{Name: "traefik-gw", Namespace: "ns-b"},
 		Spec:       gatewayv1.GatewaySpec{GatewayClassName: "traefik"},
@@ -1356,13 +1363,16 @@ func TestReconcile_HTTPRouteListError_PerNamespace_Continues(t *testing.T) {
 		},
 	}
 
-	reconciler, c := gatewayReconcilerFixture(t, "ns-a,ns-b", []client.Object{gw, route}, func(c client.Client) client.Client {
-		return &gatewayAPIListErrorClient{Client: c, failHTTPRouteList: true, failNamespace: "ns-a", err: fmt.Errorf("httproute list boom in ns-a")}
-	})
+	reconciler, c := gatewayReconcilerFixture(t, "ns-a,ns-b", []client.Object{gw, route}, nil)
 
 	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
 	if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
-		t.Fatalf("expected reconcile to continue past a single namespace's List error, got: %v", err)
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	reconciler.Client = &gatewayAPIListErrorClient{Client: c, failHTTPRouteList: true, failNamespace: "ns-a", err: fmt.Errorf("httproute list boom in ns-a")}
+	if _, err := reconciler.Reconcile(context.Background(), req); err == nil {
+		t.Fatal("expected reconcile to return an error when a namespace-scoped HTTPRoute List fails")
 	}
 
 	var cm corev1.ConfigMap
@@ -1370,7 +1380,7 @@ func TestReconcile_HTTPRouteListError_PerNamespace_Continues(t *testing.T) {
 		t.Fatalf("failed to read dynamic ConfigMap: %v", err)
 	}
 	if !contains(cm.Data["dynamic.server"], "rewrite name exact scoped.example.com traefik.traefik.svc.cluster.local.") {
-		t.Errorf("expected ns-b's HTTPRoute host to still resolve despite ns-a's HTTPRoute List failing, got:\n%s", cm.Data["dynamic.server"])
+		t.Errorf("expected ns-b's previously-written HTTPRoute host to be preserved despite ns-a's HTTPRoute List failing, got:\n%s", cm.Data["dynamic.server"])
 	}
 }
 
@@ -1474,7 +1484,7 @@ func TestReconcile_IngressRouteListError_WatchAll(t *testing.T) {
 	}
 }
 
-func TestReconcile_IngressRouteListError_PerNamespace_Continues(t *testing.T) {
+func TestReconcile_IngressRouteListError_PerNamespace_Aborts(t *testing.T) {
 	route := &traefikv1alpha1.IngressRoute{
 		ObjectMeta: metav1.ObjectMeta{Name: "route", Namespace: "ns-b"},
 		Spec: traefikv1alpha1.IngressRouteSpec{
@@ -1482,13 +1492,20 @@ func TestReconcile_IngressRouteListError_PerNamespace_Continues(t *testing.T) {
 		},
 	}
 
-	reconciler, c := traefikReconcilerFixture(t, "ns-a,ns-b", []client.Object{route}, func(c client.Client) client.Client {
-		return &traefikIngressRouteListErrorClient{Client: c, failNamespace: "ns-a", err: fmt.Errorf("ingressroute list boom in ns-a")}
-	})
+	reconciler, c := traefikReconcilerFixture(t, "ns-a,ns-b", []client.Object{route}, nil)
 
 	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
 	if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
-		t.Fatalf("expected reconcile to continue past a single namespace's List error, got: %v", err)
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	// A subsequent per-namespace List failure must abort the reconcile
+	// rather than silently proceed with an incomplete candidate set --
+	// otherwise ns-b's already-published host would be dropped from the
+	// ConfigMap just because ns-a's List call failed transiently.
+	reconciler.Client = &traefikIngressRouteListErrorClient{Client: c, failNamespace: "ns-a", err: fmt.Errorf("ingressroute list boom in ns-a")}
+	if _, err := reconciler.Reconcile(context.Background(), req); err == nil {
+		t.Fatal("expected reconcile to return an error when a namespace-scoped IngressRoute List fails")
 	}
 
 	var cm corev1.ConfigMap
@@ -1496,7 +1513,7 @@ func TestReconcile_IngressRouteListError_PerNamespace_Continues(t *testing.T) {
 		t.Fatalf("failed to read dynamic ConfigMap: %v", err)
 	}
 	if !contains(cm.Data["dynamic.server"], "rewrite name exact scoped.example.com traefik.traefik.svc.cluster.local.") {
-		t.Errorf("expected ns-b's IngressRoute host to still resolve despite ns-a's List failing, got:\n%s", cm.Data["dynamic.server"])
+		t.Errorf("expected ns-b's previously-written IngressRoute host to be preserved despite ns-a's List failing, got:\n%s", cm.Data["dynamic.server"])
 	}
 }
 
