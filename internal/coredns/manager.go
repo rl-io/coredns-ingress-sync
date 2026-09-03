@@ -136,16 +136,26 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 		oldHostCNAMEs := extractHostCNAMEsFromDynamicConfig(existingConfig)
 		added, removed, changed := diffHostCNAMEs(oldHostCNAMEs, hostCNAMEMap)
 
-		// Log concise change summary with small samples, including which
-		// object caused each added/changed entry when known.
-		m.logger.Info("Detected CoreDNS rewrite changes",
-			"added", len(added),
-			"removed", len(removed),
-			"changed", len(changed),
-			"sampleAdded", sampleHostChanges(added, oldHostCNAMEs, hostCNAMEMap, hostSources, 5),
-			"sampleRemoved", sampleStrings(removed, 5),
-			"sampleChanged", sampleHostChanges(changed, oldHostCNAMEs, hostCNAMEMap, hostSources, 5),
-		)
+		// Content can differ even when the parsed map doesn't (e.g. repairing
+		// a stale duplicate/malformed rewrite line), so only log the change
+		// summary when it reflects an actual host-level diff -- otherwise
+		// this would emit the same misleading all-zero summary this PR
+		// otherwise suppresses.
+		if len(added) > 0 || len(removed) > 0 || len(changed) > 0 {
+			// Log concise change summary with small samples, including which
+			// object caused each added/changed entry when known.
+			m.logger.Info("Detected CoreDNS rewrite changes",
+				"added", len(added),
+				"removed", len(removed),
+				"changed", len(changed),
+				"sampleAdded", sampleHostChanges(added, oldHostCNAMEs, hostCNAMEMap, hostSources, 5),
+				"sampleRemoved", sampleStrings(removed, 5),
+				"sampleChanged", sampleHostChanges(changed, oldHostCNAMEs, hostCNAMEMap, hostSources, 5),
+			)
+		} else {
+			m.logger.V(1).Info("Repairing dynamic ConfigMap content with no host-level rewrite changes",
+				"configmap", m.config.DynamicConfigMapName)
+		}
 
 		// Update ConfigMap with fresh data
 		configMap.Data[m.config.DynamicConfigKey] = dynamicConfig
