@@ -16,6 +16,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/rl-io/coredns-ingress-sync/internal/config"
+	"github.com/rl-io/coredns-ingress-sync/internal/filterutil"
 	traefikv1alpha1 "github.com/rl-io/coredns-ingress-sync/internal/traefik/v1alpha1"
 )
 
@@ -39,6 +40,19 @@ type Config struct {
 	// made against IngressRoute types, since the CRD may not be installed in
 	// a cluster that doesn't use Traefik.
 	IngressRouteEnabled bool
+	// ServicesEnabled gates the annotation-driven Service preflight check.
+	// When false (ServiceAnnotationsEnabled is false), no List/Get calls are
+	// made against Service types beyond what other checks already need.
+	ServicesEnabled bool
+	// WatchNamespaces mirrors the RBAC the chart actually grants for the
+	// namespace-scoped checks (Gateway API, Traefik IngressRoute, Service):
+	// rbac.yaml grants a cluster-wide ClusterRole only when
+	// controller.watchNamespaces is unset, and per-namespace Roles otherwise.
+	// nil means "watch all namespaces" (cluster-wide RBAC, so an unscoped
+	// List is correct); a non-nil explicit list means only those namespaces'
+	// Roles were granted, so each namespace must be listed separately or the
+	// check would falsely report Forbidden under namespace-scoped RBAC.
+	WatchNamespaces []string
 }
 
 // Checker performs preflight checks for deployment conflicts
@@ -136,6 +150,19 @@ func (c *Checker) RunChecks(ctx context.Context) ([]CheckResult, error) {
 			return nil, fmt.Errorf("failed to check Traefik IngressRoute availability after %v: %w", time.Since(checkStart), err)
 		}
 		c.logger.Info("✓ Traefik IngressRoute check completed", "duration", time.Since(checkStart), "passed", result.Passed)
+		results = append(results, result)
+	}
+
+	// Check 7: Service watch availability, only when configured -- no
+	// List/Get calls against Service types beyond what other checks already
+	// need otherwise.
+	if c.config.ServicesEnabled {
+		checkStart = time.Now()
+		result, err = c.checkServiceWatch(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check Service watch availability after %v: %w", time.Since(checkStart), err)
+		}
+		c.logger.Info("✓ Service watch check completed", "duration", time.Since(checkStart), "passed", result.Passed)
 		results = append(results, result)
 	}
 
@@ -363,19 +390,35 @@ func (c *Checker) checkDuplicateControllers(ctx context.Context) (CheckResult, e
 	}, nil
 }
 
+// listNamespaceScoped runs a bounded (Limit 1) List, scoped per
+// c.config.WatchNamespaces so the request matches the RBAC the chart actually
+// grants (see the WatchNamespaces doc comment): a single cluster-wide List
+// when nil, or one List per explicitly watched namespace otherwise. newList
+// must return a fresh, empty list object each call. Returns the first error
+// encountered.
+func (c *Checker) listNamespaceScoped(ctx context.Context, newList func() client.ObjectList) error {
+	if c.config.WatchNamespaces == nil {
+		return c.client.List(ctx, newList(), client.Limit(1))
+	}
+	for _, ns := range c.config.WatchNamespaces {
+		if err := c.client.List(ctx, newList(), client.InNamespace(ns), client.Limit(1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // checkGatewayAPI verifies the Gateway API CRDs (Gateway, HTTPRoute) are
 // installed and reachable. Callers must only invoke this when Gateway API
 // support is configured (GatewayAPIEnabled), since a bounded List against
 // these types is otherwise unnecessary and would fail on clusters that
 // don't have the CRDs installed at all.
 func (c *Checker) checkGatewayAPI(ctx context.Context) (CheckResult, error) {
-	var gatewayList gatewayv1.GatewayList
-	if err := c.client.List(ctx, &gatewayList, client.Limit(1)); err != nil {
+	if err := c.listNamespaceScoped(ctx, func() client.ObjectList { return &gatewayv1.GatewayList{} }); err != nil {
 		return gatewayAPICheckFailure("Gateway", err), nil
 	}
 
-	var routeList gatewayv1.HTTPRouteList
-	if err := c.client.List(ctx, &routeList, client.Limit(1)); err != nil {
+	if err := c.listNamespaceScoped(ctx, func() client.ObjectList { return &gatewayv1.HTTPRouteList{} }); err != nil {
 		return gatewayAPICheckFailure("HTTPRoute", err), nil
 	}
 
@@ -417,8 +460,7 @@ func gatewayAPICheckFailure(kind string, err error) CheckResult {
 // is otherwise unnecessary and would fail on clusters that don't have the
 // CRD installed at all.
 func (c *Checker) checkTraefikIngressRoute(ctx context.Context) (CheckResult, error) {
-	var routeList traefikv1alpha1.IngressRouteList
-	if err := c.client.List(ctx, &routeList, client.Limit(1)); err != nil {
+	if err := c.listNamespaceScoped(ctx, func() client.ObjectList { return &traefikv1alpha1.IngressRouteList{} }); err != nil {
 		return traefikIngressRouteCheckFailure("IngressRoute", err), nil
 	}
 
@@ -452,6 +494,35 @@ func traefikIngressRouteCheckFailure(kind string, err error) CheckResult {
 		Message:  fmt.Sprintf("❌ Error accessing Traefik %s resources: %v", kind, err),
 		Severity: "error",
 	}
+}
+
+// checkServiceWatch verifies core Service objects are reachable. Callers
+// must only invoke this when annotation-driven Service support is configured
+// (ServicesEnabled), since RBAC for it is only granted when enabled.
+// Service is a built-in type, not a CRD, so unlike checkGatewayAPI and
+// checkTraefikIngressRoute there is no "CRD not installed" branch to check
+// for -- meta.IsNoMatchError is structurally unreachable here.
+func (c *Checker) checkServiceWatch(ctx context.Context) (CheckResult, error) {
+	if err := c.listNamespaceScoped(ctx, func() client.ObjectList { return &corev1.ServiceList{} }); err != nil {
+		if errors.IsForbidden(err) {
+			return CheckResult{
+				Passed:   false,
+				Message:  "❌ Permission denied listing Service resources. RBAC for core services may not be ready yet, or the chart's RBAC template wasn't applied with serviceAnnotationsEnabled set.",
+				Severity: "error",
+			}, nil
+		}
+		return CheckResult{
+			Passed:   false,
+			Message:  fmt.Sprintf("❌ Error accessing Service resources: %v", err),
+			Severity: "error",
+		}, nil
+	}
+
+	return CheckResult{
+		Passed:   true,
+		Message:  "✅ Service watch is reachable",
+		Severity: "info",
+	}, nil
 }
 
 // PrintResults prints the check results in a formatted way
@@ -532,5 +603,24 @@ func ConfigFromEnv(cfg *config.Config) Config {
 		TargetCNAME:          cfg.TargetCNAME,
 		GatewayAPIEnabled:    len(cfg.GatewayClassMappings) > 0,
 		IngressRouteEnabled:  cfg.IngressRouteTargetCNAME != "",
+		ServicesEnabled:      cfg.ServiceAnnotationsEnabled,
+		WatchNamespaces:      watchNamespacesFromEnv(cfg),
 	}
+}
+
+// watchNamespacesFromEnv mirrors the RBAC rbac.yaml actually grants: nil
+// (watch all) when controller.watchNamespaces is unset, otherwise the
+// explicit, exclude-filtered namespace list that got per-namespace Roles.
+func watchNamespacesFromEnv(cfg *config.Config) []string {
+	scope := filterutil.NewNamespaceScope(cfg.WatchNamespaces, cfg.ExcludeNamespaces)
+	if scope.WatchesAllNamespaces() {
+		return nil
+	}
+	var namespaces []string
+	for _, ns := range scope.WatchNamespaces() {
+		if scope.ShouldWatch(ns) {
+			namespaces = append(namespaces, ns)
+		}
+	}
+	return namespaces
 }

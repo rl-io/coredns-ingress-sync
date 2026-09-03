@@ -10,28 +10,32 @@ import (
 func TestLoad(t *testing.T) {
 	// Save original environment
 	originalVars := map[string]string{
-		"INGRESS_CLASS":             os.Getenv("INGRESS_CLASS"),
-		"TARGET_CNAME":              os.Getenv("TARGET_CNAME"),
-		"DYNAMIC_CONFIGMAP_NAME":    os.Getenv("DYNAMIC_CONFIGMAP_NAME"),
-		"DYNAMIC_CONFIG_KEY":        os.Getenv("DYNAMIC_CONFIG_KEY"),
-		"COREDNS_NAMESPACE":         os.Getenv("COREDNS_NAMESPACE"),
-		"COREDNS_CONFIGMAP_NAME":    os.Getenv("COREDNS_CONFIGMAP_NAME"),
-		"LEADER_ELECTION_ENABLED":   os.Getenv("LEADER_ELECTION_ENABLED"),
-		"WATCH_NAMESPACES":          os.Getenv("WATCH_NAMESPACES"),
-		"EXCLUDE_NAMESPACES":        os.Getenv("EXCLUDE_NAMESPACES"),
-		"EXCLUDE_INGRESSES":         os.Getenv("EXCLUDE_INGRESSES"),
-		"POD_NAMESPACE":             os.Getenv("POD_NAMESPACE"),
-		"DEPLOYMENT_NAME":           os.Getenv("DEPLOYMENT_NAME"),
-		"MOUNT_PATH":                os.Getenv("MOUNT_PATH"),
-		"ANNOTATION_ENABLED_KEY":    os.Getenv("ANNOTATION_ENABLED_KEY"),
-		"ANNOTATION_PRIORITY_KEY":   os.Getenv("ANNOTATION_PRIORITY_KEY"),
-		"INGRESS_CLASS_MAPPINGS":    os.Getenv("INGRESS_CLASS_MAPPINGS"),
-		"GATEWAY_CLASS_MAPPINGS":    os.Getenv("GATEWAY_CLASS_MAPPINGS"),
-		"GATEWAY_CLASS":             os.Getenv("GATEWAY_CLASS"),
-		"GATEWAY_TARGET_CNAME":      os.Getenv("GATEWAY_TARGET_CNAME"),
-		"EXCLUDE_HTTPROUTES":        os.Getenv("EXCLUDE_HTTPROUTES"),
-		"INGRESSROUTE_TARGET_CNAME": os.Getenv("INGRESSROUTE_TARGET_CNAME"),
-		"EXCLUDE_INGRESSROUTES":     os.Getenv("EXCLUDE_INGRESSROUTES"),
+		"INGRESS_CLASS":                   os.Getenv("INGRESS_CLASS"),
+		"TARGET_CNAME":                    os.Getenv("TARGET_CNAME"),
+		"DYNAMIC_CONFIGMAP_NAME":          os.Getenv("DYNAMIC_CONFIGMAP_NAME"),
+		"DYNAMIC_CONFIG_KEY":              os.Getenv("DYNAMIC_CONFIG_KEY"),
+		"COREDNS_NAMESPACE":               os.Getenv("COREDNS_NAMESPACE"),
+		"COREDNS_CONFIGMAP_NAME":          os.Getenv("COREDNS_CONFIGMAP_NAME"),
+		"LEADER_ELECTION_ENABLED":         os.Getenv("LEADER_ELECTION_ENABLED"),
+		"WATCH_NAMESPACES":                os.Getenv("WATCH_NAMESPACES"),
+		"EXCLUDE_NAMESPACES":              os.Getenv("EXCLUDE_NAMESPACES"),
+		"EXCLUDE_INGRESSES":               os.Getenv("EXCLUDE_INGRESSES"),
+		"POD_NAMESPACE":                   os.Getenv("POD_NAMESPACE"),
+		"DEPLOYMENT_NAME":                 os.Getenv("DEPLOYMENT_NAME"),
+		"MOUNT_PATH":                      os.Getenv("MOUNT_PATH"),
+		"ANNOTATION_ENABLED_KEY":          os.Getenv("ANNOTATION_ENABLED_KEY"),
+		"ANNOTATION_PRIORITY_KEY":         os.Getenv("ANNOTATION_PRIORITY_KEY"),
+		"INGRESS_CLASS_MAPPINGS":          os.Getenv("INGRESS_CLASS_MAPPINGS"),
+		"GATEWAY_CLASS_MAPPINGS":          os.Getenv("GATEWAY_CLASS_MAPPINGS"),
+		"GATEWAY_CLASS":                   os.Getenv("GATEWAY_CLASS"),
+		"GATEWAY_TARGET_CNAME":            os.Getenv("GATEWAY_TARGET_CNAME"),
+		"EXCLUDE_HTTPROUTES":              os.Getenv("EXCLUDE_HTTPROUTES"),
+		"INGRESSROUTE_TARGET_CNAME":       os.Getenv("INGRESSROUTE_TARGET_CNAME"),
+		"EXCLUDE_INGRESSROUTES":           os.Getenv("EXCLUDE_INGRESSROUTES"),
+		"SERVICE_ANNOTATIONS_ENABLED":     os.Getenv("SERVICE_ANNOTATIONS_ENABLED"),
+		"SERVICE_HOSTNAME_ANNOTATION_KEY": os.Getenv("SERVICE_HOSTNAME_ANNOTATION_KEY"),
+		"EXCLUDE_SERVICES":                os.Getenv("EXCLUDE_SERVICES"),
+		"CLUSTER_DOMAIN":                  os.Getenv("CLUSTER_DOMAIN"),
 	}
 
 	// Restore original environment after test
@@ -81,6 +85,11 @@ func TestLoad(t *testing.T) {
 		// Traefik IngressRoute support is disabled by default: empty target CNAME.
 		assert.Equal(t, "", config.IngressRouteTargetCNAME)
 		assert.Equal(t, "", config.ExcludeIngressRoutes)
+		// Service annotation support is disabled by default.
+		assert.False(t, config.ServiceAnnotationsEnabled)
+		assert.Equal(t, "coredns-ingress-sync-hostname", config.ServiceHostnameAnnotationKey)
+		assert.Equal(t, "", config.ExcludeServices)
+		assert.Equal(t, "cluster.local", config.ClusterDomain)
 	})
 
 	t.Run("environment overrides", func(t *testing.T) {
@@ -100,6 +109,10 @@ func TestLoad(t *testing.T) {
 		os.Setenv("MOUNT_PATH", "/custom/mount/path")
 		os.Setenv("ANNOTATION_ENABLED_KEY", "my-company.io/dns-sync-enabled")
 		os.Setenv("ANNOTATION_PRIORITY_KEY", "my-company.io/dns-sync-priority")
+		os.Setenv("SERVICE_ANNOTATIONS_ENABLED", "true")
+		os.Setenv("SERVICE_HOSTNAME_ANNOTATION_KEY", "my-company.io/hostname")
+		os.Setenv("EXCLUDE_SERVICES", "foo,bar/ns1")
+		os.Setenv("CLUSTER_DOMAIN", "prod.local")
 
 		config := Load()
 
@@ -123,6 +136,10 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, "/custom/mount/path", config.MountPath)
 		assert.Equal(t, "my-custom-deployment", config.ReleaseInstance)
 		assert.Equal(t, "my-company.io/dns-sync-enabled", config.AnnotationEnabledKey)
+		assert.True(t, config.ServiceAnnotationsEnabled)
+		assert.Equal(t, "my-company.io/hostname", config.ServiceHostnameAnnotationKey)
+		assert.Equal(t, "foo,bar/ns1", config.ExcludeServices)
+		assert.Equal(t, "prod.local", config.ClusterDomain)
 	})
 }
 

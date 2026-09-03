@@ -3,6 +3,8 @@ package cache
 import (
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+
 	traefikv1alpha1 "github.com/rl-io/coredns-ingress-sync/internal/traefik/v1alpha1"
 )
 
@@ -143,6 +145,50 @@ func TestBuildCacheOptions_IngressRoute(t *testing.T) {
 	}).BuildCacheOptions()
 	if len(both.ByObject) != 5 {
 		t.Errorf("expected 5 ByObject entries when Gateway API and IngressRoute are both enabled, got %d", len(both.ByObject))
+	}
+}
+
+func TestBuildCacheOptions_Service(t *testing.T) {
+	disabled := NewConfigBuilder(ConfigBuilderOptions{
+		WatchNamespaces:  []string{"production"},
+		CoreDNSNamespace: "kube-system",
+	}).BuildCacheOptions()
+	if len(disabled.ByObject) != 2 {
+		t.Errorf("expected 2 ByObject entries when Service annotations are disabled, got %d", len(disabled.ByObject))
+	}
+	for obj := range disabled.ByObject {
+		if _, ok := obj.(*corev1.Service); ok {
+			t.Error("did not expect Service entry in ByObject when Service annotations are disabled")
+		}
+	}
+
+	enabled := NewConfigBuilder(ConfigBuilderOptions{
+		WatchNamespaces:  []string{"production"},
+		CoreDNSNamespace: "kube-system",
+		ServicesEnabled:  true,
+	}).BuildCacheOptions()
+	if len(enabled.ByObject) != 3 {
+		t.Errorf("expected 3 ByObject entries when Service annotations are enabled, got %d", len(enabled.ByObject))
+	}
+	foundService := false
+	for obj := range enabled.ByObject {
+		if _, ok := obj.(*corev1.Service); ok {
+			foundService = true
+		}
+	}
+	if !foundService {
+		t.Error("expected Service entry in ByObject when Service annotations are enabled")
+	}
+
+	all := NewConfigBuilder(ConfigBuilderOptions{
+		WatchNamespaces:     []string{"production"},
+		CoreDNSNamespace:    "kube-system",
+		GatewayAPIEnabled:   true,
+		IngressRouteEnabled: true,
+		ServicesEnabled:     true,
+	}).BuildCacheOptions()
+	if len(all.ByObject) != 6 {
+		t.Errorf("expected 6 ByObject entries when Gateway API, IngressRoute, and Service annotations are all enabled, got %d", len(all.ByObject))
 	}
 }
 

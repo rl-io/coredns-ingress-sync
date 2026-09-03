@@ -112,7 +112,7 @@ func TestMetricsIntegration(t *testing.T) {
 	}
 	coreDNSManager := coredns.NewManager(fakeClient, coreDNSConfig)
 
-	reconciler := controller.NewIngressReconciler(fakeClient, scheme, ingressFilter, nil, nil, coreDNSManager)
+	reconciler := controller.NewIngressReconciler(fakeClient, scheme, ingressFilter, nil, nil, nil, coreDNSManager)
 
 	// Perform reconciliation
 	ctx := context.Background()
