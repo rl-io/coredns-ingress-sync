@@ -170,6 +170,10 @@ func runController(logger logr.Logger) {
 	// other checks already need.
 	var serviceFilter *service.Filter
 	if serviceAnnotationsEnabled {
+		if err := service.ValidateClusterDomain(cfg.ClusterDomain); err != nil {
+			logger.Error(err, "Invalid CLUSTER_DOMAIN configuration")
+			os.Exit(1)
+		}
 		serviceFilter = service.NewFilter(cfg.ClusterDomain, cfg.ServiceHostnameAnnotationKey, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeServices, cfg.AnnotationEnabledKey, cfg.AnnotationPriorityKey)
 	}
 

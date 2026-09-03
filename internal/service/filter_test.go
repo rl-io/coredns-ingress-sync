@@ -140,6 +140,16 @@ func TestFilter_ExtractHostnameCandidates_CustomClusterDomain(t *testing.T) {
 	assert.Equal(t, "api.default.svc.cluster.example.", candidates[0].CNAME)
 }
 
+func TestFilter_ExtractHostnameCandidates_ClusterDomainTrailingDotStripped(t *testing.T) {
+	f := NewFilter("cluster.example.", "coredns-ingress-sync-hostname", "", "", "", "", "")
+
+	s := svc("api", "default", map[string]string{"coredns-ingress-sync-hostname": "api.example.com"})
+	candidates := f.ExtractHostnameCandidates([]corev1.Service{s})
+
+	assert.Len(t, candidates, 1)
+	assert.Equal(t, "api.default.svc.cluster.example.", candidates[0].CNAME, "a trailing dot on clusterDomain must not double up with the CNAME's own trailing dot")
+}
+
 func TestFilter_ExtractHostnameCandidates_RejectsInvalidHostname(t *testing.T) {
 	f := NewFilter("cluster.local", "coredns-ingress-sync-hostname", "", "", "", "", "")
 
@@ -186,4 +196,34 @@ func TestFilter_WatchNamespaces(t *testing.T) {
 	assert.ElementsMatch(t, []string{"ns1", "ns2"}, f.GetWatchNamespaces())
 	assert.True(t, f.ShouldWatchNamespace("ns1"))
 	assert.False(t, f.ShouldWatchNamespace("ns3"))
+}
+
+func TestValidateClusterDomain(t *testing.T) {
+	t.Run("default is valid", func(t *testing.T) {
+		assert.NoError(t, ValidateClusterDomain("cluster.local"))
+	})
+
+	t.Run("trailing dot is valid", func(t *testing.T) {
+		assert.NoError(t, ValidateClusterDomain("cluster.local."))
+	})
+
+	t.Run("custom subdomain is valid", func(t *testing.T) {
+		assert.NoError(t, ValidateClusterDomain("cluster.example"))
+	})
+
+	t.Run("empty string is invalid", func(t *testing.T) {
+		assert.Error(t, ValidateClusterDomain(""))
+	})
+
+	t.Run("embedded whitespace is invalid", func(t *testing.T) {
+		assert.Error(t, ValidateClusterDomain("cluster.local evil"))
+	})
+
+	t.Run("embedded newline is invalid", func(t *testing.T) {
+		assert.Error(t, ValidateClusterDomain("cluster.local\nrewrite name exact evil.example.com target.example.com."))
+	})
+
+	t.Run("invalid characters are rejected", func(t *testing.T) {
+		assert.Error(t, ValidateClusterDomain("cluster_local!"))
+	})
 }

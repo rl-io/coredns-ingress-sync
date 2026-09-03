@@ -38,7 +38,11 @@ type Filter struct {
 // priority via an integer annotation (higher wins).
 func NewFilter(clusterDomain, hostnameAnnotationKey, watchNamespacesEnv, excludeNamespacesEnv, excludeServicesEnv, annotationEnabledKey, annotationPriorityKey string) *Filter {
 	return &Filter{
-		clusterDomain:         clusterDomain,
+		// A trailing dot (the FQDN form) is allowed by ValidateClusterDomain,
+		// so it must be stripped here too -- otherwise it would double up
+		// with the trailing dot ExtractHostnameCandidates already appends,
+		// producing "svc.cluster.local..".
+		clusterDomain:         strings.TrimSuffix(clusterDomain, "."),
 		hostnameAnnotationKey: hostnameAnnotationKey,
 		nsScope:               filterutil.NewNamespaceScope(watchNamespacesEnv, excludeNamespacesEnv),
 		excludeSet:            filterutil.NewExcludeSet(excludeServicesEnv),
@@ -46,6 +50,22 @@ func NewFilter(clusterDomain, hostnameAnnotationKey, watchNamespacesEnv, exclude
 		annotationPriorityKey: annotationPriorityKey,
 		logger:                ctrl.Log.WithName("service-filter"),
 	}
+}
+
+// ValidateClusterDomain reports whether domain is a well-formed DNS-1123
+// subdomain, once a single optional trailing dot (the FQDN form) is
+// stripped. domain is written verbatim into every synthesized Service CNAME
+// target (<name>.<namespace>.svc.<domain>.), so an unvalidated value from a
+// misconfigured Helm release (stray whitespace, a newline, extra dots) could
+// corrupt the generated Corefile. Callers should validate at startup, before
+// constructing a Filter, and fail fast rather than let a bad value reach
+// ExtractHostnameCandidates.
+func ValidateClusterDomain(domain string) error {
+	trimmed := strings.TrimSuffix(domain, ".")
+	if errs := validation.IsDNS1123Subdomain(trimmed); len(errs) > 0 {
+		return fmt.Errorf("invalid cluster domain %q: %s", domain, strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 // Enabled always reports true once a Filter has been constructed; the
