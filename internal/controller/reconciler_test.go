@@ -1517,6 +1517,219 @@ func TestReconcile_IngressRouteListError_PerNamespace_Aborts(t *testing.T) {
 	}
 }
 
+// serviceListErrorClient fails List calls against the core Service list type,
+// optionally scoped to a single namespace (matching the per-namespace listing
+// branch of extractServiceCandidates). An empty failNamespace fails
+// regardless of namespace (the watch-all branch).
+type serviceListErrorClient struct {
+	client.Client
+	failNamespace string
+	err           error
+}
+
+func (s *serviceListErrorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*corev1.ServiceList); ok {
+		matchesNamespace := func() bool {
+			if s.failNamespace == "" {
+				return true
+			}
+			listOpts := &client.ListOptions{}
+			for _, o := range opts {
+				o.ApplyToList(listOpts)
+			}
+			return listOpts.Namespace == s.failNamespace
+		}
+		if matchesNamespace() {
+			return s.err
+		}
+	}
+	return s.Client.List(ctx, list, opts...)
+}
+
+// serviceReconcilerFixture builds a scheme + fake client + reconciler wired
+// with the given annotated Service objects (plus a base CoreDNS ConfigMap),
+// wrapping the client with wrap if non-nil.
+func serviceReconcilerFixture(t *testing.T, watchNamespaces string, objs []client.Object, wrap func(client.Client) client.Client) (*IngressReconciler, client.Client) {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	_ = networkingv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	coreDNSConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+		Data:       map[string]string{"Corefile": ".:53 {\n    forward . /etc/resolv.conf\n}\n"},
+	}
+	allObjs := append([]client.Object{coreDNSConfigMap}, objs...)
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(allObjs...).Build()
+	var c client.Client = fakeClient
+	if wrap != nil {
+		c = wrap(fakeClient)
+	}
+
+	serviceFilter := service.NewFilter("cluster.local", "coredns-ingress-sync-hostname", watchNamespaces, "", "", "coredns-ingress-sync-enabled", "coredns-ingress-sync-priority")
+
+	coreDNSManager := coredns.NewManager(c, coredns.Config{
+		Namespace:            "kube-system",
+		ConfigMapName:        "coredns",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
+		DynamicConfigKey:     "dynamic.server",
+		ImportStatement:      "import /etc/coredns/custom/*.server",
+	})
+
+	reconciler := NewIngressReconciler(c, scheme, nginxFilter(watchNamespaces), nil, nil, serviceFilter, coreDNSManager)
+	return reconciler, c
+}
+
+func TestReconcile_ServiceNamespaceScoped(t *testing.T) {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "scoped-svc",
+			Namespace: "ns-b",
+			Annotations: map[string]string{
+				"coredns-ingress-sync-hostname": "scoped.example.com",
+			},
+		},
+	}
+
+	reconciler, c := serviceReconcilerFixture(t, "ns-a,ns-b", []client.Object{svc}, nil)
+
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
+	if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	var cm corev1.ConfigMap
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "coredns-ingress-sync-rewrite-rules", Namespace: "kube-system"}, &cm); err != nil {
+		t.Fatalf("failed to read dynamic ConfigMap: %v", err)
+	}
+	if !contains(cm.Data["dynamic.server"], "rewrite name exact scoped.example.com scoped-svc.ns-b.svc.cluster.local.") {
+		t.Errorf("expected namespace-scoped Service host to be present, got:\n%s", cm.Data["dynamic.server"])
+	}
+}
+
+func TestReconcile_ServiceListError_WatchAll(t *testing.T) {
+	reconciler, _ := serviceReconcilerFixture(t, "", nil, func(c client.Client) client.Client {
+		return &serviceListErrorClient{Client: c, err: fmt.Errorf("service list boom")}
+	})
+
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
+	if _, err := reconciler.Reconcile(context.Background(), req); err == nil {
+		t.Fatal("expected reconcile to return an error when the watch-all Service List fails")
+	}
+}
+
+func TestReconcile_ServiceListError_PerNamespace_Aborts(t *testing.T) {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "scoped-svc",
+			Namespace: "ns-b",
+			Annotations: map[string]string{
+				"coredns-ingress-sync-hostname": "scoped.example.com",
+			},
+		},
+	}
+
+	reconciler, c := serviceReconcilerFixture(t, "ns-a,ns-b", []client.Object{svc}, nil)
+
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
+	if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	// A subsequent per-namespace List failure must abort the reconcile
+	// rather than silently proceed with an incomplete candidate set --
+	// otherwise ns-b's already-published host would be dropped from the
+	// ConfigMap just because ns-a's List call failed transiently.
+	reconciler.Client = &serviceListErrorClient{Client: c, failNamespace: "ns-a", err: fmt.Errorf("service list boom in ns-a")}
+	if _, err := reconciler.Reconcile(context.Background(), req); err == nil {
+		t.Fatal("expected reconcile to return an error when a namespace-scoped Service List fails")
+	}
+
+	var cm corev1.ConfigMap
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "coredns-ingress-sync-rewrite-rules", Namespace: "kube-system"}, &cm); err != nil {
+		t.Fatalf("failed to read dynamic ConfigMap: %v", err)
+	}
+	if !contains(cm.Data["dynamic.server"], "rewrite name exact scoped.example.com scoped-svc.ns-b.svc.cluster.local.") {
+		t.Errorf("expected ns-b's previously-written Service host to be preserved despite ns-a's List failing, got:\n%s", cm.Data["dynamic.server"])
+	}
+}
+
+// ingressListErrorClient fails List calls against the Ingress list type,
+// optionally scoped to a single namespace (matching the per-namespace listing
+// branch of Reconcile's base Ingress list loop). An empty failNamespace fails
+// regardless of namespace (the watch-all branch).
+type ingressListErrorClient struct {
+	client.Client
+	failNamespace string
+	err           error
+}
+
+func (i *ingressListErrorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*networkingv1.IngressList); ok {
+		matchesNamespace := func() bool {
+			if i.failNamespace == "" {
+				return true
+			}
+			listOpts := &client.ListOptions{}
+			for _, o := range opts {
+				o.ApplyToList(listOpts)
+			}
+			return listOpts.Namespace == i.failNamespace
+		}
+		if matchesNamespace() {
+			return i.err
+		}
+	}
+	return i.Client.List(ctx, list, opts...)
+}
+
+func TestReconcile_IngressListError_WatchAll(t *testing.T) {
+	reconciler, _ := gatewayReconcilerFixture(t, "", nil, func(c client.Client) client.Client {
+		return &ingressListErrorClient{Client: c, err: fmt.Errorf("ingress list boom")}
+	})
+
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
+	if _, err := reconciler.Reconcile(context.Background(), req); err == nil {
+		t.Fatal("expected reconcile to return an error when the watch-all Ingress List fails")
+	}
+}
+
+func TestReconcile_IngressListError_PerNamespace_Aborts(t *testing.T) {
+	ingressClassName := "nginx"
+	scopedIngress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{Name: "scoped-ingress", Namespace: "ns-b"},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: &ingressClassName,
+			Rules:            []networkingv1.IngressRule{{Host: "scoped.example.com"}},
+		},
+	}
+
+	reconciler, c := gatewayReconcilerFixture(t, "ns-a,ns-b", []client.Object{scopedIngress}, nil)
+
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
+	if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	// A subsequent per-namespace List failure must abort the reconcile
+	// rather than silently proceed with an incomplete candidate set --
+	// otherwise ns-b's already-published host would be dropped from the
+	// ConfigMap just because ns-a's List call failed transiently.
+	reconciler.Client = &ingressListErrorClient{Client: c, failNamespace: "ns-a", err: fmt.Errorf("ingress list boom in ns-a")}
+	if _, err := reconciler.Reconcile(context.Background(), req); err == nil {
+		t.Fatal("expected reconcile to return an error when a namespace-scoped Ingress List fails")
+	}
+
+	var cm corev1.ConfigMap
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "coredns-ingress-sync-rewrite-rules", Namespace: "kube-system"}, &cm); err != nil {
+		t.Fatalf("failed to read dynamic ConfigMap: %v", err)
+	}
+	if !contains(cm.Data["dynamic.server"], "rewrite name exact scoped.example.com ingress-nginx.svc.cluster.local.") {
+		t.Errorf("expected ns-b's previously-written Ingress host to be preserved despite ns-a's List failing, got:\n%s", cm.Data["dynamic.server"])
+	}
+}
+
 // dynamicConfigMapWriteErrorClient wraps a client.Client and fails Create
 // (and Update, for the same name) against a specific ConfigMap, so tests can
 // exercise Reconcile's "Failed to update dynamic ConfigMap" error path.

@@ -51,6 +51,12 @@ func TestFilter_ShouldProcessService(t *testing.T) {
 		assert.False(t, filter.ShouldProcessService(&s))
 	})
 
+	t.Run("empty hostname annotation key never processes any service", func(t *testing.T) {
+		filter := NewFilter("cluster.local", "", "", "", "", "", "")
+		s := svc("svc", "default", map[string]string{"coredns-ingress-sync-hostname": "svc.example.com"})
+		assert.False(t, filter.ShouldProcessService(&s))
+	})
+
 	t.Run("no hostname annotation is never a candidate", func(t *testing.T) {
 		filter := NewFilter("cluster.local", "coredns-ingress-sync-hostname", "", "", "", "", "")
 		s := svc("svc", "default", nil)
