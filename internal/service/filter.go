@@ -8,9 +8,11 @@ package service
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/rl-io/coredns-ingress-sync/internal/filterutil"
@@ -79,11 +81,12 @@ func (f *Filter) IsExcludedService(svc *corev1.Service) bool {
 }
 
 // ShouldProcessService returns true if this Service's namespace is watched,
-// it is not excluded, it carries a non-empty hostname annotation, and it is
-// not annotated disabled. The hostname annotation's presence is the
-// participation signal (mirroring ingressClassName/gatewayClassName/
-// IngressRoute-presence on the other sources) -- annotationEnabledKey keeps
-// its existing opt-out meaning, unchanged from the other three sources.
+// it is not excluded, it carries a non-empty and validly-formed hostname
+// annotation, and it is not annotated disabled. The hostname annotation's
+// presence is the participation signal (mirroring ingressClassName/
+// gatewayClassName/IngressRoute-presence on the other sources) --
+// annotationEnabledKey keeps its existing opt-out meaning, unchanged from the
+// other three sources.
 func (f *Filter) ShouldProcessService(svc *corev1.Service) bool {
 	if svc == nil {
 		return false
@@ -94,7 +97,25 @@ func (f *Filter) ShouldProcessService(svc *corev1.Service) bool {
 	if f.IsExcludedService(svc) {
 		return false
 	}
-	if f.hostnameAnnotationKey == "" || svc.GetAnnotations()[f.hostnameAnnotationKey] == "" {
+	if f.hostnameAnnotationKey == "" {
+		return false
+	}
+	hostname := svc.GetAnnotations()[f.hostnameAnnotationKey]
+	if hostname == "" {
+		return false
+	}
+	// Unlike Ingress/HTTPRoute hosts, which the API server already validates
+	// as a DNS-1123 subdomain, an annotation value is arbitrary text -- it is
+	// written verbatim into a "rewrite name exact <host> <target>" line in the
+	// generated Corefile, so an unvalidated value (e.g. containing whitespace
+	// or a newline) could inject additional CoreDNS directives or corrupt the
+	// file. Reject anything that isn't a plain hostname.
+	if errs := validation.IsDNS1123Subdomain(hostname); len(errs) > 0 {
+		f.logger.Info("Ignoring Service with invalid hostname annotation value",
+			"service", svc.Namespace+"/"+svc.Name,
+			"annotation", f.hostnameAnnotationKey,
+			"value", hostname,
+			"reason", strings.Join(errs, "; "))
 		return false
 	}
 	if f.annotationEnabledKey != "" {

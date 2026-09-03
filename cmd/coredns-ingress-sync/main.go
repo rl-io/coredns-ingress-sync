@@ -337,7 +337,13 @@ func runController(logger logr.Logger) {
 					UpdateFunc: func(e event.TypedUpdateEvent[*corev1.Service]) bool {
 						return serviceFilter.ShouldProcessService(e.ObjectOld) || serviceFilter.ShouldProcessService(e.ObjectNew)
 					},
-					DeleteFunc: func(e event.TypedDeleteEvent[*corev1.Service]) bool { return true },
+					// e.Object on a delete event is the last known (pre-deletion)
+					// state, so this still catches real cleanups for a Service that
+					// carried the hostname annotation, while skipping the deletion
+					// churn of every other Service.
+					DeleteFunc: func(e event.TypedDeleteEvent[*corev1.Service]) bool {
+						return serviceFilter.ShouldProcessService(e.Object)
+					},
 				})); err != nil {
 			logger.Error(err, "Failed to set up service watch")
 			os.Exit(1)

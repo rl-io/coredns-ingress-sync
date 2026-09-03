@@ -69,6 +69,24 @@ func TestFilter_ShouldProcessService(t *testing.T) {
 		assert.True(t, filter.ShouldProcessService(&s))
 	})
 
+	t.Run("hostname annotation with embedded whitespace is rejected", func(t *testing.T) {
+		filter := NewFilter("cluster.local", "coredns-ingress-sync-hostname", "", "", "", "", "")
+		s := svc("svc", "default", map[string]string{"coredns-ingress-sync-hostname": "svc.example.com evil.example.com"})
+		assert.False(t, filter.ShouldProcessService(&s))
+	})
+
+	t.Run("hostname annotation with embedded newline is rejected", func(t *testing.T) {
+		filter := NewFilter("cluster.local", "coredns-ingress-sync-hostname", "", "", "", "", "")
+		s := svc("svc", "default", map[string]string{"coredns-ingress-sync-hostname": "svc.example.com\nrewrite name exact evil.example.com target.example.com."})
+		assert.False(t, filter.ShouldProcessService(&s))
+	})
+
+	t.Run("hostname annotation with invalid characters is rejected", func(t *testing.T) {
+		filter := NewFilter("cluster.local", "coredns-ingress-sync-hostname", "", "", "", "", "")
+		s := svc("svc", "default", map[string]string{"coredns-ingress-sync-hostname": "svc_example!.com"})
+		assert.False(t, filter.ShouldProcessService(&s))
+	})
+
 	t.Run("disabled via annotation despite hostname annotation present", func(t *testing.T) {
 		filter := NewFilter("cluster.local", "coredns-ingress-sync-hostname", "", "", "", "coredns-ingress-sync-enabled", "")
 		s := svc("svc", "default", map[string]string{
@@ -114,6 +132,17 @@ func TestFilter_ExtractHostnameCandidates_CustomClusterDomain(t *testing.T) {
 
 	assert.Len(t, candidates, 1)
 	assert.Equal(t, "api.default.svc.cluster.example.", candidates[0].CNAME)
+}
+
+func TestFilter_ExtractHostnameCandidates_RejectsInvalidHostname(t *testing.T) {
+	f := NewFilter("cluster.local", "coredns-ingress-sync-hostname", "", "", "", "", "")
+
+	invalid := svc("bad", "default", map[string]string{"coredns-ingress-sync-hostname": "not a hostname"})
+	valid := svc("good", "default", map[string]string{"coredns-ingress-sync-hostname": "good.example.com"})
+
+	candidates := f.ExtractHostnameCandidates([]corev1.Service{invalid, valid})
+	assert.Len(t, candidates, 1)
+	assert.Equal(t, "good.example.com", candidates[0].Host)
 }
 
 func TestFilter_ExtractHostnameCandidates_RespectsNamespaceExcludeAndAnnotation(t *testing.T) {
