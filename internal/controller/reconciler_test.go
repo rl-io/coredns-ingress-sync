@@ -21,6 +21,7 @@ import (
 	"github.com/rl-io/coredns-ingress-sync/internal/coredns"
 	"github.com/rl-io/coredns-ingress-sync/internal/gatewayapi"
 	"github.com/rl-io/coredns-ingress-sync/internal/ingress"
+	"github.com/rl-io/coredns-ingress-sync/internal/service"
 	"github.com/rl-io/coredns-ingress-sync/internal/traefik"
 	traefikv1alpha1 "github.com/rl-io/coredns-ingress-sync/internal/traefik/v1alpha1"
 )
@@ -52,7 +53,7 @@ func TestNewIngressReconciler(t *testing.T) {
 	}
 	coreDNSManager := coredns.NewManager(fakeClient, coreDNSConfig)
 
-	reconciler := NewIngressReconciler(fakeClient, scheme, ingressFilter, nil, nil, coreDNSManager)
+	reconciler := NewIngressReconciler(fakeClient, scheme, ingressFilter, nil, nil, nil, coreDNSManager)
 
 	if reconciler == nil {
 		t.Fatal("Expected non-nil reconciler")
@@ -447,7 +448,7 @@ func TestReconcile(t *testing.T) {
 		}
 		coreDNSManager := coredns.NewManager(fakeClient, coreDNSConfig)
 
-		reconciler := NewIngressReconciler(fakeClient, scheme, ingressFilter, nil, nil, coreDNSManager)
+		reconciler := NewIngressReconciler(fakeClient, scheme, ingressFilter, nil, nil, nil, coreDNSManager)
 
 		req := reconcile.Request{
 			NamespacedName: types.NamespacedName{
@@ -683,7 +684,7 @@ func TestReconcile_IngressAndGatewayAPIMerge(t *testing.T) {
 		ImportStatement:      "import /etc/coredns/custom/*.server",
 	})
 
-	reconciler := NewIngressReconciler(fakeClient, scheme, ingressFilter, gatewayFilter, nil, coreDNSManager)
+	reconciler := NewIngressReconciler(fakeClient, scheme, ingressFilter, gatewayFilter, nil, nil, coreDNSManager)
 
 	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
 	if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
@@ -774,7 +775,7 @@ func TestReconcile_GatewayFilterNil_NoGatewayAPIListCalls(t *testing.T) {
 	}
 	coreDNSManager := coredns.NewManager(wrappedClient, coreDNSConfig)
 
-	reconciler := NewIngressReconciler(wrappedClient, scheme, ingressFilter, nil, nil, coreDNSManager)
+	reconciler := NewIngressReconciler(wrappedClient, scheme, ingressFilter, nil, nil, nil, coreDNSManager)
 
 	req := reconcile.Request{
 		NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"},
@@ -850,7 +851,7 @@ func TestReconcile_TraefikFilterNil_NoIngressRouteListCalls(t *testing.T) {
 	}
 	coreDNSManager := coredns.NewManager(wrappedClient, coreDNSConfig)
 
-	reconciler := NewIngressReconciler(wrappedClient, scheme, ingressFilter, nil, nil, coreDNSManager)
+	reconciler := NewIngressReconciler(wrappedClient, scheme, ingressFilter, nil, nil, nil, coreDNSManager)
 
 	req := reconcile.Request{
 		NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"},
@@ -941,7 +942,7 @@ func TestReconcile_IngressGatewayAPIAndTraefikMerge(t *testing.T) {
 		ImportStatement:      "import /etc/coredns/custom/*.server",
 	})
 
-	reconciler := NewIngressReconciler(fakeClient, scheme, ingressFilter, gatewayFilter, traefikFilter, coreDNSManager)
+	reconciler := NewIngressReconciler(fakeClient, scheme, ingressFilter, gatewayFilter, traefikFilter, nil, coreDNSManager)
 
 	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
 	if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
@@ -966,6 +967,217 @@ func TestReconcile_IngressGatewayAPIAndTraefikMerge(t *testing.T) {
 	if !contains(got, "rewrite name exact "+traefikOnlyHost+" "+traefikCNAME) {
 		t.Errorf("expected the IngressRoute-only host to be present, got:\n%s", got)
 	}
+}
+
+// noServiceListClient wraps a client.Client and fails the test if List is
+// ever called with a Service list type. It embeds the client.Client
+// interface so all other methods delegate to the wrapped client unchanged.
+type noServiceListClient struct {
+	client.Client
+	t *testing.T
+}
+
+func (c *noServiceListClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	switch list.(type) {
+	case *corev1.ServiceList:
+		c.t.Fatalf("unexpected List call against Service type %T when ServiceFilter is nil", list)
+	}
+	return c.Client.List(ctx, list, opts...)
+}
+
+// TestReconcile_ServiceFilterNil_NoServiceListCalls is the load-bearing
+// regression test for annotation-driven Service support being purely
+// additive: when ServiceFilter is nil (the default, unconfigured state),
+// Reconcile must never List Service objects, since watching every Service in
+// the cluster is a materially bigger footprint than the other sources.
+func TestReconcile_ServiceFilterNil_NoServiceListCalls(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = networkingv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = gatewayv1.Install(scheme)
+	_ = traefikv1alpha1.AddToScheme(scheme)
+
+	ingressClassName := "nginx"
+	ing := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: &ingressClassName,
+			Rules:            []networkingv1.IngressRule{{Host: "app.example.com"}},
+		},
+	}
+	coreDNSConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+		Data: map[string]string{
+			"Corefile": `.:53 {
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+    }
+}`,
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ing, coreDNSConfigMap).Build()
+	wrappedClient := &noServiceListClient{Client: fakeClient, t: t}
+
+	ingressFilter := nginxFilter("")
+	coreDNSConfig := coredns.Config{
+		Namespace:            "kube-system",
+		ConfigMapName:        "coredns",
+		DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
+		DynamicConfigKey:     "dynamic.server",
+		ImportStatement:      "import /etc/coredns/custom/*.server",
+	}
+	coreDNSManager := coredns.NewManager(wrappedClient, coreDNSConfig)
+
+	reconciler := NewIngressReconciler(wrappedClient, scheme, ingressFilter, nil, nil, nil, coreDNSManager)
+
+	req := reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"},
+	}
+	if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	if reconciler.ServiceFilter != nil {
+		t.Fatal(fmt.Sprintf("expected ServiceFilter to be nil, got: %v", reconciler.ServiceFilter))
+	}
+}
+
+// TestReconcile_IngressGatewayTraefikAndServiceMerge extends the 3-way merge
+// test with a fourth source, an annotated Service claiming the same shared
+// host, confirming the 4-way ClassIndex offset keeps Ingress winning the
+// default tiebreak, then confirming a priority annotation on the Service
+// promotes it to win instead.
+func TestReconcile_IngressGatewayTraefikAndServiceMerge(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = networkingv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = gatewayv1.Install(scheme)
+	_ = traefikv1alpha1.AddToScheme(scheme)
+
+	const nginxCNAME = "nginx.cluster.local."
+	const gatewayCNAME = "gateway-traefik.traefik.svc.cluster.local."
+	const traefikCNAME = "traefik.traefik.svc.cluster.local."
+	const sharedHost = "shared.example.com"
+	const serviceCNAME = "internal-svc.default.svc.cluster.local."
+
+	ingressClassName := "nginx"
+	sharedIngress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{Name: "shared-ingress", Namespace: "default"},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: &ingressClassName,
+			Rules:            []networkingv1.IngressRule{{Host: sharedHost}},
+		},
+	}
+
+	gw := &gatewayv1.Gateway{
+		ObjectMeta: metav1.ObjectMeta{Name: "traefik-gw", Namespace: "default"},
+		Spec:       gatewayv1.GatewaySpec{GatewayClassName: "traefik"},
+	}
+	sharedRoute := &gatewayv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "shared-route", Namespace: "default"},
+		Spec: gatewayv1.HTTPRouteSpec{
+			CommonRouteSpec: gatewayv1.CommonRouteSpec{
+				ParentRefs: []gatewayv1.ParentReference{{Name: "traefik-gw"}},
+			},
+			Hostnames: []gatewayv1.Hostname{sharedHost},
+		},
+	}
+
+	sharedRouteCRD := &traefikv1alpha1.IngressRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "shared-ingressroute", Namespace: "default"},
+		Spec: traefikv1alpha1.IngressRouteSpec{
+			Routes: []traefikv1alpha1.Route{
+				{Match: "Host(`" + sharedHost + "`)"},
+			},
+		},
+	}
+
+	sharedService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "internal-svc",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"coredns-ingress-sync-hostname": sharedHost,
+			},
+		},
+	}
+
+	coreDNSConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+		Data:       map[string]string{"Corefile": ".:53 {\n    forward . /etc/resolv.conf\n}\n"},
+	}
+
+	buildReconciler := func(objs ...client.Object) (*IngressReconciler, client.Client) {
+		allObjs := append([]client.Object{coreDNSConfigMap}, objs...)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(allObjs...).Build()
+
+		ingressFilter := ingress.NewFilter([]config.IngressClassMapping{
+			{IngressClass: "nginx", TargetCNAME: nginxCNAME},
+		}, "", "", "", "", "")
+		gatewayFilter := gatewayapi.NewFilter([]config.GatewayClassMapping{
+			{GatewayClass: "traefik", TargetCNAME: gatewayCNAME},
+		}, "", "", "", "", "")
+		traefikFilter := traefik.NewFilter(traefikCNAME, "", "", "", "", "")
+		serviceFilter := service.NewFilter("cluster.local", "coredns-ingress-sync-hostname", "", "", "", "coredns-ingress-sync-enabled", "coredns-ingress-sync-priority")
+
+		coreDNSManager := coredns.NewManager(fakeClient, coredns.Config{
+			Namespace:            "kube-system",
+			ConfigMapName:        "coredns",
+			DynamicConfigMapName: "coredns-ingress-sync-rewrite-rules",
+			DynamicConfigKey:     "dynamic.server",
+			ImportStatement:      "import /etc/coredns/custom/*.server",
+		})
+
+		reconciler := NewIngressReconciler(fakeClient, scheme, ingressFilter, gatewayFilter, traefikFilter, serviceFilter, coreDNSManager)
+		return reconciler, fakeClient
+	}
+
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
+
+	t.Run("Ingress wins by default", func(t *testing.T) {
+		reconciler, fakeClient := buildReconciler(sharedIngress, gw, sharedRoute, sharedRouteCRD, sharedService)
+		if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
+			t.Fatalf("reconcile failed: %v", err)
+		}
+
+		var cm corev1.ConfigMap
+		if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "coredns-ingress-sync-rewrite-rules", Namespace: "kube-system"}, &cm); err != nil {
+			t.Fatalf("failed to read dynamic ConfigMap: %v", err)
+		}
+		got := cm.Data["dynamic.server"]
+
+		if !contains(got, "rewrite name exact "+sharedHost+" "+nginxCNAME) {
+			t.Errorf("expected Ingress to win the shared-host tiebreak over Gateway API, IngressRoute and Service, got:\n%s", got)
+		}
+		if contains(got, "rewrite name exact "+sharedHost+" "+serviceCNAME) {
+			t.Errorf("did not expect the Service's CNAME to win the shared-host tiebreak, got:\n%s", got)
+		}
+	})
+
+	t.Run("priority annotation promotes Service to win", func(t *testing.T) {
+		prioritizedService := sharedService.DeepCopy()
+		prioritizedService.Annotations["coredns-ingress-sync-priority"] = "100"
+
+		reconciler, fakeClient := buildReconciler(sharedIngress, gw, sharedRoute, sharedRouteCRD, prioritizedService)
+		if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
+			t.Fatalf("reconcile failed: %v", err)
+		}
+
+		var cm corev1.ConfigMap
+		if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "coredns-ingress-sync-rewrite-rules", Namespace: "kube-system"}, &cm); err != nil {
+			t.Fatalf("failed to read dynamic ConfigMap: %v", err)
+		}
+		got := cm.Data["dynamic.server"]
+
+		if !contains(got, "rewrite name exact "+sharedHost+" "+serviceCNAME) {
+			t.Errorf("expected the priority-annotated Service to win the shared-host tiebreak, got:\n%s", got)
+		}
+		if contains(got, "rewrite name exact "+sharedHost+" "+nginxCNAME) {
+			t.Errorf("did not expect Ingress's CNAME to win once Service was prioritized, got:\n%s", got)
+		}
+	})
 }
 
 // gatewayAPIListErrorClient fails List calls against Gateway/HTTPRoute list
@@ -1039,7 +1251,7 @@ func gatewayReconcilerFixture(t *testing.T, watchNamespaces string, objs []clien
 		ImportStatement:      "import /etc/coredns/custom/*.server",
 	})
 
-	reconciler := NewIngressReconciler(c, scheme, nginxFilter(watchNamespaces), gatewayFilter, nil, coreDNSManager)
+	reconciler := NewIngressReconciler(c, scheme, nginxFilter(watchNamespaces), gatewayFilter, nil, nil, coreDNSManager)
 	return reconciler, c
 }
 
@@ -1223,7 +1435,7 @@ func traefikReconcilerFixture(t *testing.T, watchNamespaces string, objs []clien
 		ImportStatement:      "import /etc/coredns/custom/*.server",
 	})
 
-	reconciler := NewIngressReconciler(c, scheme, nginxFilter(watchNamespaces), nil, traefikFilter, coreDNSManager)
+	reconciler := NewIngressReconciler(c, scheme, nginxFilter(watchNamespaces), nil, traefikFilter, nil, coreDNSManager)
 	return reconciler, c
 }
 
@@ -1349,7 +1561,7 @@ func TestReconcile_UpdateDynamicConfigMapError(t *testing.T) {
 		ImportStatement:      "import /etc/coredns/custom/*.server",
 	})
 
-	reconciler := NewIngressReconciler(wrappedClient, scheme, nginxFilter(""), nil, nil, coreDNSManager)
+	reconciler := NewIngressReconciler(wrappedClient, scheme, nginxFilter(""), nil, nil, nil, coreDNSManager)
 
 	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "global-ingress-reconcile", Namespace: "default"}}
 	if _, err := reconciler.Reconcile(context.Background(), req); err == nil {

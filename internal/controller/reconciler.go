@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -19,12 +20,13 @@ import (
 	"github.com/rl-io/coredns-ingress-sync/internal/hostmap"
 	"github.com/rl-io/coredns-ingress-sync/internal/ingress"
 	"github.com/rl-io/coredns-ingress-sync/internal/metrics"
+	"github.com/rl-io/coredns-ingress-sync/internal/service"
 	"github.com/rl-io/coredns-ingress-sync/internal/traefik"
 	traefikv1alpha1 "github.com/rl-io/coredns-ingress-sync/internal/traefik/v1alpha1"
 )
 
-// IngressReconciler reconciles Ingress, Gateway API, and Traefik IngressRoute
-// objects and updates CoreDNS configuration.
+// IngressReconciler reconciles Ingress, Gateway API, Traefik IngressRoute,
+// and annotated Service objects and updates CoreDNS configuration.
 type IngressReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme
@@ -37,19 +39,26 @@ type IngressReconciler struct {
 	// TraefikFilter is nil when Traefik IngressRoute support is disabled (no
 	// IngressRouteTargetCNAME configured). When nil, Reconcile makes no
 	// List/Get calls of any kind against IngressRoute types.
-	TraefikFilter  *traefik.Filter
+	TraefikFilter *traefik.Filter
+	// ServiceFilter is nil when annotation-driven Service support is
+	// disabled (ServiceAnnotationsEnabled is false). When nil, Reconcile
+	// makes no List/Get calls of any kind against Service types beyond what
+	// other checks already need.
+	ServiceFilter  *service.Filter
 	CoreDNSManager *coredns.Manager
 }
 
-// NewIngressReconciler creates a new IngressReconciler. gatewayFilter and
-// traefikFilter may be nil to disable their respective support entirely.
-func NewIngressReconciler(client client.Client, scheme *runtime.Scheme, ingressFilter *ingress.Filter, gatewayFilter *gatewayapi.Filter, traefikFilter *traefik.Filter, coreDNSManager *coredns.Manager) *IngressReconciler {
+// NewIngressReconciler creates a new IngressReconciler. gatewayFilter,
+// traefikFilter, and serviceFilter may be nil to disable their respective
+// support entirely.
+func NewIngressReconciler(client client.Client, scheme *runtime.Scheme, ingressFilter *ingress.Filter, gatewayFilter *gatewayapi.Filter, traefikFilter *traefik.Filter, serviceFilter *service.Filter, coreDNSManager *coredns.Manager) *IngressReconciler {
 	return &IngressReconciler{
 		Client:         client,
 		Scheme:         scheme,
 		IngressFilter:  ingressFilter,
 		GatewayFilter:  gatewayFilter,
 		TraefikFilter:  traefikFilter,
+		ServiceFilter:  serviceFilter,
 		CoreDNSManager: coreDNSManager,
 	}
 }
@@ -115,6 +124,16 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req reconcile.Request
 			return reconcile.Result{RequeueAfter: time.Minute}, err
 		}
 		candidates = append(candidates, traefikCandidates...)
+	}
+
+	if r.ServiceFilter != nil && r.ServiceFilter.Enabled() {
+		serviceCandidates, err := r.extractServiceCandidates(ctx, logger)
+		if err != nil {
+			duration := time.Since(startTime).Seconds()
+			metrics.RecordReconciliationError(duration, "service_list")
+			return reconcile.Result{RequeueAfter: time.Minute}, err
+		}
+		candidates = append(candidates, serviceCandidates...)
 	}
 
 	winners := hostmap.ResolveCandidates(candidates, logger)
@@ -267,6 +286,49 @@ func (r *IngressReconciler) extractTraefikCandidates(ctx context.Context, logger
 	offset := r.IngressFilter.ClassCount()
 	if r.GatewayFilter != nil {
 		offset += r.GatewayFilter.ClassCount()
+	}
+	for i := range candidates {
+		candidates[i].ClassIndex += offset
+	}
+
+	return candidates, nil
+}
+
+// extractServiceCandidates lists Service objects (namespace scoped per
+// r.ServiceFilter) and returns the resulting hostname candidates, with
+// ClassIndex offset by the number of configured Ingress class mappings plus
+// Gateway API GatewayClass mappings plus Traefik IngressRoute's tier, so
+// Ingress, then Gateway API, then IngressRoute win ties by default when
+// multiple sources claim the same hostname. Callers must only invoke this
+// when r.ServiceFilter is non-nil and enabled.
+func (r *IngressReconciler) extractServiceCandidates(ctx context.Context, logger logr.Logger) ([]hostmap.Candidate, error) {
+	watchNamespaces := r.ServiceFilter.GetWatchNamespaces()
+
+	var serviceList corev1.ServiceList
+	if r.ServiceFilter.WatchesAllNamespaces() {
+		if err := r.List(ctx, &serviceList); err != nil {
+			logger.Error(err, "Failed to list services")
+			return nil, err
+		}
+	} else {
+		for _, ns := range watchNamespaces {
+			var nsServiceList corev1.ServiceList
+			if err := r.List(ctx, &nsServiceList, client.InNamespace(ns)); err != nil {
+				logger.Error(err, "Failed to list services in namespace", "namespace", ns)
+				continue
+			}
+			serviceList.Items = append(serviceList.Items, nsServiceList.Items...)
+		}
+	}
+
+	candidates := r.ServiceFilter.ExtractHostnameCandidates(serviceList.Items)
+
+	offset := r.IngressFilter.ClassCount()
+	if r.GatewayFilter != nil {
+		offset += r.GatewayFilter.ClassCount()
+	}
+	if r.TraefikFilter != nil {
+		offset += r.TraefikFilter.ClassCount()
 	}
 	for i := range candidates {
 		candidates[i].ClassIndex += offset

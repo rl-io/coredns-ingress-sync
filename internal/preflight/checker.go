@@ -39,6 +39,10 @@ type Config struct {
 	// made against IngressRoute types, since the CRD may not be installed in
 	// a cluster that doesn't use Traefik.
 	IngressRouteEnabled bool
+	// ServicesEnabled gates the annotation-driven Service preflight check.
+	// When false (ServiceAnnotationsEnabled is false), no List/Get calls are
+	// made against Service types beyond what other checks already need.
+	ServicesEnabled bool
 }
 
 // Checker performs preflight checks for deployment conflicts
@@ -136,6 +140,19 @@ func (c *Checker) RunChecks(ctx context.Context) ([]CheckResult, error) {
 			return nil, fmt.Errorf("failed to check Traefik IngressRoute availability after %v: %w", time.Since(checkStart), err)
 		}
 		c.logger.Info("✓ Traefik IngressRoute check completed", "duration", time.Since(checkStart), "passed", result.Passed)
+		results = append(results, result)
+	}
+
+	// Check 7: Service watch availability, only when configured -- no
+	// List/Get calls against Service types beyond what other checks already
+	// need otherwise.
+	if c.config.ServicesEnabled {
+		checkStart = time.Now()
+		result, err = c.checkServiceWatch(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check Service watch availability after %v: %w", time.Since(checkStart), err)
+		}
+		c.logger.Info("✓ Service watch check completed", "duration", time.Since(checkStart), "passed", result.Passed)
 		results = append(results, result)
 	}
 
@@ -454,6 +471,36 @@ func traefikIngressRouteCheckFailure(kind string, err error) CheckResult {
 	}
 }
 
+// checkServiceWatch verifies core Service objects are reachable. Callers
+// must only invoke this when annotation-driven Service support is configured
+// (ServicesEnabled), since RBAC for it is only granted when enabled.
+// Service is a built-in type, not a CRD, so unlike checkGatewayAPI and
+// checkTraefikIngressRoute there is no "CRD not installed" branch to check
+// for -- meta.IsNoMatchError is structurally unreachable here.
+func (c *Checker) checkServiceWatch(ctx context.Context) (CheckResult, error) {
+	var serviceList corev1.ServiceList
+	if err := c.client.List(ctx, &serviceList, client.Limit(1)); err != nil {
+		if errors.IsForbidden(err) {
+			return CheckResult{
+				Passed:   false,
+				Message:  "❌ Permission denied listing Service resources. RBAC for core services may not be ready yet, or the chart's RBAC template wasn't applied with serviceAnnotationsEnabled set.",
+				Severity: "error",
+			}, nil
+		}
+		return CheckResult{
+			Passed:   false,
+			Message:  fmt.Sprintf("❌ Error accessing Service resources: %v", err),
+			Severity: "error",
+		}, nil
+	}
+
+	return CheckResult{
+		Passed:   true,
+		Message:  "✅ Service watch is reachable",
+		Severity: "info",
+	}, nil
+}
+
 // PrintResults prints the check results in a formatted way
 func (c *Checker) PrintResults(results []CheckResult) {
 	c.logger.Info("")
@@ -532,5 +579,6 @@ func ConfigFromEnv(cfg *config.Config) Config {
 		TargetCNAME:          cfg.TargetCNAME,
 		GatewayAPIEnabled:    len(cfg.GatewayClassMappings) > 0,
 		IngressRouteEnabled:  cfg.IngressRouteTargetCNAME != "",
+		ServicesEnabled:      cfg.ServiceAnnotationsEnabled,
 	}
 }

@@ -35,6 +35,7 @@ import (
 	"github.com/rl-io/coredns-ingress-sync/internal/logging"
 	"github.com/rl-io/coredns-ingress-sync/internal/metrics"
 	"github.com/rl-io/coredns-ingress-sync/internal/preflight"
+	"github.com/rl-io/coredns-ingress-sync/internal/service"
 	"github.com/rl-io/coredns-ingress-sync/internal/traefik"
 	traefikv1alpha1 "github.com/rl-io/coredns-ingress-sync/internal/traefik/v1alpha1"
 	"github.com/rl-io/coredns-ingress-sync/internal/watches"
@@ -87,12 +88,18 @@ func runController(logger logr.Logger) {
 	// that touches IngressRoute types.
 	ingressRouteEnabled := cfg.IngressRouteTargetCNAME != ""
 
+	// Annotation-driven Service support is enabled only via its own explicit
+	// flag; this is checked before any cache/watch/RBAC wiring below that
+	// touches Service types beyond what other checks already need.
+	serviceAnnotationsEnabled := cfg.ServiceAnnotationsEnabled
+
 	// Build cache options
 	cacheBuilder := cache.NewConfigBuilder(cache.ConfigBuilderOptions{
 		WatchNamespaces:     watchNamespaces,
 		CoreDNSNamespace:    cfg.CoreDNSNamespace,
 		GatewayAPIEnabled:   gatewayAPIEnabled,
 		IngressRouteEnabled: ingressRouteEnabled,
+		ServicesEnabled:     serviceAnnotationsEnabled,
 	})
 	cacheOptions := cacheBuilder.BuildCacheOptions()
 
@@ -158,6 +165,14 @@ func runController(logger logr.Logger) {
 		traefikFilter = traefik.NewFilter(cfg.IngressRouteTargetCNAME, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeIngressRoutes, cfg.AnnotationEnabledKey, cfg.AnnotationPriorityKey)
 	}
 
+	// Create Service filter. serviceFilter stays nil when disabled, so the
+	// reconciler makes no List/Get calls against Service types beyond what
+	// other checks already need.
+	var serviceFilter *service.Filter
+	if serviceAnnotationsEnabled {
+		serviceFilter = service.NewFilter(cfg.ClusterDomain, cfg.ServiceHostnameAnnotationKey, cfg.WatchNamespaces, cfg.ExcludeNamespaces, cfg.ExcludeServices, cfg.AnnotationEnabledKey, cfg.AnnotationPriorityKey)
+	}
+
 	// Create CoreDNS manager
 	coreDNSConfig := coredns.Config{
 		Namespace:            cfg.CoreDNSNamespace,
@@ -177,6 +192,7 @@ func runController(logger logr.Logger) {
 		ingressFilter,
 		gatewayFilter,
 		traefikFilter,
+		serviceFilter,
 		coreDNSManager,
 	)
 
@@ -298,6 +314,36 @@ func runController(logger logr.Logger) {
 		}
 	}
 
+	// Watch for Service changes, only when Service annotation support is
+	// enabled. Services churn far more than routing resources, so unlike the
+	// other watches above this one filters at the predicate level rather than
+	// reconciling on every event -- both old and new objects are checked on
+	// update so annotation add/remove transitions are both caught.
+	if serviceAnnotationsEnabled {
+		if err := c.Watch(
+			source.Kind(mgr.GetCache(), &corev1.Service{},
+				handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *corev1.Service) []reconcile.Request {
+					return []reconcile.Request{{
+						NamespacedName: types.NamespacedName{
+							Name:      "global-ingress-reconcile",
+							Namespace: "default",
+						},
+					}}
+				}),
+				predicate.TypedFuncs[*corev1.Service]{
+					CreateFunc: func(e event.TypedCreateEvent[*corev1.Service]) bool {
+						return serviceFilter.ShouldProcessService(e.Object)
+					},
+					UpdateFunc: func(e event.TypedUpdateEvent[*corev1.Service]) bool {
+						return serviceFilter.ShouldProcessService(e.ObjectOld) || serviceFilter.ShouldProcessService(e.ObjectNew)
+					},
+					DeleteFunc: func(e event.TypedDeleteEvent[*corev1.Service]) bool { return true },
+				})); err != nil {
+			logger.Error(err, "Failed to set up service watch")
+			os.Exit(1)
+		}
+	}
+
 	// Watch for CoreDNS ConfigMap changes
 	watchManager := watches.NewManager()
 	if err := watchManager.AddConfigMapWatch(mgr.GetCache(), c, cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName, "coredns-configmap-reconcile"); err != nil {
@@ -318,6 +364,8 @@ func runController(logger logr.Logger) {
 		"gateway_class_mappings", cfg.GatewayClassMappings,
 		"ingressroute_enabled", ingressRouteEnabled,
 		"ingressroute_target_cname", cfg.IngressRouteTargetCNAME,
+		"service_annotations_enabled", serviceAnnotationsEnabled,
+		"service_hostname_annotation_key", cfg.ServiceHostnameAnnotationKey,
 		"dynamic_configmap", cfg.DynamicConfigMapName,
 		"coredns_configmap", fmt.Sprintf("%s/%s", cfg.CoreDNSNamespace, cfg.CoreDNSConfigMapName),
 		"annotation_enabled_key", cfg.AnnotationEnabledKey,
