@@ -116,23 +116,25 @@ func (m *Manager) UpdateDynamicConfigMap(ctx context.Context, domains []string, 
 			return nil
 		}
 
-		// Compare the actual host -> CNAME mappings, not the raw rendered
-		// content: generateDynamicConfig embeds a "Last updated" timestamp
-		// that changes on every call, so a raw string comparison here would
-		// almost always report a change and rewrite the ConfigMap (and log a
-		// misleading "changed" summary) on every reconcile even when no
-		// hostname or target actually changed.
+		// Compare rendered content with the "Last updated" timestamp line
+		// stripped out, not the parsed host -> CNAME map: the map is
+		// last-write-wins on duplicate host lines, but CoreDNS's rewrite
+		// plugin is first-match-wins, so a map diff can miss a real content
+		// change (e.g. a duplicate or malformed line) that parses to the
+		// same map. The map is still used below, purely to build the
+		// human-readable added/removed/changed log summary.
 		existingConfig := configMap.Data[m.config.DynamicConfigKey]
-		oldHostCNAMEs := extractHostCNAMEsFromDynamicConfig(existingConfig)
-		added, removed, changed := diffHostCNAMEs(oldHostCNAMEs, hostCNAMEMap)
 
-		if len(added) == 0 && len(removed) == 0 && len(changed) == 0 {
+		if stripLastUpdated(existingConfig) == stripLastUpdated(dynamicConfig) {
 			m.logger.V(1).Info("Dynamic ConfigMap is already up to date",
 				"configmap", m.config.DynamicConfigMapName)
 			duration := time.Since(startTime).Seconds()
 			metrics.RecordCoreDNSConfigUpdate(duration, true)
 			return nil
 		}
+
+		oldHostCNAMEs := extractHostCNAMEsFromDynamicConfig(existingConfig)
+		added, removed, changed := diffHostCNAMEs(oldHostCNAMEs, hostCNAMEMap)
 
 		// Log concise change summary with small samples, including which
 		// object caused each added/changed entry when known.
@@ -203,6 +205,20 @@ func (m *Manager) generateDynamicConfig(domains []string, hostCNAMEMap map[strin
 	}
 
 	return config.String()
+}
+
+// stripLastUpdated drops the "# Last updated: ..." line generateDynamicConfig
+// embeds, so two renders that differ only by timestamp compare equal.
+func stripLastUpdated(content string) string {
+	lines := strings.Split(content, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "# Last updated:") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
 }
 
 // extractHostCNAMEsFromDynamicConfig parses rewrite rules and returns a map
