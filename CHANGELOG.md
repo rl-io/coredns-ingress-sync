@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.23](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.22...coredns-ingress-sync-v0.1.23) (2026-09-03)
+
+
+### Features
+
+* add annotation-driven Service support ([#108](https://github.com/rl-io/coredns-ingress-sync/issues/108)) ([fd7cb42](https://github.com/rl-io/coredns-ingress-sync/commit/fd7cb42e0603b9a617445f887eaf04c9d912f26d))
+
+
+### Bug Fixes
+
+* skip no-op ConfigMap updates and log noise from timestamp-only drift ([#105](https://github.com/rl-io/coredns-ingress-sync/issues/105)) ([d8b4dba](https://github.com/rl-io/coredns-ingress-sync/commit/d8b4dba12deac4be1bdb717267f3d0e52580c28a))
+
+
+### Miscellaneous
+
+* **deps:** bump the go-minor-patch group with 2 updates ([#107](https://github.com/rl-io/coredns-ingress-sync/issues/107)) ([a4fd2cb](https://github.com/rl-io/coredns-ingress-sync/commit/a4fd2cba081100fbbed55c41318951cea04a107e))
+* update Go dependencies ([#106](https://github.com/rl-io/coredns-ingress-sync/issues/106)) ([93af4be](https://github.com/rl-io/coredns-ingress-sync/commit/93af4be59cb6ea603298b3fa5e5e5eb609ddd112))
+
 ## [0.1.22](https://github.com/rl-io/coredns-ingress-sync/compare/coredns-ingress-sync-v0.1.21...coredns-ingress-sync-v0.1.22) (2026-08-24)
 
 
